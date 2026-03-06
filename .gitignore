@@ -2,9 +2,6 @@
 
 # dependencies
 /node_modules
-/.pnp
-.pnp.js
-.yarn/install-state.gz
 
 # testing
 /coverage
@@ -37,7 +34,7 @@ yarn-error.log*
 next-env.d.ts
 
 # python
-venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -49,5 +46,4 @@ __pycache__/
 dist/
 build/
 
-olympics_spec.md
-LA28OlympicGamesCompetitionScheduleByEventV2Final.pdf
+.claude/
