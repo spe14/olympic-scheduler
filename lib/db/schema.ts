@@ -76,6 +76,13 @@ export const conflictTypeEnum = pgEnum("conflict_type_enum", [
   "hard_buddy_failure",
 ]);
 
+export const avatarColorEnum = pgEnum("avatar_color_enum", [
+  "blue",
+  "yellow",
+  "pink",
+  "green",
+]);
+
 export const dateModeEnum = pgEnum("date_mode_enum", [
   "consecutive",
   "specific",
@@ -119,6 +126,7 @@ export const user = pgTable("users", {
   username: text("username").notNull().unique(),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
+  avatarColor: avatarColorEnum("avatar_color").notNull().default("blue"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

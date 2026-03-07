@@ -38,22 +38,23 @@ Phase 1 generates an **optimal** group schedule that maximizes everyone's experi
 
 For each user in the group:
 
-| Field | Description | Example |
-|-------|-------------|---------|
+| Field     | Description       | Example |
+| --------- | ----------------- | ------- |
 | `user_id` | Unique identifier | "alice" |
 
 #### Step 1: Budget and Buddy Preferences
 
 Users first set their budget and buddy preferences that apply across all sessions:
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `budget` | Total amount willing to spend across all sessions | $500 |
-| `hard_buddies` | MUST attend with these people (strict constraint) | ["bob"] |
+| Field          | Description                                               | Example           |
+| -------------- | --------------------------------------------------------- | ----------------- |
+| `budget`       | Total amount willing to spend across all sessions         | $500              |
+| `hard_buddies` | MUST attend with these people (strict constraint)         | ["bob"]           |
 | `soft_buddies` | PREFER to attend with these people (flexible, adds bonus) | ["carol", "dave"] |
-| `min_buddies` | Minimum others who must also attend each session | 1 |
+| `min_buddies`  | Minimum others who must also attend each session          | 1                 |
 
 **Constraint vs Preference:**
+
 - `hard_buddies`: Constraint — session is invalid if ANY of these people aren't attending. Multiple hard buddies are allowed but increasingly restrictive.
 - `soft_buddies`: Preference — adds bonus points if attending together, but not required
 - `min_buddies`: Constraint — must have at least N other group members at each session
@@ -64,8 +65,8 @@ Users first set their budget and buddy preferences that apply across all session
 
 Users select up to **10 sports** they want to attend and rank them in order of preference:
 
-| Field | Description | Example |
-|-------|-------------|---------|
+| Field            | Description                                 | Example                                                     |
+| ---------------- | ------------------------------------------- | ----------------------------------------------------------- |
 | `sport_rankings` | Ordered list of sports (1 = most preferred) | ["Gymnastics", "Swimming", "Track", "Diving", "Basketball"] |
 
 **Ordered Ranking:** Sports are ranked 1st through Nth (where N ≤ 10). This ranking determines the sport multiplier used in scoring.
@@ -83,34 +84,34 @@ Example - Alice's Sport Rankings:
 
 After selecting sports, users see a calendar view showing only sessions from their selected sports. For each session they want to attend, they set both interest level AND willingness:
 
-| Field | Description | Required |
-|-------|-------------|----------|
-| `session_interest` | Interest level for this session | Yes (if attending) |
-| `session_willingness` | Price bucket for this session | Yes (if attending) |
+| Field                 | Description                     | Required           |
+| --------------------- | ------------------------------- | ------------------ |
+| `session_interest`    | Interest level for this session | Yes (if attending) |
+| `session_willingness` | Price bucket for this session   | Yes (if attending) |
 
 **Session Interest Levels:**
 
-| Level | Description | Session Adjustment |
-|-------|-------------|-------------------|
-| High | Strongly want to attend | 1.0x |
-| Medium | Would enjoy attending | 0.7x |
-| Low | Would attend if convenient | 0.4x |
-| None | Not interested (default) | Excluded |
+| Level  | Description                | Session Adjustment |
+| ------ | -------------------------- | ------------------ |
+| High   | Strongly want to attend    | 1.0x               |
+| Medium | Would enjoy attending      | 0.7x               |
+| Low    | Would attend if convenient | 0.4x               |
+| None   | Not interested (default)   | Excluded           |
 
 **Willingness Price Buckets:**
 
-| Bucket | Description |
-|--------|-------------|
-| <$50 | Budget-friendly only |
-| <$100 | Low price tolerance |
-| <$150 | Moderate price tolerance |
-| <$200 | Above average willingness |
-| <$250 | Higher willingness |
-| <$300 | High willingness |
-| <$400 | Premium events |
-| <$500 | High-end events |
-| <$1000 | Top-tier events |
-| $1000+ | No limit |
+| Bucket | Description               |
+| ------ | ------------------------- |
+| <$50   | Budget-friendly only      |
+| <$100  | Low price tolerance       |
+| <$150  | Moderate price tolerance  |
+| <$200  | Above average willingness |
+| <$250  | Higher willingness        |
+| <$300  | High willingness          |
+| <$400  | Premium events            |
+| <$500  | High-end events           |
+| <$1000 | Top-tier events           |
+| $1000+ | No limit                  |
 
 **Important:** Sessions default to "None" (not interested). Users must explicitly opt-in to each session they want to attend by selecting both an interest level and a willingness bucket.
 
@@ -126,15 +127,15 @@ Example - Alice's Session Preferences for Track:
 
 For each Olympic session:
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `session_code` | Unique identifier | "GYM-WFINAL-0803" |
-| `sport` | Sport name | "Gymnastics" |
+| Field          | Description         | Example                 |
+| -------------- | ------------------- | ----------------------- |
+| `session_code` | Unique identifier   | "GYM-WFINAL-0803"       |
+| `sport`        | Sport name          | "Gymnastics"            |
 | `session_type` | Category of session | "Final", "Semi", "Heat" |
-| `session_date` | Date of session | "2028-08-03" |
-| `start_time` | Start time | "19:00" |
-| `end_time` | End time | "21:30" |
-| `zone` | Venue zone | "DTLA Zone" |
+| `session_date` | Date of session     | "2028-08-03"            |
+| `start_time`   | Start time          | "19:00"                 |
+| `end_time`     | End time            | "21:30"                 |
+| `zone`         | Venue zone          | "DTLA Zone"             |
 
 ### Travel Matrix
 
@@ -142,9 +143,9 @@ Zone-to-zone driving times (in minutes) used to determine required gaps between 
 
 ```
                     DTLA    Long Beach    Inglewood    ...
-DTLA                0       37            25          
-Long Beach          40      0             34          
-Inglewood           27      36            0           
+DTLA                0       37            25
+Long Beach          40      0             34
+Inglewood           27      36            0
 ```
 
 The driving time matrix is used to categorize zone proximity and determine required gaps. See Travel Gap Rules in Algorithm Steps for the gap lookup table.
@@ -180,36 +181,36 @@ where:
 **Example multipliers by number of sports selected:**
 
 | Sports Selected | Rank 1 | Rank 2 | Rank 3 | Rank 4 | Rank 5 |
-|-----------------|--------|--------|--------|--------|--------|
-| 2 | 2.0x | 1.0x | — | — | — |
-| 3 | 2.0x | 1.5x | 1.0x | — | — |
-| 5 | 2.0x | 1.75x | 1.5x | 1.25x | 1.0x |
+| --------------- | ------ | ------ | ------ | ------ | ------ |
+| 2               | 2.0x   | 1.0x   | —      | —      | —      |
+| 3               | 2.0x   | 1.5x   | 1.0x   | —      | —      |
+| 5               | 2.0x   | 1.75x  | 1.5x   | 1.25x  | 1.0x   |
 
 **Full table for 10 sports:**
 
 | Rank | Multiplier |
-|------|------------|
-| 1 | 2.0x |
-| 2 | 1.89x |
-| 3 | 1.78x |
-| 4 | 1.67x |
-| 5 | 1.56x |
-| 6 | 1.44x |
-| 7 | 1.33x |
-| 8 | 1.22x |
-| 9 | 1.11x |
-| 10 | 1.0x |
+| ---- | ---------- |
+| 1    | 2.0x       |
+| 2    | 1.89x      |
+| 3    | 1.78x      |
+| 4    | 1.67x      |
+| 5    | 1.56x      |
+| 6    | 1.44x      |
+| 7    | 1.33x      |
+| 8    | 1.22x      |
+| 9    | 1.11x      |
+| 10   | 1.0x       |
 
 #### Session Adjustment
 
 Based on the user's interest level for the specific session:
 
-| Interest Level | Adjustment |
-|----------------|------------|
-| High | 1.0x |
-| Medium | 0.7x |
-| Low | 0.4x |
-| None | Excluded from consideration |
+| Interest Level | Adjustment                  |
+| -------------- | --------------------------- |
+| High           | 1.0x                        |
+| Medium         | 0.7x                        |
+| Low            | 0.4x                        |
+| None           | Excluded from consideration |
 
 #### Soft Buddy Bonus
 
@@ -219,15 +220,15 @@ When soft buddies have indicated interest in the same session, a bonus multiplie
 soft_buddy_bonus = 1.0 + 0.25 (first buddy) + 0.10 × (additional buddies)
 ```
 
-| Soft Buddies With Interest | Bonus Multiplier |
-|----------------------------|------------------|
-| 0 | 1.0x |
-| 1 | 1.25x |
-| 2 | 1.35x |
-| 3 | 1.45x |
-| 4 | 1.55x |
-| 5 | 1.65x |
-| 6+ | 1.65x + 0.10 per additional |
+| Soft Buddies With Interest | Bonus Multiplier            |
+| -------------------------- | --------------------------- |
+| 0                          | 1.0x                        |
+| 1                          | 1.25x                       |
+| 2                          | 1.35x                       |
+| 3                          | 1.45x                       |
+| 4                          | 1.55x                       |
+| 5                          | 1.65x                       |
+| 6+                         | 1.65x + 0.10 per additional |
 
 **Important:** The soft buddy bonus is based on which soft buddies have **indicated interest** in the session (interest level ≠ None), not who is confirmed to attend. This is because at combo generation time, we don't yet know everyone's final schedule — we only know their interests.
 
@@ -245,7 +246,7 @@ Calculation:
   sport_multiplier = 2.0 (Gymnastics is rank 1 of 5)
   session_adjustment = 1.0 (High interest)
   soft_buddy_bonus = 1.0 + 0.25 + 0.10 = 1.35 (2 soft buddies interested)
-  
+
   session_score = 2.0 × 1.0 × 1.35 = 2.7
 ```
 
@@ -258,7 +259,7 @@ Calculation:
   sport_multiplier = 1.0 (Basketball is rank 5 of 5)
   session_adjustment = 1.0 (High interest)
   soft_buddy_bonus = 1.0 + 0.25 + 0.10 + 0.10 + 0.10 = 1.55 (4 soft buddies interested)
-  
+
   session_score = 1.0 × 1.0 × 1.55 = 1.55
 
 Result: Gymnastics (2.7) still beats Basketball (1.55) despite fewer buddies,
@@ -268,6 +269,7 @@ because sport ranking provides strong baseline differentiation.
 #### Scoring Formula Validation
 
 The scoring formula is designed so that:
+
 1. Sport ranking provides strong baseline differentiation
 2. Interest level (High/Medium/Low) significantly affects score within a sport
 3. Buddy preferences provide a bonus but don't override interest level within the same sport
@@ -287,7 +289,7 @@ Session B (Low Interest, maximum buddies):
   sport_multiplier = 2.0 (same sport)
   session_adjustment = 0.4 (Low)
   soft_buddy_bonus = ??? (need > 2.5 to beat Session A)
-  
+
   For B to beat A: 2.0 × 0.4 × bonus > 2.0
   Required bonus: > 2.5
   This requires: 1.0 + 0.25 + 0.10×(n-1) > 2.5 → n > 13.5 buddies
@@ -350,6 +352,7 @@ day_combo_score = Σ session_scores
 ```
 
 **Tie-Breaking:** If two combos have identical scores, prefer the combo with:
+
 1. More sessions (fuller day is better)
 2. If still tied, higher total sport multiplier (prioritize higher-ranked sports)
 3. If still tied, alphabetical order by first session code (deterministic fallback)
@@ -363,6 +366,7 @@ user_window_score = Σ day_combo_scores (for each day in window)
 ```
 
 **Tie-Breaking:** If two windows have identical user scores:
+
 1. More total sessions across the window (fuller schedule is better)
 2. If still tied, earlier start date
 
@@ -382,6 +386,7 @@ where:
 **Why Standard Deviation?** We use standard deviation rather than variance because variance (the square of differences) produces penalties that can dominate the total score, leading to negative final scores for unequal distributions. Standard deviation provides a more proportionate penalty.
 
 **Tie-Breaking:** If two windows have identical group scores:
+
 1. Lower standard deviation (more fair distribution)
 2. If still tied, earlier start date
 
@@ -393,10 +398,10 @@ Example:
   With fairness_weight=0.25:
     Window A penalty: 0 × 4 × 0.25 = 0
     Window A score: 200 - 0 = 200
-    
+
     Window B penalty: 20 × 4 × 0.25 = 20
     Window B score: 200 - 20 = 180
-    
+
   Window A wins despite equal total, because it's fairer.
 ```
 
@@ -413,7 +418,7 @@ A schedule is considered optimal when it maximizes the group window score, which
 
 ## Algorithm Steps
 
-*Note: Steps 1-3 are user preference input (buddy constraints, sport ranking, session selection). The algorithm steps below run after ALL members have completed their preference input and the group owner triggers schedule generation.*
+_Note: Steps 1-3 are user preference input (buddy constraints, sport ranking, session selection). The algorithm steps below run after ALL members have completed their preference input and the group owner triggers schedule generation._
 
 ### Step 4: Filter Sessions by User Interest
 
@@ -448,17 +453,17 @@ If User A has hard buddies, filter out sessions where ANY hard buddy has no inte
 ```
 Example:
   Alice has hard_buddies = [Bob]
-  
+
   Alice's candidates (from Step 4):
     - Gymnastics Final: High
-    - Swimming Semi: Medium  
+    - Swimming Semi: Medium
     - Diving Prelim: Low
-    
+
   Bob's candidates (from Step 4):
     - Gymnastics Final: High
     - Diving Prelim: Medium
     - Water Polo: High
-  
+
   Alice's candidates after hard buddy filter:
     - Gymnastics Final: ✓ (Bob is interested)
     - Swimming Semi: ✗ EXCLUDED (Bob not interested)
@@ -478,17 +483,17 @@ If User A has `min_buddies = N`, filter out sessions where fewer than N other us
 ```
 Example:
   Carol has min_buddies = 2
-  
+
   Carol's candidates (from Step 4):
     - Gymnastics Final: High
     - Diving Prelim: Medium
     - Archery Semi: Low
-    
+
   Other users' interest:
     - Gymnastics Final: Alice (High), Bob (High), Eve (Medium) → 3 others interested
     - Diving Prelim: Bob (Medium) → 1 other interested
     - Archery Semi: None → 0 others interested
-  
+
   Carol's candidates after min_buddies filter:
     - Gymnastics Final: ✓ (3 others ≥ 2)
     - Diving Prelim: ✗ EXCLUDED (1 other < 2)
@@ -501,15 +506,15 @@ Example:
 
 Required gaps between sessions are based on zone proximity, determined by driving time between zones. Gaps are set to accommodate both drivers and transit users during Olympic conditions, with buffer time for venue exit, security, and entry.
 
-| Proximity | Driving Time | Required Gap |
-|-----------|--------------|--------------|
-| Same zone | 0 min | 1.0 hr |
-| Very close | <15 min | 1.5 hr |
-| Close | 15-30 min | 2.0 hr |
-| Medium | 30-45 min | 2.5 hr |
-| Far | 45-60 min | 3.0 hr |
-| Very far | 60-90 min | 3.5 hr |
-| Trestles Beach | Any | 4.0 hr |
+| Proximity      | Driving Time | Required Gap |
+| -------------- | ------------ | ------------ |
+| Same zone      | 0 min        | 1.0 hr       |
+| Very close     | <15 min      | 1.5 hr       |
+| Close          | 15-30 min    | 2.0 hr       |
+| Medium         | 30-45 min    | 2.5 hr       |
+| Far            | 45-60 min    | 3.0 hr       |
+| Very far       | 60-90 min    | 3.5 hr       |
+| Trestles Beach | Any          | 4.0 hr       |
 
 **Note on Trestles Beach:** The surf venue is geographically isolated with transit times of 3-6 hours from most zones. Sessions at Trestles Beach should be planned as dedicated day trips rather than combined with other venues.
 
@@ -537,7 +542,7 @@ Example - Alice's July 18:
 def generate_day_combos(user_sessions_for_day, travel_matrix, user_prefs, users_with_interest, max_sessions=3):
     """
     Generate all valid session combinations for a user for a single day.
-    
+
     Args:
         user_sessions_for_day: Sessions the user is interested in for this day (already filtered: interest ≠ None AND excluded = false)
         travel_matrix: Zone-to-zone travel times
@@ -546,7 +551,7 @@ def generate_day_combos(user_sessions_for_day, travel_matrix, user_prefs, users_
         max_sessions: Maximum sessions per day (default 3)
     """
     combos = []
-    
+
     # Generate all subsets of size 1 to max_sessions
     for size in range(1, max_sessions + 1):
         for subset in combinations(user_sessions_for_day, size):
@@ -556,7 +561,7 @@ def generate_day_combos(user_sessions_for_day, travel_matrix, user_prefs, users_
                     for session in subset
                 )
                 combos.append((subset, score))
-    
+
     # Sort by score descending
     return sorted(combos, key=lambda x: x[1], reverse=True)
 
@@ -564,7 +569,7 @@ def calculate_session_score(session, user_prefs, users_with_interest):
     sport_multiplier = get_sport_multiplier(session.sport, user_prefs.sport_rankings)
     session_adjustment = get_session_adjustment(session, user_prefs.session_interests)
     soft_buddy_bonus = get_soft_buddy_bonus(session, user_prefs.soft_buddies, users_with_interest)
-    
+
     return sport_multiplier * session_adjustment * soft_buddy_bonus
 
 def get_sport_multiplier(sport, sport_rankings):
@@ -593,22 +598,22 @@ def get_soft_buddy_bonus(session, soft_buddies, users_with_interest):
 def is_travel_feasible(sessions, travel_matrix):
     # Sort by start time
     ordered = sorted(sessions, key=lambda s: s.start_time)
-    
+
     for i in range(len(ordered) - 1):
         current = ordered[i]
         next_session = ordered[i + 1]
-        
+
         # Check overlap
         if current.end_time > next_session.start_time:
             return False
-        
+
         # Check travel gap
         gap_available = next_session.start_time - current.end_time
         gap_required = get_required_gap(current.zone, next_session.zone, travel_matrix)
-        
+
         if gap_available < gap_required:
             return False
-    
+
     return True
 
 def get_required_gap(zone1, zone2, travel_matrix):
@@ -618,13 +623,13 @@ def get_required_gap(zone1, zone2, travel_matrix):
     """
     if zone1 == zone2:
         return 60  # 1.0 hour for same zone
-    
+
     # Special case for Trestles Beach
     if 'Trestles' in zone1 or 'Trestles' in zone2:
         return 240  # 4.0 hours
-    
+
     driving_time = travel_matrix.driving[zone1][zone2]
-    
+
     if driving_time < 15:
         return 90   # 1.5 hours - very close
     elif driving_time < 30:
@@ -640,10 +645,12 @@ def get_required_gap(zone1, zone2, travel_matrix):
 ### Step 6: Score Combos and Assign Primary + Backups Per Day
 
 For each user, for each day, designate:
+
 - **Primary combo**: Highest-scoring valid combination
 - **Backup combos**: Next 2 best alternatives
 
 Backups are pre-computed for Phase 2 execution. When the buyer is purchasing tickets during their limited timeslot, they need immediate fallback options if the primary combo fails:
+
 - A session in the primary combo is sold out
 - A session price exceeds the user's willingness
 - A buddy constraint cannot be satisfied
@@ -722,6 +729,7 @@ Viable Configurations:
 Before entering conflict resolution, each member reviews their generated schedule and confirms whether they're satisfied. Member status transitions from `schedule_review_pending` to `schedule_review_confirmed`.
 
 **What members review:**
+
 - Their primary + backup combos for each day (all 19 Olympic days)
 - Which sessions they got from their preferred sports
 - Buddy overlap (are they attending sessions with their desired companions?)
@@ -729,6 +737,7 @@ Before entering conflict resolution, each member reviews their generated schedul
 **Note:** Budget impact is NOT shown during schedule review because window rankings haven't been computed yet (they require the `completed` phase). Budget impact is available after window selection in the `completed` phase. Budget impact is based on willingness upper bounds (not actual ticket prices, which are unknown), so it represents a worst-case estimate. This is intentional — the goal is to show users their optimal schedule first, then let them assess budget feasibility with the understanding that actual costs may be lower.
 
 **Satisfaction Prompt:**
+
 ```
 "Review your generated schedule. Are you satisfied with the sessions assigned to you?"
 
@@ -737,6 +746,7 @@ Before entering conflict resolution, each member reviews their generated schedul
 ```
 
 **If NO:**
+
 - Member re-enters preferences (status → `joined`, `preference_step` → `buddies`)
 - All other members' statuses → `preferences_set`
 - Group phase → `preferences`
@@ -744,10 +754,12 @@ Before entering conflict resolution, each member reviews their generated schedul
 - Frontend warning: "This will reset generated schedules for all members. Discuss with your group before proceeding."
 
 **If YES:**
+
 - Member status → `schedule_review_confirmed`
 - When ALL members reach `schedule_review_confirmed` → all members bulk move to `conflict_resolution_pending`, group → `conflict_resolution`
 
 **Revoking satisfaction:**
+
 - A member can revoke their satisfaction (→ `schedule_review_pending`) as long as the group is still in the `schedule_review` phase (i.e., not all members have confirmed yet)
 
 **Why this step exists:**
@@ -759,7 +771,7 @@ If a member is fundamentally unhappy with their schedule (e.g., barely got any s
 
 Conflicts are **detected and stored during schedule generation** (computed alongside Steps 4-7 when the owner triggers generation), but are **displayed to members during the conflict resolution phase** after all members have confirmed satisfaction in schedule review. This separation allows members to first assess their overall schedule before diving into specific buddy constraint issues.
 
-*Note: Although conflict detection is documented here as Step 9, the actual computation happens during the generation process (when the owner triggers `POST /generate`). The conflict rows are written to the database at that time but not surfaced to users until the group enters the `conflict_resolution` phase.*
+_Note: Although conflict detection is documented here as Step 9, the actual computation happens during the generation process (when the owner triggers `POST /generate`). The conflict rows are written to the database at that time but not surfaced to users until the group enters the `conflict_resolution` phase._
 
 A conflict exists when a member's buddy constraint fails at their willingness price tier.
 
@@ -772,12 +784,12 @@ A user is willing to pay at a price tier, but their `min_buddies` constraint isn
 ```
 Session: Diving
   Price $101-150: {Bob, Carol}
-  
+
   ⚠️ CONFLICT: Carol's min_buddies not satisfied
   - Carol is willing at this price (<$150)
   - Carol has min_buddies=2
   - Only Bob is also attending (1 buddy, needs 2)
-  
+
   Possible resolutions:
   • Carol lowers willingness to ≤$100
   • Carol overrides min_buddies for this session
@@ -793,13 +805,13 @@ A user's hard buddy is excluded at a price tier, which means the user also canno
 ```
 Session: Swimming
   Price $151-200: {Bob, Carol}
-  
+
   ⚠️ CONFLICT: Eve cannot attend (hard_buddy excluded)
   - Eve is willing at this price (<$200)
   - Eve has hard_buddy=Alice
   - Alice is NOT willing at this price (Alice's willingness is <$150)
   - Eve cannot attend without Alice
-  
+
   Possible resolutions:
   • Eve lowers willingness to ≤$150
   • Eve overrides hard_buddy for this session
@@ -816,16 +828,16 @@ A user is excluded from a session entirely because their buddy constraint fails 
 Session: Track
   Users interested: Alice (<$100), Bob (<$200), Carol (<$200), Eve (<$150)
   Eve has hard_buddy=Alice
-  
+
   Price ≤$100:    {Alice, Bob, Carol, Eve} - Eve's constraint satisfied ✓
   Price $101-150: {Bob, Carol, Eve} - Alice excluded, Eve's constraint FAILS
   Price $151-200: {Bob, Carol} - Alice excluded, Eve excluded (can't attend without Alice)
-  
+
   ⚠️ CONFLICT: Eve completely excluded at $101+
   - Eve is willing up to <$150
   - But Alice is only willing up to <$100
   - If price exceeds $100, Alice is out → Eve is out
-  
+
   Possible resolutions:
   • Eve lowers willingness to ≤$100
   • Eve overrides hard_buddy for this session
@@ -842,6 +854,7 @@ After schedules are generated, users review their individual calendars and any f
 **What is a Conflict?**
 
 A conflict exists when:
+
 - User's buddy constraint fails at THEIR willingness tier
 - Example: Eve has hard_buddy=Alice, willingness <$200. Alice's willingness is <$100. At $101-200, Alice is not willing, so Eve's constraint fails → CONFLICT for Eve
 
@@ -850,7 +863,7 @@ A conflict exists when:
 Users must resolve each conflict using one of these approaches:
 
 1. **Adjust willingness** — Move to a price tier where buddy constraint IS satisfied
-2. **Remove session** — Exclude it from your current schedule (your interest and willingness data is preserved and the session will be reconsidered if the algorithm is re-run)  
+2. **Remove session** — Exclude it from your current schedule (your interest and willingness data is preserved and the session will be reconsidered if the algorithm is re-run)
 3. **Override buddy constraint for this session** — Keep the session, ignore your buddy constraint for this session only
 
 There is no implicit "accept" option. Users must explicitly resolve each conflict.
@@ -858,6 +871,7 @@ There is no implicit "accept" option. Users must explicitly resolve each conflic
 **Session-Level Override:**
 
 When a user overrides their buddy constraint for a specific session:
+
 - The override applies to THAT SESSION ONLY
 - Other sessions still respect the original constraint
 - Overrides are cleared if the algorithm is re-run
@@ -883,12 +897,14 @@ Use the preference controls to make changes after discussing with your group.
 **Confirmation Warning:**
 
 Before applying any change, display:
+
 - "This change affects [list of users]. Have you discussed this with them?"
 - User must confirm or cancel
 
 **Re-check After Each Change:**
 
 After any resolution:
+
 1. System recalculates viable configurations for affected sessions
 2. System re-checks ALL conflicts across ALL users
 3. New conflicts may be flagged (e.g., if removing a session breaks someone else's min_buddies)
@@ -897,10 +913,12 @@ After any resolution:
 **Confirmation Phase:**
 
 When a member has reviewed and resolved all their conflicts, they click **"Confirm Schedule"**:
+
 - Prompt: "All your conflicts are resolved. Confirm your schedule?"
 - Member status → `conflict_resolution_confirmed`
 
 **Revoking confirmation:**
+
 - A member can revoke their confirmation (→ `conflict_resolution_pending`) as long as the group is still in the `conflict_resolution` phase (i.e., not all members have confirmed yet)
 - If a cascade creates a new conflict for a confirmed member, their confirmation is automatically revoked
 
@@ -913,6 +931,7 @@ When a member has reviewed and resolved all their conflicts, they click **"Confi
 **Re-entering Preferences:**
 
 If a member is unsatisfied with their schedule during conflict resolution and wants to change their preferences (interest levels, sport rankings, buddy constraints), they can re-enter the preference wizard:
+
 - Member status → `joined`
 - All other members' statuses → `preferences_set`
 - Group phase → `preferences`
@@ -921,8 +940,8 @@ If a member is unsatisfied with their schedule during conflict resolution and wa
 - All overrides and excluded flags are cleared (previously excluded sessions are reconsidered on re-generation)
 - All members must re-review and re-confirm after regeneration
 
-
 **Example Flow:**
+
 ```
 1. Schedules generated, conflicts flagged
    - Eve: 2 conflicts (Gymnastics, Swimming)
@@ -966,26 +985,26 @@ When a user removes a session from their schedule during conflict resolution, th
 ```
 Example:
   Alice removes Swimming from her July 18 schedule
-  
+
   Before removal:
     Primary:  [Gymnastics 10am, Swimming 3pm, Track 7pm]
     Backup 1: [Gymnastics 10am, Swimming 3pm]
     Backup 2: [Gymnastics 10am, Track 7pm]
-    
+
     Swimming viable configs:
       ≤$150: {Alice, Bob, Carol, Eve}
-  
+
   After removal:
     Alice's session_preference for Swimming: excluded = true
       (interest and willingness preserved)
-    
+
     Primary:  [Gymnastics 10am, Track 7pm]
-    Backup 1: [Gymnastics 10am] 
+    Backup 1: [Gymnastics 10am]
     Backup 2: (removed — was identical to new Primary)
-    
+
     Swimming viable configs recalculated:
       ≤$150: {Bob, Carol, Eve}  (Alice excluded)
-  
+
   System re-checks conflicts:
     → Eve has hard_buddy=Alice for Swimming
     → Alice excluded from all tiers → Eve's constraint fails at ALL tiers
@@ -1004,12 +1023,13 @@ Date configuration (N-days or specific date range) is set during **group creatio
 
 **Input Options:**
 
-| Mode | Description | Example |
-|------|-------------|---------|
-| `consecutive` | Number of consecutive days | 5 days |
-| `specific` | Exact date range | July 18-22, 2028 |
+| Mode          | Description                | Example          |
+| ------------- | -------------------------- | ---------------- |
+| `consecutive` | Number of consecutive days | 5 days           |
+| `specific`    | Exact date range           | July 18-22, 2028 |
 
 **Notes:**
+
 - Changing date config does NOT require re-running the algorithm
 - If `specific` mode is used, there is only one possible window (the specified dates), so window ranking produces a single result
 - Date config can be adjusted in the `completed` phase to explore different windows
@@ -1034,18 +1054,18 @@ def score_window(window_days, user_combos, users):
     # Base score: sum of all users' combo scores
     base_score = 0
     user_scores = {}
-    
+
     for user in users:
         user_total = 0
         for day in window_days:
             user_total += user_combos[user][day].primary.score
         user_scores[user] = user_total
         base_score += user_total
-    
+
     # Fairness penalty: penalize high standard deviation in user scores
     stdev = calculate_standard_deviation(user_scores.values())
     fairness_penalty = stdev * len(users) * FAIRNESS_WEIGHT
-    
+
     return base_score - fairness_penalty
 ```
 
@@ -1059,10 +1079,10 @@ At this weight, the algorithm prefers equal distribution when one user would oth
 
 1. July 18-22 (Score: 48.5) ← Selected
    Alice: 12.3 pts | Bob: 11.8 pts | Carol: 11.2 pts | Eve: 13.2 pts
-   
+
 2. July 19-23 (Score: 45.2)
    Alice: 11.5 pts | Bob: 10.9 pts | Carol: 10.8 pts | Eve: 12.0 pts
-   
+
 3. July 25-29 (Score: 41.8)
    Alice: 10.2 pts | Bob: 10.5 pts | Carol: 10.1 pts | Eve: 11.0 pts
 ```
@@ -1088,6 +1108,7 @@ Combine all the above into a comprehensive schedule.
 Each user sees their own schedule in a calendar view.
 
 **Display:**
+
 - Sessions shown as blocks at their corresponding timeframes
 - Each session block displays:
   - Sport name
@@ -1098,11 +1119,13 @@ Each user sees their own schedule in a calendar view.
 - Sessions appear ONCE (no duplication), with combo tags showing membership
 
 **Filtering:**
+
 - Filter dropdown: All (default), Primary, Backup 1, Backup 2
 - Filtering shows only sessions in the selected combo
 
 **Click to Expand:**
 Clicking any session opens a modal with:
+
 - Full session details (sport, event, venue, zone, date, time)
 - Combo tags (which combos include this session)
 - Your willingness for this session
@@ -1111,6 +1134,7 @@ Clicking any session opens a modal with:
 - Other users attending this session
 
 **Example:**
+
 ```
 JULY 18                                    Filter: [All ▼]
 
@@ -1135,6 +1159,7 @@ JULY 18                                    Filter: [All ▼]
 Shows all sessions across all members. Available from the `schedule_review` phase onward.
 
 **Display:**
+
 - All sessions from all users (no combo tags — too complex with multiple users)
 - Each session block displays:
   - Sport name
@@ -1144,24 +1169,28 @@ Shows all sessions across all members. Available from the `schedule_review` phas
   - Conflict indicator (⚠️) if applicable
 
 **Filtering:**
+
 - Filter by user: All (default), or select specific user(s)
 - Filtering shows only sessions the selected user(s) are attending (primary OR backup)
 
 **Click to Expand:**
 Clicking any session opens a modal with:
+
 - Full session details
 - All users attending (with their willingness tiers)
 - Price tier configurations (read-only)
 - No conflict resolution (that happens in individual view)
 
 **Window Information:**
+
 - Selected window displayed (e.g., "July 18-22")
 - Window rankings shown (users can switch windows without re-running algorithm)
 - Confirmation status for each user
 
-**Asterisk Notation:** If a user has the session in BOTH their primary and a backup combo, their name appears with an asterisk (*) in the Primary list only. This avoids duplication while indicating they have the session in multiple combos.
+**Asterisk Notation:** If a user has the session in BOTH their primary and a backup combo, their name appears with an asterisk (\*) in the Primary list only. This avoids duplication while indicating they have the session in multiple combos.
 
 **Example:**
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ GROUP SCHEDULE                                              │
@@ -1217,11 +1246,11 @@ JULY 18:
     09:00-12:00  Gymnastics Women's Final    DTLA Zone         Willing: <$500
     15:00-17:30  Swimming 100m Final         Long Beach Zone   Willing: <$200
     19:30-22:00  Track 200m Semi             Exposition Park   Willing: <$150
-  
+
   Backup 1 (Score: 4.1):
     09:00-12:00  Gymnastics Women's Final    DTLA Zone         Willing: <$500
     15:00-17:30  Swimming 100m Final         Long Beach Zone   Willing: <$200
-  
+
   Backup 2 (Score: 3.8):
     09:00-12:00  Gymnastics Women's Final    DTLA Zone         Willing: <$500
     19:30-22:00  Track 200m Semi             Exposition Park   Willing: <$150
@@ -1236,6 +1265,7 @@ JULY 19:
 Shows how the member's schedule **for the selected N-day window** compares to their stated budget. Budget impact is available after window rankings are computed and a window is selected (during the `completed` phase).
 
 **Components:**
+
 - **Your Budget:** The total budget the user entered during preference input
 - **Total if all sessions at willingness:** Sum of willingness prices for all sessions in primary combos **within the selected window** (worst-case scenario — actual prices may be lower)
 - **Status:** Under budget ✓, Over budget ⚠️, or Significantly over ⛔
@@ -1254,7 +1284,7 @@ Status: ⚠️ OVER BUDGET by $225
 If prices hit your willingness, you may need to skip (lowest score first):
   1. Water Polo Prelim (July 20) - <$100 willingness, Score: 0.8
   2. Diving Semi (July 22) - <$150 willingness, Score: 1.2
-  
+
 Remaining sessions would total: $475 ✓
 
 Note: Actual prices may be lower than your willingness. This is a worst-case estimate.
@@ -1265,6 +1295,7 @@ Note: Actual prices may be lower than your willingness. This is a worst-case est
 Shows how well the user's schedule aligns with their buddy preferences. Helps users see at a glance whether they'll be attending with the people they want to attend with.
 
 **Components:**
+
 - **Hard Buddy:** Confirmation that hard buddy is attending ALL the same sessions in primary combos, or warning if any sessions don't have hard buddy
 - **Soft Buddies:** For each soft buddy, shows the number and percentage of overlapping sessions — higher overlap means more time together
 
@@ -1280,6 +1311,7 @@ Soft Buddies:
 ```
 
 **Possible hard buddy statuses:**
+
 - ✓ "Attending same sessions in primary combos" — all good
 - ⚠️ "Not attending [Session Name] — see conflicts" — hard buddy constraint violated, needs resolution
 
@@ -1334,14 +1366,15 @@ July 19
 
 ### Computational Bounds
 
-| Step | Complexity | Notes |
-|------|------------|-------|
-| Filter sessions | O(S × U) | S=sessions, U=users |
+| Step            | Complexity             | Notes                |
+| --------------- | ---------------------- | -------------------- |
+| Filter sessions | O(S × U)               | S=sessions, U=users  |
 | Generate combos | O(S³) per user per day | Max 3-session combos |
-| Viable configs | O(U × P) per session | P=price tiers |
-| Rank windows | O(W × U × D) | W=windows, D=days |
+| Viable configs  | O(U × P) per session   | P=price tiers        |
+| Rank windows    | O(W × U × D)           | W=windows, D=days    |
 
 For typical inputs (4-6 users, 10 sports each, 19 days):
+
 - ~1 million operations total
 - Completes in <1 second on modern hardware
 
@@ -1358,6 +1391,7 @@ For typical inputs (4-6 users, 10 sports each, 19 days):
 ### No Valid Combo for a Day
 
 If a user has no travel-feasible combinations for a day:
+
 - That day is marked as a "rest day" with score = 0
 - The user's calendar shows "Rest Day" for that date
 - This is normal and expected for some days (user may not have sessions of interest)
@@ -1365,6 +1399,7 @@ If a user has no travel-feasible combinations for a day:
 ### No Valid Combos Across ALL Days
 
 If a user has zero valid combos for the entire Olympics period:
+
 - Flag as error: "No valid schedule could be generated. Please review your preferences."
 - Likely causes: too restrictive buddy constraints, no overlapping interests with hard buddy, all sessions fail travel constraints
 - User must adjust preferences and re-run
@@ -1372,12 +1407,14 @@ If a user has zero valid combos for the entire Olympics period:
 ### Buddy Constraint Impossible
 
 If any of a user's hard buddies have no overlapping sessions:
+
 - Flag as warning during input validation
 - Suggest relaxing the constraint or adjusting session selection
 
 ### Budget Significantly Over
 
 If a user's total willingness across all primary combos greatly exceeds their budget:
+
 - Show warning with specific sessions at risk
 - List sessions in order they'd likely skip (lowest score first)
 - Do NOT filter sessions out - user may decide to increase budget or prices may be lower
@@ -1385,12 +1422,14 @@ If a user's total willingness across all primary combos greatly exceeds their bu
 ### Budget Comfortably Under
 
 If a user's total willingness < budget:
+
 - No issue, they can afford everything they want
 - Display as "Budget: Comfortable ✓"
 
 ### Budget Below Single Session
 
 If a user's budget < their single highest-priority session willingness:
+
 - Flag as warning: "Your budget ($200) is below your willingness for Gymnastics Finals (<$500)"
 - Suggest: Increase budget, lower willingness, or accept you may not attend that session
 
@@ -1407,6 +1446,7 @@ If a user's budget < their single highest-priority session willingness:
 ### Hard Buddy Has No Overlapping Interests
 
 If User A has hard buddies including User B, but User B has no interest in any of User A's selected sessions:
+
 - All of User A's sessions are excluded during hard buddy filtering (they can't attend any without their buddy)
 - Flag as warning during validation: "You and [Bob] have no overlapping session interests. Either adjust your selections or remove the hard buddy constraint."
 - Suggest: Review sessions together, or change hard buddy to soft buddy if attendance together is preferred but not required

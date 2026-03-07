@@ -1,6 +1,6 @@
 {
-  "id": "d6cdf0f9-4669-4be5-95fc-dd591620b9db",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "fc14494f-7898-4d12-bbd3-bd59d0d78cd4",
+  "prevId": "d6cdf0f9-4669-4be5-95fc-dd591620b9db",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -707,6 +707,14 @@
           "primaryKey": false,
           "notNull": true
         },
+        "avatar_color": {
+          "name": "avatar_color",
+          "type": "avatar_color_enum",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'blue'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -921,6 +929,11 @@
     }
   },
   "enums": {
+    "public.avatar_color_enum": {
+      "name": "avatar_color_enum",
+      "schema": "public",
+      "values": ["blue", "yellow", "pink", "green"]
+    },
     "public.buddy_type_enum": {
       "name": "buddy_type_enum",
       "schema": "public",

@@ -66,28 +66,28 @@ CREATE TYPE preference_step_enum AS ENUM ('buddies', 'sport_rankings', 'sessions
 
 The 765 LA-area Olympic sessions from la2028_sessions.csv. Pre-loaded, read-only.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `session_code` | `text` | **PK** | Unique session identifier (e.g., "AGY01", "SWM15") |
-| `sport` | `text` | NOT NULL | Sport name |
-| `venue` | `text` | NOT NULL | Venue name |
-| `zone` | `zone_enum` | NOT NULL | Venue zone |
-| `session_date` | `date` | NOT NULL | Date of session |
-| `session_type` | `session_type_enum` | NOT NULL | Type of event (Final, Semifinal, Quarterfinal, Preliminary, Bronze) |
-| `session_description` | `text` | | Description of the session |
-| `start_time` | `time` | NOT NULL | Start time |
-| `end_time` | `time` | NOT NULL | End time |
+| Column                | Type                | Constraints | Description                                                         |
+| --------------------- | ------------------- | ----------- | ------------------------------------------------------------------- |
+| `session_code`        | `text`              | **PK**      | Unique session identifier (e.g., "AGY01", "SWM15")                  |
+| `sport`               | `text`              | NOT NULL    | Sport name                                                          |
+| `venue`               | `text`              | NOT NULL    | Venue name                                                          |
+| `zone`                | `zone_enum`         | NOT NULL    | Venue zone                                                          |
+| `session_date`        | `date`              | NOT NULL    | Date of session                                                     |
+| `session_type`        | `session_type_enum` | NOT NULL    | Type of event (Final, Semifinal, Quarterfinal, Preliminary, Bronze) |
+| `session_description` | `text`              |             | Description of the session                                          |
+| `start_time`          | `time`              | NOT NULL    | Start time                                                          |
+| `end_time`            | `time`              | NOT NULL    | End time                                                            |
 
 ### `travel_time`
 
 Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap computation happens in application code using the proximity-based gap rules from the algorithm spec.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `origin_zone` | `zone_enum` | **PK** | Origin zone |
-| `destination_zone` | `zone_enum` | **PK** | Destination zone |
-| `driving_minutes` | `integer` | NOT NULL | Driving time in minutes |
-| `transit_minutes` | `integer` | | Transit time in minutes (NULL if no transit route available) |
+| Column             | Type        | Constraints | Description                                                  |
+| ------------------ | ----------- | ----------- | ------------------------------------------------------------ |
+| `origin_zone`      | `zone_enum` | **PK**      | Origin zone                                                  |
+| `destination_zone` | `zone_enum` | **PK**      | Destination zone                                             |
+| `driving_minutes`  | `integer`   | NOT NULL    | Driving time in minutes                                      |
+| `transit_minutes`  | `integer`   |             | Transit time in minutes (NULL if no transit route available) |
 
 **Primary Key:** Composite (`origin_zone`, `destination_zone`)
 
@@ -99,31 +99,32 @@ Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap compu
 
 ### `user`
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | `uuid` | **PK**, DEFAULT gen_random_uuid() | Unique user ID |
-| `auth_id` | `text` | UNIQUE, NOT NULL | Reference to external auth provider (e.g., Supabase Auth) |
-| `email` | `text` | UNIQUE, NOT NULL | User's email |
-| `username` | `text` | UNIQUE, NOT NULL | Display username (chosen at signup) |
-| `first_name` | `text` | NOT NULL | First name |
-| `last_name` | `text` | NOT NULL | Last name |
-| `created_at` | `timestamp` | DEFAULT now() | Account creation time |
+| Column       | Type        | Constraints                       | Description                                               |
+| ------------ | ----------- | --------------------------------- | --------------------------------------------------------- |
+| `id`         | `uuid`      | **PK**, DEFAULT gen_random_uuid() | Unique user ID                                            |
+| `auth_id`    | `text`      | UNIQUE, NOT NULL                  | Reference to external auth provider (e.g., Supabase Auth) |
+| `email`      | `text`      | UNIQUE, NOT NULL                  | User's email                                              |
+| `username`   | `text`      | UNIQUE, NOT NULL                  | Display username (chosen at signup)                       |
+| `first_name` | `text`      | NOT NULL                          | First name                                                |
+| `last_name`  | `text`      | NOT NULL                          | Last name                                                 |
+| `created_at` | `timestamp` | DEFAULT now()                     | Account creation time                                     |
 
 ### `group`
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | `uuid` | **PK**, DEFAULT gen_random_uuid() | Unique group ID |
-| `name` | `text` | NOT NULL | Group display name |
-| `phase` | `group_phase_enum` | NOT NULL, DEFAULT 'preferences' | Current phase of the group workflow |
-| `invite_code` | `text` | UNIQUE, NOT NULL | Human-readable invite code (e.g., "OLYMP-X7K2") |
-| `date_mode` | `date_mode_enum` | | 'consecutive' or 'specific' (NULL if deferred during group creation) |
-| `n_days` | `integer` | | Number of consecutive days (if date_mode = 'consecutive') |
-| `start_date` | `date` | | Start date (if date_mode = 'specific') |
-| `end_date` | `date` | | End date (if date_mode = 'specific') |
-| `created_at` | `timestamp` | DEFAULT now() | Group creation time |
+| Column        | Type               | Constraints                       | Description                                                          |
+| ------------- | ------------------ | --------------------------------- | -------------------------------------------------------------------- |
+| `id`          | `uuid`             | **PK**, DEFAULT gen_random_uuid() | Unique group ID                                                      |
+| `name`        | `text`             | NOT NULL                          | Group display name                                                   |
+| `phase`       | `group_phase_enum` | NOT NULL, DEFAULT 'preferences'   | Current phase of the group workflow                                  |
+| `invite_code` | `text`             | UNIQUE, NOT NULL                  | Human-readable invite code (e.g., "OLYMP-X7K2")                      |
+| `date_mode`   | `date_mode_enum`   |                                   | 'consecutive' or 'specific' (NULL if deferred during group creation) |
+| `n_days`      | `integer`          |                                   | Number of consecutive days (if date_mode = 'consecutive')            |
+| `start_date`  | `date`             |                                   | Start date (if date_mode = 'specific')                               |
+| `end_date`    | `date`             |                                   | End date (if date_mode = 'specific')                                 |
+| `created_at`  | `timestamp`        | DEFAULT now()                     | Group creation time                                                  |
 
 **Notes:**
+
 - `date_mode`, `n_days`, `start_date`, `end_date` can be set during group creation or deferred and set later. Date config must be set before the owner triggers schedule generation. The owner is encouraged to ensure group agreement on dates before generating.
 - Date config is editable at any point by the owner. Changing date config does NOT require re-running the algorithm — it only affects window ranking computation.
 - Window rankings are computed after all members confirm (during `'completed'` phase). The top-scoring window is auto-selected when rankings are generated.
@@ -133,18 +134,18 @@ Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap compu
 
 The join table between `user` and `group`. Each row represents one user's membership in one group. Holds per-group preferences like budget and sport rankings.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | `uuid` | **PK**, DEFAULT gen_random_uuid() | Unique member ID |
-| `user_id` | `uuid` | FK → `user.id`, NOT NULL | The user |
-| `group_id` | `uuid` | FK → `group.id`, NOT NULL | The group |
-| `role` | `member_role_enum` | NOT NULL, DEFAULT 'member' | Owner or member. Group creator is owner. |
-| `budget` | `decimal` | NOT NULL | Total budget for this group (in dollars). Set during the buddies preference step. |
-| `min_buddies` | `integer` | NOT NULL, DEFAULT 0 | Minimum other members required at each session |
-| `sport_rankings` | `jsonb` | | Ordered list of sports, e.g., `["Gymnastics", "Swimming", "Track"]` |
-| `status` | `member_status_enum` | NOT NULL, DEFAULT 'joined' | Member's current status in the workflow |
-| `preference_step` | `preference_step_enum` | | Which wizard step the user last completed. NULL if not started. |
-| `created_at` | `timestamp` | DEFAULT now() | When user joined the group |
+| Column            | Type                   | Constraints                       | Description                                                                       |
+| ----------------- | ---------------------- | --------------------------------- | --------------------------------------------------------------------------------- |
+| `id`              | `uuid`                 | **PK**, DEFAULT gen_random_uuid() | Unique member ID                                                                  |
+| `user_id`         | `uuid`                 | FK → `user.id`, NOT NULL          | The user                                                                          |
+| `group_id`        | `uuid`                 | FK → `group.id`, NOT NULL         | The group                                                                         |
+| `role`            | `member_role_enum`     | NOT NULL, DEFAULT 'member'        | Owner or member. Group creator is owner.                                          |
+| `budget`          | `decimal`              | NOT NULL                          | Total budget for this group (in dollars). Set during the buddies preference step. |
+| `min_buddies`     | `integer`              | NOT NULL, DEFAULT 0               | Minimum other members required at each session                                    |
+| `sport_rankings`  | `jsonb`                |                                   | Ordered list of sports, e.g., `["Gymnastics", "Swimming", "Track"]`               |
+| `status`          | `member_status_enum`   | NOT NULL, DEFAULT 'joined'        | Member's current status in the workflow                                           |
+| `preference_step` | `preference_step_enum` |                                   | Which wizard step the user last completed. NULL if not started.                   |
+| `created_at`      | `timestamp`            | DEFAULT now()                     | When user joined the group                                                        |
 
 **Unique Constraint:** (`user_id`, `group_id`) — a user can only be a member of a group once.
 
@@ -152,11 +153,11 @@ The join table between `user` and `group`. Each row represents one user's member
 
 Stores hard and soft buddy relationships between members within a group.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `member_id` | `uuid` | **PK**, FK → `member.id` | The member who has the constraint |
-| `buddy_member_id` | `uuid` | **PK**, FK → `member.id` | The buddy they want to attend with |
-| `type` | `buddy_type_enum` | NOT NULL | 'hard' (must attend together) or 'soft' (prefer to attend together) |
+| Column            | Type              | Constraints              | Description                                                         |
+| ----------------- | ----------------- | ------------------------ | ------------------------------------------------------------------- |
+| `member_id`       | `uuid`            | **PK**, FK → `member.id` | The member who has the constraint                                   |
+| `buddy_member_id` | `uuid`            | **PK**, FK → `member.id` | The buddy they want to attend with                                  |
+| `type`            | `buddy_type_enum` | NOT NULL                 | 'hard' (must attend together) or 'soft' (prefer to attend together) |
 
 **Primary Key:** Composite (`member_id`, `buddy_member_id`) — a member can only list another member as a buddy once (either hard or soft, not both).
 
@@ -166,15 +167,15 @@ Stores hard and soft buddy relationships between members within a group.
 
 Stores a member's interest and willingness for a specific session. Only rows where the user explicitly opted in (interest ≠ None) are stored.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `session_id` | `text` | **PK**, FK → `session.session_code` | The session |
-| `member_id` | `uuid` | **PK**, FK → `member.id` | The member |
-| `interest` | `interest_enum` | NOT NULL | Interest level (low, medium, high) |
-| `willingness_max` | `integer` | | Max price willing to pay. NULL = no limit ($1000+) |
-| `override_hard_buddy` | `boolean` | NOT NULL, DEFAULT false | If true, ignore hard_buddy constraint for this session |
-| `override_min_buddies` | `boolean` | NOT NULL, DEFAULT false | If true, ignore min_buddies constraint for this session |
-| `excluded` | `boolean` | NOT NULL, DEFAULT false | If true, session is excluded from combo generation (soft removal during conflict resolution) |
+| Column                 | Type            | Constraints                         | Description                                                                                  |
+| ---------------------- | --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| `session_id`           | `text`          | **PK**, FK → `session.session_code` | The session                                                                                  |
+| `member_id`            | `uuid`          | **PK**, FK → `member.id`            | The member                                                                                   |
+| `interest`             | `interest_enum` | NOT NULL                            | Interest level (low, medium, high)                                                           |
+| `willingness_max`      | `integer`       |                                     | Max price willing to pay. NULL = no limit ($1000+)                                           |
+| `override_hard_buddy`  | `boolean`       | NOT NULL, DEFAULT false             | If true, ignore hard_buddy constraint for this session                                       |
+| `override_min_buddies` | `boolean`       | NOT NULL, DEFAULT false             | If true, ignore min_buddies constraint for this session                                      |
+| `excluded`             | `boolean`       | NOT NULL, DEFAULT false             | If true, session is excluded from combo generation (soft removal during conflict resolution) |
 
 **Primary Key:** Composite (`session_id`, `member_id`)
 
@@ -196,14 +197,14 @@ All algorithm output tables are regenerated when the algorithm re-runs. The patt
 
 A day combo is a set of sessions a member could attend on a specific day. Each member gets a primary combo and up to 2 backup combos per day.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | `uuid` | **PK**, DEFAULT gen_random_uuid() | Unique combo ID |
-| `group_id` | `uuid` | FK → `group.id`, NOT NULL | The group (denormalized for efficient deletion during re-runs) |
-| `member_id` | `uuid` | FK → `member.id`, NOT NULL | The member this combo belongs to |
-| `day` | `date` | NOT NULL | The date this combo is for |
-| `rank` | `combo_rank_enum` | NOT NULL | Primary, backup1, or backup2 |
-| `score` | `decimal` | NOT NULL | Combo score (sum of session scores) |
+| Column      | Type              | Constraints                       | Description                                                    |
+| ----------- | ----------------- | --------------------------------- | -------------------------------------------------------------- |
+| `id`        | `uuid`            | **PK**, DEFAULT gen_random_uuid() | Unique combo ID                                                |
+| `group_id`  | `uuid`            | FK → `group.id`, NOT NULL         | The group (denormalized for efficient deletion during re-runs) |
+| `member_id` | `uuid`            | FK → `member.id`, NOT NULL        | The member this combo belongs to                               |
+| `day`       | `date`            | NOT NULL                          | The date this combo is for                                     |
+| `rank`      | `combo_rank_enum` | NOT NULL                          | Primary, backup1, or backup2                                   |
+| `score`     | `decimal`         | NOT NULL                          | Combo score (sum of session scores)                            |
 
 **Unique Constraint:** (`member_id`, `day`, `rank`) — a member can only have one primary combo per day, one backup1 per day, etc.
 
@@ -211,9 +212,9 @@ A day combo is a set of sessions a member could attend on a specific day. Each m
 
 Join table linking combos to their sessions.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `combo_id` | `uuid` | **PK**, FK → `combo.id` | The combo |
+| Column       | Type   | Constraints                         | Description            |
+| ------------ | ------ | ----------------------------------- | ---------------------- |
+| `combo_id`   | `uuid` | **PK**, FK → `combo.id`             | The combo              |
 | `session_id` | `text` | **PK**, FK → `session.session_code` | A session in the combo |
 
 **Primary Key:** Composite (`combo_id`, `session_id`)
@@ -224,26 +225,27 @@ Join table linking combos to their sessions.
 
 A viable configuration represents who can attend a session together at a given price tier, with all buddy constraints satisfied.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | `uuid` | **PK**, DEFAULT gen_random_uuid() | Unique config ID |
-| `group_id` | `uuid` | FK → `group.id`, NOT NULL | The group (denormalized for efficient deletion during re-runs) |
-| `session_id` | `text` | FK → `session.session_code`, NOT NULL | The session |
-| `price_min` | `integer` | NOT NULL | Lower bound of price tier (inclusive) |
-| `price_max` | `integer` | | Upper bound of price tier (inclusive). NULL = no upper limit |
+| Column       | Type      | Constraints                           | Description                                                    |
+| ------------ | --------- | ------------------------------------- | -------------------------------------------------------------- |
+| `id`         | `uuid`    | **PK**, DEFAULT gen_random_uuid()     | Unique config ID                                               |
+| `group_id`   | `uuid`    | FK → `group.id`, NOT NULL             | The group (denormalized for efficient deletion during re-runs) |
+| `session_id` | `text`    | FK → `session.session_code`, NOT NULL | The session                                                    |
+| `price_min`  | `integer` | NOT NULL                              | Lower bound of price tier (inclusive)                          |
+| `price_max`  | `integer` |                                       | Upper bound of price tier (inclusive). NULL = no upper limit   |
 
 ### `viable_config_member`
 
 Join table linking viable configurations to their members.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `viable_config_id` | `uuid` | **PK**, FK → `viable_config.id` | The viable config |
-| `member_id` | `uuid` | **PK**, FK → `member.id` | A member in this config |
+| Column             | Type   | Constraints                     | Description             |
+| ------------------ | ------ | ------------------------------- | ----------------------- |
+| `viable_config_id` | `uuid` | **PK**, FK → `viable_config.id` | The viable config       |
+| `member_id`        | `uuid` | **PK**, FK → `member.id`        | A member in this config |
 
 **Primary Key:** Composite (`viable_config_id`, `member_id`)
 
 **Notes:** Viable configs are recomputed (deleted + regenerated) when:
+
 - The full algorithm re-runs
 - A user adjusts willingness during conflict resolution
 - A user overrides a buddy constraint for a session
@@ -253,19 +255,20 @@ Join table linking viable configurations to their members.
 
 Conflicts are flagged when a member's buddy constraint fails at a price tier. Conflicts are fully deleted and recomputed after each user change during conflict resolution. Conflicts are displayed to both the affected member and the causing member (if applicable), since both parties may need to coordinate on a resolution.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | `uuid` | **PK**, DEFAULT gen_random_uuid() | Unique conflict ID |
-| `group_id` | `uuid` | FK → `group.id`, NOT NULL | The group (denormalized for efficient deletion during re-runs) |
-| `session_id` | `text` | FK → `session.session_code`, NOT NULL | The session with the conflict |
-| `affected_member_id` | `uuid` | FK → `member.id`, NOT NULL | The member whose constraint fails |
-| `causing_member_id` | `uuid` | FK → `member.id` | The member causing the failure (NULL for min_buddies_failure) |
-| `price_min` | `integer` | NOT NULL | Lower bound of affected price tier |
-| `price_max` | `integer` | | Upper bound of affected price tier (NULL = no upper limit) |
-| `type` | `conflict_type_enum` | NOT NULL | Type of conflict |
-| `created_at` | `timestamp` | DEFAULT now() | When conflict was detected |
+| Column               | Type                 | Constraints                           | Description                                                    |
+| -------------------- | -------------------- | ------------------------------------- | -------------------------------------------------------------- |
+| `id`                 | `uuid`               | **PK**, DEFAULT gen_random_uuid()     | Unique conflict ID                                             |
+| `group_id`           | `uuid`               | FK → `group.id`, NOT NULL             | The group (denormalized for efficient deletion during re-runs) |
+| `session_id`         | `text`               | FK → `session.session_code`, NOT NULL | The session with the conflict                                  |
+| `affected_member_id` | `uuid`               | FK → `member.id`, NOT NULL            | The member whose constraint fails                              |
+| `causing_member_id`  | `uuid`               | FK → `member.id`                      | The member causing the failure (NULL for min_buddies_failure)  |
+| `price_min`          | `integer`            | NOT NULL                              | Lower bound of affected price tier                             |
+| `price_max`          | `integer`            |                                       | Upper bound of affected price tier (NULL = no upper limit)     |
+| `type`               | `conflict_type_enum` | NOT NULL                              | Type of conflict                                               |
+| `created_at`         | `timestamp`          | DEFAULT now()                         | When conflict was detected                                     |
 
 **Notes:**
+
 - `causing_member_id` is NULL for `min_buddies_failure` (caused by a group shortfall, not a specific person).
 - `causing_member_id` is set for `hard_buddy_failure` (the hard buddy who isn't willing at this tier).
 - Conflicts have no "status" column — they either exist (unresolved) or don't. When a user makes a change, affected conflicts are deleted and recomputed.
@@ -276,17 +279,18 @@ Conflicts are flagged when a member's buddy constraint fails at a price tier. Co
 
 Scored N-day windows for the group. Regenerated when N-days changes or the algorithm re-runs.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `id` | `uuid` | **PK**, DEFAULT gen_random_uuid() | Unique window ID |
-| `group_id` | `uuid` | FK → `group.id`, NOT NULL | The group |
-| `start_date` | `date` | NOT NULL | Window start date |
-| `end_date` | `date` | NOT NULL | Window end date |
-| `score` | `decimal` | NOT NULL | Group window score (total satisfaction - fairness penalty) |
-| `selected` | `boolean` | NOT NULL, DEFAULT false | Whether this window is currently selected |
-| `created_at` | `timestamp` | DEFAULT now() | When ranking was computed |
+| Column       | Type        | Constraints                       | Description                                                |
+| ------------ | ----------- | --------------------------------- | ---------------------------------------------------------- |
+| `id`         | `uuid`      | **PK**, DEFAULT gen_random_uuid() | Unique window ID                                           |
+| `group_id`   | `uuid`      | FK → `group.id`, NOT NULL         | The group                                                  |
+| `start_date` | `date`      | NOT NULL                          | Window start date                                          |
+| `end_date`   | `date`      | NOT NULL                          | Window end date                                            |
+| `score`      | `decimal`   | NOT NULL                          | Group window score (total satisfaction - fairness penalty) |
+| `selected`   | `boolean`   | NOT NULL, DEFAULT false           | Whether this window is currently selected                  |
+| `created_at` | `timestamp` | DEFAULT now()                     | When ranking was computed                                  |
 
 **Notes:**
+
 - When window rankings are generated, the top-scoring window is automatically marked as `selected = true`.
 - Users can change the selected window without re-running the algorithm.
 - Only one window per group should have `selected = true` at a time.
@@ -324,45 +328,46 @@ These notes document conditional updates and cascading effects that the applicat
 ### When a Member Joins (After Owner Approval)
 
 If the group is still in `'preferences'` phase and no algorithm has run:
+
 - No cascading effects — member is simply added with status = `'joined'`
 
 If the group is past `'preferences'` phase (algorithm has run):
 
-| Action | Tables Affected |
-|--------|----------------|
-| Set new member status | `member` — status = `'joined'` |
-| Reset group for re-run | `group` — phase → `'preferences'` |
-| Reset existing members | `member` — all existing members' statuses → `'preferences_set'` (preserves their preferences) |
-| Delete algorithm outputs | `combo`, `combo_session`, `viable_config`, `viable_config_member`, `conflict`, `window_ranking` — delete all rows for this group |
-| Reset override and excluded flags | `session_preference` — set `override_hard_buddy`, `override_min_buddies`, and `excluded` to `false` for all members |
+| Action                            | Tables Affected                                                                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Set new member status             | `member` — status = `'joined'`                                                                                                   |
+| Reset group for re-run            | `group` — phase → `'preferences'`                                                                                                |
+| Reset existing members            | `member` — all existing members' statuses → `'preferences_set'` (preserves their preferences)                                    |
+| Delete algorithm outputs          | `combo`, `combo_session`, `viable_config`, `viable_config_member`, `conflict`, `window_ranking` — delete all rows for this group |
+| Reset override and excluded flags | `session_preference` — set `override_hard_buddy`, `override_min_buddies`, and `excluded` to `false` for all members              |
 
 ### When a Member Leaves
 
 If the group is past `'preferences'` phase (algorithm has run):
 
-| Action | Tables Affected |
-|--------|----------------|
-| Delete member data | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member |
-| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member |
-| Flag affected members | `member` — members who had the leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies'` |
-| Set unaffected members | `member` — members with no buddy connection to leaving member: status → `'preferences_set'` |
-| Reset group for re-run | `group` — phase → `'preferences'` |
-| Delete algorithm outputs | `combo`, `combo_session`, `viable_config`, `viable_config_member`, `conflict`, `window_ranking` — delete all rows for this group |
-| Reset override and excluded flags | `session_preference` — set `override_hard_buddy`, `override_min_buddies`, and `excluded` to `false` for all remaining members |
+| Action                                     | Tables Affected                                                                                                                  |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Delete member data                         | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member                                             |
+| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member                                                    |
+| Flag affected members                      | `member` — members who had the leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies'`                   |
+| Set unaffected members                     | `member` — members with no buddy connection to leaving member: status → `'preferences_set'`                                      |
+| Reset group for re-run                     | `group` — phase → `'preferences'`                                                                                                |
+| Delete algorithm outputs                   | `combo`, `combo_session`, `viable_config`, `viable_config_member`, `conflict`, `window_ranking` — delete all rows for this group |
+| Reset override and excluded flags          | `session_preference` — set `override_hard_buddy`, `override_min_buddies`, and `excluded` to `false` for all remaining members    |
 
 **Note:** Affected members (those who had the leaving member as a hard or soft buddy) go to `joined` with `preference_step = 'buddies'` so the wizard opens on the buddy step for review. Their sport rankings and session preferences are preserved. Unaffected members go to `preferences_set` — they don't need to review anything. The owner sees a warning before approving the departure: "This will reset all generated schedules."
 
 If the group is still in `'preferences'` phase (no algorithm has run):
 
-| Action | Tables Affected |
-|--------|----------------|
-| Delete member data | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member |
-| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member |
+| Action                                     | Tables Affected                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Delete member data                         | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member |
+| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member        |
 
 ### When Owner Transfers Ownership
 
-| Action | Tables Affected |
-|--------|----------------|
+| Action       | Tables Affected                                                            |
+| ------------ | -------------------------------------------------------------------------- |
 | Update roles | `member` — current owner's role → `'member'`, new owner's role → `'owner'` |
 
 No impact on algorithm outputs or group phase.
@@ -371,67 +376,67 @@ No impact on algorithm outputs or group phase.
 
 Triggered when a user changes preferences and requests schedule regeneration.
 
-| Action | Tables Affected |
-|--------|----------------|
-| Delete all algorithm outputs for the group | `combo`, `combo_session`, `viable_config`, `viable_config_member`, `conflict`, `window_ranking` |
-| Reset buddy override and excluded flags | `session_preference` — set `override_hard_buddy`, `override_min_buddies`, and `excluded` to `false` for all members in the group |
-| Reset all member statuses | `member` — set `status` to `'schedule_review_pending'` for all members in the group |
-| Reset group phase | `group` — set `phase` to `'schedule_review'` |
+| Action                                     | Tables Affected                                                                                                                  |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Delete all algorithm outputs for the group | `combo`, `combo_session`, `viable_config`, `viable_config_member`, `conflict`, `window_ranking`                                  |
+| Reset buddy override and excluded flags    | `session_preference` — set `override_hard_buddy`, `override_min_buddies`, and `excluded` to `false` for all members in the group |
+| Reset all member statuses                  | `member` — set `status` to `'schedule_review_pending'` for all members in the group                                              |
+| Reset group phase                          | `group` — set `phase` to `'schedule_review'`                                                                                     |
 
 ### When a User Adjusts Willingness During Conflict Resolution
 
-| Action | Tables Affected |
-|--------|----------------|
-| Update willingness | `session_preference` — update `willingness_max` for the specific member + session |
-| Recompute viable configs for affected session | Delete and regenerate `viable_config` + `viable_config_member` rows for that session |
-| Recheck all conflicts for that session | Delete and regenerate `conflict` rows for that session across ALL members |
-| Revoke confirmation if new conflict created | `member` — if a new conflict is created for a member whose `status` is `'conflict_resolution_confirmed'`, set their status back to `'conflict_resolution_pending'` |
+| Action                                        | Tables Affected                                                                                                                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Update willingness                            | `session_preference` — update `willingness_max` for the specific member + session                                                                                  |
+| Recompute viable configs for affected session | Delete and regenerate `viable_config` + `viable_config_member` rows for that session                                                                               |
+| Recheck all conflicts for that session        | Delete and regenerate `conflict` rows for that session across ALL members                                                                                          |
+| Revoke confirmation if new conflict created   | `member` — if a new conflict is created for a member whose `status` is `'conflict_resolution_confirmed'`, set their status back to `'conflict_resolution_pending'` |
 
 ### When a User Overrides a Buddy Constraint for a Session
 
-| Action | Tables Affected |
-|--------|----------------|
-| Set override flag | `session_preference` — set `override_hard_buddy` or `override_min_buddies` to `true` |
+| Action                                        | Tables Affected                                                                      |
+| --------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Set override flag                             | `session_preference` — set `override_hard_buddy` or `override_min_buddies` to `true` |
 | Recompute viable configs for affected session | Delete and regenerate `viable_config` + `viable_config_member` rows for that session |
-| Recheck all conflicts for that session | Delete and regenerate `conflict` rows for that session across ALL members |
-| Revoke confirmation if new conflict created | `member` — same revocation logic as willingness adjustment |
+| Recheck all conflicts for that session        | Delete and regenerate `conflict` rows for that session across ALL members            |
+| Revoke confirmation if new conflict created   | `member` — same revocation logic as willingness adjustment                           |
 
 ### When a User Removes a Session From Their Schedule
 
-| Action | Tables Affected |
-|--------|----------------|
-| Soft-exclude session preference | `session_preference` — set `excluded = true` for this member + session (preference data preserved for re-generation) |
-| Remove session from combos | `combo_session` — delete rows where `session_id` matches for the member's combos |
-| Recalculate combo scores (self) | `combo` — update `score` for the removing member's affected combos (score is sum of remaining session scores) |
-| Recalculate combo scores (others) | `combo` — for other members who had the removing member as a soft buddy AND have this session in their combos, recalculate the session's score (soft buddy bonus decreases by 1) and update their combo scores accordingly |
-| De-duplicate combos | `combo` + `combo_session` — if a backup combo becomes identical to primary or another backup after removal, delete the duplicate combo |
-| Remove user from viable configs | Delete and regenerate `viable_config` + `viable_config_member` rows for that session (member is effectively removed from all price tiers) |
-| Recheck all conflicts for that session | Delete and regenerate `conflict` rows for that session across ALL members (may create new conflicts for other members whose buddy constraints now fail) |
-| Revoke confirmation if new conflict created | `member` — same revocation logic |
+| Action                                      | Tables Affected                                                                                                                                                                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Soft-exclude session preference             | `session_preference` — set `excluded = true` for this member + session (preference data preserved for re-generation)                                                                                                       |
+| Remove session from combos                  | `combo_session` — delete rows where `session_id` matches for the member's combos                                                                                                                                           |
+| Recalculate combo scores (self)             | `combo` — update `score` for the removing member's affected combos (score is sum of remaining session scores)                                                                                                              |
+| Recalculate combo scores (others)           | `combo` — for other members who had the removing member as a soft buddy AND have this session in their combos, recalculate the session's score (soft buddy bonus decreases by 1) and update their combo scores accordingly |
+| De-duplicate combos                         | `combo` + `combo_session` — if a backup combo becomes identical to primary or another backup after removal, delete the duplicate combo                                                                                     |
+| Remove user from viable configs             | Delete and regenerate `viable_config` + `viable_config_member` rows for that session (member is effectively removed from all price tiers)                                                                                  |
+| Recheck all conflicts for that session      | Delete and regenerate `conflict` rows for that session across ALL members (may create new conflicts for other members whose buddy constraints now fail)                                                                    |
+| Revoke confirmation if new conflict created | `member` — same revocation logic                                                                                                                                                                                           |
 
 **Note:** Session removal during conflict resolution is a soft exclusion — the `session_preference` row is preserved with `excluded = true`. This allows the session to be reconsidered during schedule re-generation (the `excluded` flag is reset to `false` alongside override flags). Permanent removal of a session preference only happens through the preference wizard (Step 3).
 
 ### When a User Confirms Their Schedule (Conflict Resolution)
 
-| Action | Tables Affected |
-|--------|----------------|
-| Update member status | `member` — set `status` to `'conflict_resolution_confirmed'` |
+| Action                         | Tables Affected                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Update member status           | `member` — set `status` to `'conflict_resolution_confirmed'`                                                       |
 | Check if all members confirmed | If all members in the group have `status = 'conflict_resolution_confirmed'`, update `group.phase` to `'completed'` |
 
 ### When N-Days or Date Range Changes
 
 Can happen at any point. Date config can be set during group creation or later. **Owner only.**
 
-| Action | Tables Affected |
-|--------|----------------|
-| Update group settings | `group` — update `date_mode`, `n_days`, `start_date`, `end_date` |
+| Action                                       | Tables Affected                                                                                                                         |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Update group settings                        | `group` — update `date_mode`, `n_days`, `start_date`, `end_date`                                                                        |
 | Regenerate window rankings (if combos exist) | Delete and regenerate `window_ranking` rows for the group. Only possible after algorithm has run (combos must exist to compute scores). |
-| Auto-select top window | `window_ranking` — set `selected = true` on the highest-scoring window |
+| Auto-select top window                       | `window_ranking` — set `selected = true` on the highest-scoring window                                                                  |
 
 ### When a User Switches the Selected Window
 
-| Action | Tables Affected |
-|--------|----------------|
+| Action           | Tables Affected                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
 | Update selection | `window_ranking` — set `selected = false` on the previously selected window, `selected = true` on the new one |
 
 ### Computed-at-Display-Time Fields (No Storage Needed)
@@ -450,27 +455,27 @@ These values are derived from stored data and computed when rendering the UI, no
 
 ## Key Design Decisions Summary
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| No separate setup phase | Group starts in `preferences` on creation | Members can immediately join and enter preferences; owner gates generation, which is the real checkpoint |
-| Group owner role | `member_role_enum` on member table | Owner gates destructive/group-wide actions (join approval, generation, date config changes, deletion) |
-| Date config | Set at creation or deferred; required before generation; owner-only edits | Encourages early agreement on dates without blocking preference input; generation validates date config exists |
-| Join flow | Request/approve with `'pending_approval'` status | Prevents unexpected members joining mid-process; owner confirms group composition |
-| Member changes after generation | Full re-run required | Joining or leaving changes algorithm inputs (buddy constraints, soft buddy bonuses, viable configs) for all members |
-| Budget input | Collected during buddies wizard step on `member` table | Per-group, set before session selection, lightweight enough to pair with buddy preferences |
-| Buddy storage | Join table, not JSON | Referential integrity + efficient reverse lookups |
-| Session preferences | Opt-in rows only | Reduces noise, explicit user intent |
-| Sport rankings | JSON array on member | Simple ordered list of strings, no relational queries needed |
-| Travel data | Raw minutes, not computed gaps | Allows gap rule adjustments without re-seeding DB |
-| Combo sessions | Join table, not JSON | Need to query "which combos contain session X?" |
-| Viable config scope | Only sessions in combos (P/B1/B2) | Avoids computing configs for sessions not on any calendar; cleaner conflict resolution |
-| Conflict visibility | Shown to both affected and causing members | Both parties need to see the situation and all resolution options to coordinate effectively |
-| Conflict status | No status column — exist or don't | Conflicts are deleted + recomputed after each change |
-| Resolution options | Computed on the fly | Always correct by definition, no stale data |
-| Score recalculation on removal | Recalculate affected users' soft buddy bonuses | Keeps scores accurate for window ranking; trivial computational cost |
-| Window selection | `selected` boolean on window_ranking | Simple, users can switch without re-running algorithm |
-| Algorithm re-run | Delete + regenerate all outputs | Clean slate approach, no versioning complexity |
-| Willingness $1000+ | NULL willingness_max | NULL = no upper limit, simplifies comparison logic |
-| Session removal during conflict resolution | Soft-exclude (`excluded = true`), not row deletion | Preserves interest/willingness data so sessions can be reconsidered on re-generation; permanent removal only via preference wizard |
-| Buddy overrides | Boolean columns on session_preference | Overrides only apply to sessions with interest; no separate table needed |
-| Ticket count | Not stored on viable_config | Derivable via COUNT on viable_config_member; avoids redundancy |
+| Decision                                   | Choice                                                                    | Rationale                                                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| No separate setup phase                    | Group starts in `preferences` on creation                                 | Members can immediately join and enter preferences; owner gates generation, which is the real checkpoint                           |
+| Group owner role                           | `member_role_enum` on member table                                        | Owner gates destructive/group-wide actions (join approval, generation, date config changes, deletion)                              |
+| Date config                                | Set at creation or deferred; required before generation; owner-only edits | Encourages early agreement on dates without blocking preference input; generation validates date config exists                     |
+| Join flow                                  | Request/approve with `'pending_approval'` status                          | Prevents unexpected members joining mid-process; owner confirms group composition                                                  |
+| Member changes after generation            | Full re-run required                                                      | Joining or leaving changes algorithm inputs (buddy constraints, soft buddy bonuses, viable configs) for all members                |
+| Budget input                               | Collected during buddies wizard step on `member` table                    | Per-group, set before session selection, lightweight enough to pair with buddy preferences                                         |
+| Buddy storage                              | Join table, not JSON                                                      | Referential integrity + efficient reverse lookups                                                                                  |
+| Session preferences                        | Opt-in rows only                                                          | Reduces noise, explicit user intent                                                                                                |
+| Sport rankings                             | JSON array on member                                                      | Simple ordered list of strings, no relational queries needed                                                                       |
+| Travel data                                | Raw minutes, not computed gaps                                            | Allows gap rule adjustments without re-seeding DB                                                                                  |
+| Combo sessions                             | Join table, not JSON                                                      | Need to query "which combos contain session X?"                                                                                    |
+| Viable config scope                        | Only sessions in combos (P/B1/B2)                                         | Avoids computing configs for sessions not on any calendar; cleaner conflict resolution                                             |
+| Conflict visibility                        | Shown to both affected and causing members                                | Both parties need to see the situation and all resolution options to coordinate effectively                                        |
+| Conflict status                            | No status column — exist or don't                                         | Conflicts are deleted + recomputed after each change                                                                               |
+| Resolution options                         | Computed on the fly                                                       | Always correct by definition, no stale data                                                                                        |
+| Score recalculation on removal             | Recalculate affected users' soft buddy bonuses                            | Keeps scores accurate for window ranking; trivial computational cost                                                               |
+| Window selection                           | `selected` boolean on window_ranking                                      | Simple, users can switch without re-running algorithm                                                                              |
+| Algorithm re-run                           | Delete + regenerate all outputs                                           | Clean slate approach, no versioning complexity                                                                                     |
+| Willingness $1000+                         | NULL willingness_max                                                      | NULL = no upper limit, simplifies comparison logic                                                                                 |
+| Session removal during conflict resolution | Soft-exclude (`excluded = true`), not row deletion                        | Preserves interest/willingness data so sessions can be reconsidered on re-generation; permanent removal only via preference wizard |
+| Buddy overrides                            | Boolean columns on session_preference                                     | Overrides only apply to sessions with interest; no separate table needed                                                           |
+| Ticket count                               | Not stored on viable_config                                               | Derivable via COUNT on viable_config_member; avoids redundancy                                                                     |

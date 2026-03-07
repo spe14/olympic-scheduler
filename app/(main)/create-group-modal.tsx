@@ -1,0 +1,329 @@
+"use client";
+
+import { useState, useActionState, useEffect, useRef } from "react";
+import { createGroup } from "./actions";
+import { groupNameSchema, consecutiveDaysSchema } from "@/lib/validations";
+import Modal from "@/components/modal";
+
+type DateMode = "consecutive" | "specific" | "deferred" | null;
+
+export default function CreateGroupModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [state, formAction, pending] = useActionState(createGroup, null);
+  const [name, setName] = useState("");
+  const [dateMode, setDateMode] = useState<DateMode>(null);
+  const [consecutiveDays, setConsecutiveDays] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [showDateInfo, setShowDateInfo] = useState(false);
+  const infoRef = useRef<HTMLDivElement>(null);
+
+  const nameResult = groupNameSchema.safeParse(name);
+  const nameHints =
+    name.length > 0 && !nameResult.success
+      ? nameResult.error.issues.map((i) => i.message)
+      : [];
+
+  const daysResult = consecutiveDaysSchema.safeParse(consecutiveDays);
+  const daysHints =
+    dateMode === "consecutive" &&
+    consecutiveDays.length > 0 &&
+    !daysResult.success
+      ? daysResult.error.issues.map((i) => i.message)
+      : [];
+
+  const dateRangeHints =
+    dateMode === "specific" &&
+    startDate.length > 0 &&
+    endDate.length > 0 &&
+    endDate < startDate
+      ? ["End date must be on or after the start date."]
+      : [];
+
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    nameInputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (state?.success) onCreated();
+  }, [state, onCreated]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (infoRef.current && !infoRef.current.contains(e.target as Node)) {
+        setShowDateInfo(false);
+      }
+    }
+    if (showDateInfo) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showDateInfo]);
+
+  const isDateValid =
+    dateMode === "deferred" ||
+    (dateMode === "consecutive" && daysResult.success) ||
+    (dateMode === "specific" && startDate.length > 0 && endDate.length > 0);
+
+  const hasDateMode = dateMode !== null;
+
+  const canSubmit =
+    name.trim().length > 0 &&
+    nameHints.length === 0 &&
+    hasDateMode &&
+    isDateValid &&
+    daysHints.length === 0 &&
+    dateRangeHints.length === 0;
+
+  const inputClass =
+    "w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20";
+
+  return (
+    <Modal title="Create a Group" onClose={onClose}>
+      <form action={formAction} className="space-y-5">
+        {/* Group Name */}
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-600">
+            Group Name
+          </label>
+          <input
+            ref={nameInputRef}
+            type="text"
+            name="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. LA Olympics Squad"
+            className={inputClass}
+          />
+          {nameHints.map((h) => (
+            <p key={h} className="mt-1 text-xs text-slate-400">
+              {h}
+            </p>
+          ))}
+        </div>
+
+        {/* Date Mode */}
+        <div>
+          <div className="mb-1 flex items-center gap-1.5">
+            <label className="text-sm font-medium text-slate-600">
+              When are you planning to attend?
+            </label>
+            <div
+              className="relative"
+              ref={infoRef}
+              onMouseEnter={() => setShowDateInfo(true)}
+              onMouseLeave={() => setShowDateInfo(false)}
+            >
+              <button
+                type="button"
+                onClick={() => setShowDateInfo(!showDateInfo)}
+                className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-medium text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-500"
+              >
+                ?
+              </button>
+              {showDateInfo && (
+                <div className="absolute left-1/2 top-6 z-10 w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+                  <p className="mb-2 text-xs font-medium text-slate-700">
+                    Date Mode Options
+                  </p>
+                  <p className="mb-1.5 text-xs text-slate-500">
+                    <span className="font-medium text-slate-600">
+                      Consecutive Days
+                    </span>{" "}
+                    — Choose how many days in a row you plan to attend (e.g. 5
+                    days). The algorithm will find the best window of that
+                    length.
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    <span className="font-medium text-slate-600">
+                      Specific Dates
+                    </span>{" "}
+                    — Pick exact start and end dates if your group already knows
+                    when they&apos;re going.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          <p className="mb-3 text-xs text-slate-400">
+            You can always change this later in group settings.
+          </p>
+
+          {/* Hidden input to send dateMode to the server action */}
+          <input
+            type="hidden"
+            name="dateMode"
+            value={dateMode === "deferred" || dateMode === null ? "" : dateMode}
+          />
+
+          <div className="space-y-2">
+            <DateModeOption
+              selected={dateMode === "consecutive"}
+              onClick={() => setDateMode("consecutive")}
+              label="Consecutive Days"
+              description="The algorithm will find the best N-day window for your group."
+            />
+            <DateModeOption
+              selected={dateMode === "specific"}
+              onClick={() => setDateMode("specific")}
+              label="Specific Dates"
+              description="Your group has already chosen specific dates to attend."
+            />
+            <DateModeOption
+              selected={dateMode === "deferred"}
+              onClick={() => setDateMode("deferred")}
+              label="Decide later"
+              description="I'll discuss this with the group and update later."
+            />
+          </div>
+
+          {/* Consecutive Days Input */}
+          {dateMode === "consecutive" && (
+            <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+              <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                Number of Days
+              </label>
+              <input
+                type="number"
+                name="consecutiveDays"
+                min={1}
+                max={19}
+                value={consecutiveDays}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "" || /^\d+$/.test(val)) {
+                    setConsecutiveDays(val);
+                  }
+                }}
+                placeholder="e.g. 5"
+                className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+              />
+              <p className="mt-2 text-xs text-slate-400">
+                Olympic Period: 19 days
+              </p>
+              {daysHints.map((h) => (
+                <p key={h} className="mt-1 text-xs text-red-500">
+                  {h}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Specific Dates Inputs */}
+          {dateMode === "specific" && (
+            <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    name="startDate"
+                    min="2028-07-12"
+                    max="2028-07-30"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    name="endDate"
+                    min="2028-07-12"
+                    max="2028-07-30"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                  />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                Olympic Period: Jul 12, 2028 - Jul 30, 2028
+              </p>
+              {dateRangeHints.map((h) => (
+                <p key={h} className="mt-1 text-xs text-red-500">
+                  {h}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {state?.error && <p className="text-xs text-red-500">{state.error}</p>}
+
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={pending || !canSubmit}
+            className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending ? "Creating..." : "Create Group"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DateModeOption({
+  selected,
+  onClick,
+  label,
+  description,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  label: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-all ${
+        selected
+          ? "border-[#009de5]/40 bg-[#009de5]/5 ring-1 ring-[#009de5]/20"
+          : "border-slate-200 bg-white hover:border-slate-300"
+      }`}
+    >
+      <div
+        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+          selected ? "border-[#009de5]" : "border-slate-300"
+        }`}
+      >
+        {selected && <div className="h-2 w-2 rounded-full bg-[#009de5]" />}
+      </div>
+      <div>
+        <p
+          className={`text-sm font-medium ${
+            selected ? "text-slate-900" : "text-slate-700"
+          }`}
+        >
+          {label}
+        </p>
+        <p className="text-xs text-slate-400">{description}</p>
+      </div>
+    </button>
+  );
+}
