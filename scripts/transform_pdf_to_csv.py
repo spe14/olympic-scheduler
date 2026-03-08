@@ -111,6 +111,21 @@ def get_zone_from_venue(venue_name):
 
     return None
 
+SPORT_NAME_SUFFIXES_TO_STRIP = [
+    ' - Final Stages',
+    ' - Preliminary Stages',
+]
+
+def normalize_sport_name(sport):
+    if pd.isna(sport) or not sport:
+        return sport
+    sport = clean_text(str(sport))
+    for suffix in SPORT_NAME_SUFFIXES_TO_STRIP:
+        if sport.endswith(suffix):
+            sport = sport[:-len(suffix)]
+            break
+    return sport
+
 def clean_text(text):
     if pd.isna(text) or text is None or text == "":
         return ""
@@ -357,6 +372,9 @@ def process_schedule_data(header_row, data_rows):
     for col in ['sport', 'venue', 'session_code', 'session_type']:
         if col in df.columns:
             df[col] = df[col].apply(clean_text)
+
+    if 'sport' in df.columns:
+        df['sport'] = df['sport'].apply(normalize_sport_name)
 
     # Override PDF's zone column with our own mapping for consistency
     if 'venue' in df.columns:
