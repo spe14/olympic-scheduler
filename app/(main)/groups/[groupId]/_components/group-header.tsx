@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { phaseLabels } from "@/lib/constants";
 import { getDateDisplay } from "@/lib/utils";
 import type { GroupDetail } from "@/lib/types";
-import { updateGroupName } from "../actions";
+import { updateGroupName, leaveGroup } from "../actions";
+import ConfirmMemberRemovalModal, {
+  OwnerLeaveModal,
+} from "./confirm-member-removal-modal";
 
 const phaseBadgeStyles: Record<
   string,
@@ -33,11 +37,15 @@ export default function GroupHeader({
   onOpenSettings: () => void;
   onNameSaved: () => void;
 }) {
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(group.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveLoading, setLeaveLoading] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
 
   const badgeStyle =
     phaseBadgeStyles[group.phase] ?? phaseBadgeStyles.preferences;
@@ -66,6 +74,18 @@ export default function GroupHeader({
     navigator.clipboard.writeText(group.inviteCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleLeaveConfirm() {
+    setLeaveLoading(true);
+    setLeaveError("");
+    const result = await leaveGroup(group.id);
+    setLeaveLoading(false);
+    if (result.error) {
+      setLeaveError(result.error);
+    } else {
+      router.push("/");
+    }
   }
 
   return (
@@ -110,24 +130,34 @@ export default function GroupHeader({
           ) : (
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold text-slate-900">{name}</h1>
-              {isOwner && (
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                    title="Rename group"
-                  >
-                    <PencilIcon />
-                  </button>
-                  <button
-                    onClick={onOpenSettings}
-                    className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                    title="Group settings"
-                  >
-                    <SettingsIcon />
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-0.5">
+                {isOwner && (
+                  <>
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                      title="Rename group"
+                    >
+                      <PencilIcon />
+                    </button>
+                    <button
+                      onClick={onOpenSettings}
+                      className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                      title="Group settings"
+                    >
+                      <SettingsIcon />
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowLeaveModal(true)}
+                  className="flex items-center gap-1 rounded-md p-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  title="Leave group"
+                >
+                  <LeaveIcon />
+                  Leave Group
+                </button>
+              </div>
             </div>
           )}
           {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
@@ -209,6 +239,23 @@ export default function GroupHeader({
           )}
         </span>
       </div>
+
+      {showLeaveModal &&
+        (isOwner ? (
+          <OwnerLeaveModal onClose={() => setShowLeaveModal(false)} />
+        ) : (
+          <ConfirmMemberRemovalModal
+            type="leave"
+            groupPhase={group.phase}
+            loading={leaveLoading}
+            error={leaveError}
+            onConfirm={handleLeaveConfirm}
+            onClose={() => {
+              setShowLeaveModal(false);
+              setLeaveError("");
+            }}
+          />
+        ))}
     </div>
   );
 }
@@ -253,6 +300,24 @@ function SettingsIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+      />
+    </svg>
+  );
+}
+
+function LeaveIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
       />
     </svg>
   );

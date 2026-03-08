@@ -3,6 +3,8 @@ import {
   updateGroupName,
   approveMember,
   denyMember,
+  leaveGroup,
+  removeMember,
 } from "@/app/(main)/groups/[groupId]/actions";
 
 // Mock next/cache
@@ -32,22 +34,62 @@ const mockUpdateWhere = vi.fn(() => Promise.resolve());
 const mockSet = vi.fn(() => ({ where: mockUpdateWhere }));
 const mockUpdate = vi.fn(() => ({ set: mockSet }));
 
+const mockDeleteWhere = vi.fn(() => Promise.resolve());
+const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
+
+const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
+  // Build a mock tx that mirrors the db shape
+  const txSelect = vi.fn(() => ({
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({
+        then(r: (v: unknown) => void) {
+          r([]);
+        },
+      })),
+    })),
+  }));
+  const txDeleteWhere = vi.fn(() => Promise.resolve());
+  const txUpdateWhere = vi.fn(() => Promise.resolve());
+  const tx = {
+    select: txSelect,
+    delete: vi.fn(() => ({ where: txDeleteWhere })),
+    update: vi.fn(() => ({ set: vi.fn(() => ({ where: txUpdateWhere })) })),
+  };
+  return cb(tx);
+});
+
 vi.mock("@/lib/db", () => ({
   db: {
     select: (...args: unknown[]) => mockSelect(...args),
     update: (...args: unknown[]) => mockUpdate(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
+    transaction: (...args: unknown[]) => mockTransaction(...(args as [never])),
   },
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  group: { id: "id", name: "name" },
+  group: { id: "id", name: "name", phase: "phase" },
   member: {
     id: "id",
     userId: "user_id",
     groupId: "group_id",
     role: "role",
     status: "status",
+    preferenceStep: "preference_step",
   },
+  buddyConstraint: { memberId: "member_id", buddyMemberId: "buddy_id" },
+  sessionPreference: {
+    memberId: "member_id",
+    hardBuddyOverride: "hard_buddy_override",
+    minBuddyOverride: "min_buddy_override",
+    excluded: "excluded",
+  },
+  combo: { id: "id", groupId: "group_id" },
+  comboSession: { comboId: "combo_id" },
+  viableConfig: { id: "id", groupId: "group_id" },
+  viableConfigMember: { viableConfigId: "viable_config_id" },
+  conflict: { groupId: "group_id" },
+  windowRanking: { groupId: "group_id" },
 }));
 
 function makeFormData(fields: Record<string, string>): FormData {
@@ -297,5 +339,318 @@ describe("denyMember", () => {
     const result = await denyMember("group-1", "member-2");
 
     expect(result.error).toContain("Failed to deny");
+  });
+});
+
+// Helper: set up getMembership to return an active non-owner member
+function mockActiveMember() {
+  mockGetCurrentUser.mockResolvedValue(mockUser);
+  mockLimit.mockResolvedValueOnce([
+    { id: "member-1", role: "member", status: "joined" },
+  ]);
+}
+
+// Helper: set up getMembership to return the owner
+function mockActiveOwner() {
+  mockGetCurrentUser.mockResolvedValue(mockUser);
+  mockLimit.mockResolvedValueOnce([
+    { id: "owner-member-1", role: "owner", status: "joined" },
+  ]);
+}
+
+describe("leaveGroup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+    // Reset transaction to default (succeeds)
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txSelect = vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r([]);
+            },
+          })),
+        })),
+      }));
+      const txDeleteWhere = vi.fn(() => Promise.resolve());
+      const txUpdateWhere = vi.fn(() => Promise.resolve());
+      const tx = {
+        select: txSelect,
+        delete: vi.fn(() => ({ where: txDeleteWhere })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: txUpdateWhere })),
+        })),
+      };
+      return cb(tx);
+    });
+  });
+
+  it("returns error when not logged in", async () => {
+    mockGetCurrentUser.mockResolvedValue(null);
+    const result = await leaveGroup("group-1");
+
+    expect(result.error).toBe("You are not an active member of this group.");
+  });
+
+  it("returns error when user has no active membership", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([]); // no membership found
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.error).toBe("You are not an active member of this group.");
+  });
+
+  it("returns error when user is the owner", async () => {
+    mockActiveOwner();
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.error).toContain("transfer ownership");
+    expect(result.error).toContain("Group Settings");
+  });
+
+  it("returns error when group not found", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([]); // group not found
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.error).toBe("Group not found.");
+  });
+
+  it("succeeds for non-owner member in preferences phase", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([{ phase: "preferences" }]); // group
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("succeeds for non-owner member in post-preferences phase", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([{ phase: "schedule_review" }]); // group
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([{ phase: "preferences" }]);
+    mockTransaction.mockRejectedValue(new Error("TX error"));
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.error).toBe("Failed to leave group. Please try again.");
+  });
+});
+
+describe("removeMember", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+    // Reset transaction to default (succeeds)
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txSelect = vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r([]);
+            },
+          })),
+        })),
+      }));
+      const txDeleteWhere = vi.fn(() => Promise.resolve());
+      const txUpdateWhere = vi.fn(() => Promise.resolve());
+      const tx = {
+        select: txSelect,
+        delete: vi.fn(() => ({ where: txDeleteWhere })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: txUpdateWhere })),
+        })),
+      };
+      return cb(tx);
+    });
+  });
+
+  it("returns error when caller is not the owner", async () => {
+    mockNonOwner();
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe("Only the group owner can remove members.");
+  });
+
+  it("returns error when not logged in", async () => {
+    mockGetCurrentUser.mockResolvedValue(null);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe("Only the group owner can remove members.");
+  });
+
+  it("returns error when target member not found", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([]); // target not found
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe("Member not found.");
+  });
+
+  it("returns error when target is the owner", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "owner-member-1",
+        role: "owner",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]);
+
+    const result = await removeMember("group-1", "owner-member-1");
+
+    expect(result.error).toBe("Cannot remove the group owner.");
+  });
+
+  it("returns error when target is pending_approval", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "pending_approval",
+        groupId: "group-1",
+      },
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe("Cannot remove a pending or denied member.");
+  });
+
+  it("returns error when target is denied", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "denied",
+        groupId: "group-1",
+      },
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe("Cannot remove a pending or denied member.");
+  });
+
+  it("returns error when group not found", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]); // target found
+    mockLimit.mockResolvedValueOnce([]); // group not found
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe("Group not found.");
+  });
+
+  it("succeeds for valid target in preferences phase", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ phase: "preferences" }]); // group
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("succeeds for valid target in post-preferences phase", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ phase: "schedule_review" }]); // group
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("succeeds for target in conflict_resolution phase", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "conflict_resolution_pending",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ phase: "conflict_resolution" }]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ phase: "preferences" }]);
+    mockTransaction.mockRejectedValue(new Error("TX error"));
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe("Failed to remove member. Please try again.");
   });
 });

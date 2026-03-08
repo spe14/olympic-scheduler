@@ -6,7 +6,8 @@ import { MAX_GROUP_MEMBERS } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
 import type { GroupDetailMember } from "@/lib/types";
 import { useGroup } from "./group-context";
-import { approveMember, denyMember } from "../actions";
+import { approveMember, denyMember, removeMember } from "../actions";
+import ConfirmMemberRemovalModal from "./confirm-member-removal-modal";
 
 const progressSteps = [
   {
@@ -66,63 +67,16 @@ export default function OverviewContent() {
 
         {/* Active members */}
         {activeMembers.map((m, i) => (
-          <div
+          <ActiveMemberRow
             key={m.id}
-            className={`grid grid-cols-[1fr_repeat(3,100px)] items-center px-5 py-3 ${
-              i < activeMembers.length - 1 || pendingMembers.length > 0
-                ? "border-b border-slate-100"
-                : ""
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <UserAvatar
-                firstName={m.firstName}
-                lastName={m.lastName}
-                avatarColor={m.avatarColor ?? "blue"}
-              />
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-slate-900">
-                  {m.firstName} {m.lastName}
-                </span>
-                <span className="text-xs text-slate-400">@{m.username}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    m.role === "owner"
-                      ? "bg-[#009de5]/10 text-[#009de5]"
-                      : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {m.role === "owner" ? "Owner" : "Member"}
-                </span>
-              </div>
-            </div>
-            {progressSteps.map((s) => (
-              <div key={s.key} className="flex justify-center">
-                {s.check(m) ? (
-                  <span
-                    className="flex h-5 w-5 items-center justify-center rounded-full"
-                    style={{ backgroundColor: "rgba(16, 185, 129, 0.2)" }}
-                  >
-                    <svg
-                      className="h-3 w-3"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="#059669"
-                      strokeWidth={3}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M4.5 12.75l6 6 9-13.5"
-                      />
-                    </svg>
-                  </span>
-                ) : (
-                  <span className="h-5 w-5 rounded-full border-2 border-slate-200" />
-                )}
-              </div>
-            ))}
-          </div>
+            member={m}
+            groupId={group.id}
+            groupPhase={group.phase}
+            isOwner={isOwner}
+            isLast={
+              i === activeMembers.length - 1 && pendingMembers.length === 0
+            }
+          />
         ))}
 
         {/* Pending members */}
@@ -147,6 +101,136 @@ export default function OverviewContent() {
         )}
       </div>
     </section>
+  );
+}
+
+function ActiveMemberRow({
+  member: m,
+  groupId,
+  groupPhase,
+  isOwner,
+  isLast,
+}: {
+  member: GroupDetailMember;
+  groupId: string;
+  groupPhase: string;
+  isOwner: boolean;
+  isLast: boolean;
+}) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
+
+  async function handleRemoveConfirm() {
+    setLoading(true);
+    setError("");
+    const result = await removeMember(groupId, m.id);
+    setLoading(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setShowConfirm(false);
+      router.refresh();
+    }
+  }
+
+  return (
+    <div
+      className={`grid grid-cols-[1fr_repeat(3,100px)] items-center px-5 py-3 ${
+        !isLast ? "border-b border-slate-100" : ""
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <UserAvatar
+          firstName={m.firstName}
+          lastName={m.lastName}
+          avatarColor={m.avatarColor ?? "blue"}
+        />
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-900">
+            {m.firstName} {m.lastName}
+          </span>
+          <span className="text-xs text-slate-400">@{m.username}</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+              m.role === "owner"
+                ? "bg-[#009de5]/10 text-[#009de5]"
+                : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {m.role === "owner" ? "Owner" : "Member"}
+          </span>
+          {isOwner && m.role !== "owner" && (
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="rounded-md p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+              title={`Remove ${m.firstName}`}
+            >
+              <TrashIcon />
+            </button>
+          )}
+        </div>
+      </div>
+      {progressSteps.map((s) => (
+        <div key={s.key} className="flex justify-center">
+          {s.check(m) ? (
+            <span
+              className="flex h-5 w-5 items-center justify-center rounded-full"
+              style={{ backgroundColor: "rgba(16, 185, 129, 0.2)" }}
+            >
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="#059669"
+                strokeWidth={3}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4.5 12.75l6 6 9-13.5"
+                />
+              </svg>
+            </span>
+          ) : (
+            <span className="h-5 w-5 rounded-full border-2 border-slate-200" />
+          )}
+        </div>
+      ))}
+      {showConfirm && (
+        <ConfirmMemberRemovalModal
+          type="remove"
+          memberName={`${m.firstName} ${m.lastName}`}
+          groupPhase={groupPhase}
+          loading={loading}
+          error={error}
+          onConfirm={handleRemoveConfirm}
+          onClose={() => {
+            setShowConfirm(false);
+            setError("");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+      />
+    </svg>
   );
 }
 
