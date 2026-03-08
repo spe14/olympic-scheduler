@@ -12,7 +12,7 @@ import {
 } from "@/components/date-mode-fields";
 import type { GroupDetail } from "@/lib/types";
 import { getDateDisplay } from "@/lib/utils";
-import { transferOwnership, updateDateConfig } from "../actions";
+import { transferOwnership, updateDateConfig, deleteGroup } from "../actions";
 
 type DateMode = "consecutive" | "specific";
 
@@ -41,6 +41,11 @@ export default function GroupSettingsModal({
   const [endDate, setEndDate] = useState(group.endDate ?? "");
   const [dateLoading, setDateLoading] = useState(false);
   const [dateError, setDateError] = useState("");
+
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const [showTransfer, setShowTransfer] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -94,6 +99,77 @@ export default function GroupSettingsModal({
       setTransferSuccess(true);
       router.refresh();
     }
+  }
+
+  async function handleDelete() {
+    setDeleteLoading(true);
+    setDeleteError("");
+    const result = await deleteGroup(group.id);
+    setDeleteLoading(false);
+    if (result.error) {
+      setDeleteError(result.error);
+    } else {
+      router.push("/");
+    }
+  }
+
+  if (showDelete) {
+    return (
+      <Modal
+        title="Delete Group"
+        onClose={() => {
+          setShowDelete(false);
+          setDeleteError("");
+          setDeleteConfirmName("");
+        }}
+      >
+        <p className="mb-4 text-base text-slate-600">
+          This action is{" "}
+          <span className="font-semibold text-red-600">permanent</span> and
+          cannot be undone. All group data including members, preferences,
+          schedules, and configurations will be deleted.
+        </p>
+        <p className="mb-2 text-base text-slate-600">
+          Type{" "}
+          <span className="font-semibold text-slate-900">{group.name}</span> to
+          confirm.
+        </p>
+        <input
+          type="text"
+          value={deleteConfirmName}
+          onChange={(e) => setDeleteConfirmName(e.target.value)}
+          placeholder={group.name}
+          className="mb-4 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-300 focus:border-red-300 focus:outline-none focus:ring-1 focus:ring-red-300"
+        />
+
+        {deleteError && (
+          <p className="mb-4 text-base text-red-600">{deleteError}</p>
+        )}
+
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setShowDelete(false);
+              setDeleteError("");
+              setDeleteConfirmName("");
+            }}
+            disabled={deleteLoading}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleteConfirmName !== group.name || deleteLoading}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+          >
+            {deleteLoading ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </Modal>
+    );
   }
 
   if (transferSuccess) {
@@ -353,9 +429,7 @@ export default function GroupSettingsModal({
               </div>
               <button
                 className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100"
-                onClick={() => {
-                  // TODO: open delete confirmation
-                }}
+                onClick={() => setShowDelete(true)}
               >
                 Delete
               </button>

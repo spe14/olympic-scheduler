@@ -430,6 +430,79 @@ export async function updateDateConfig(
   return { success: true };
 }
 
+export async function deleteGroup(groupId: string): Promise<ActionResult> {
+  const ownership = await getOwnerMembership(groupId);
+  if (!ownership) {
+    return { error: "Only the group owner can delete the group." };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      // 1. Delete combo sessions
+      const comboIds = tx
+        .select({ id: combo.id })
+        .from(combo)
+        .where(eq(combo.groupId, groupId));
+      await tx
+        .delete(comboSession)
+        .where(inArray(comboSession.comboId, comboIds));
+
+      // 2. Delete combos
+      await tx.delete(combo).where(eq(combo.groupId, groupId));
+
+      // 3. Delete viable config members
+      const vcIds = tx
+        .select({ id: viableConfig.id })
+        .from(viableConfig)
+        .where(eq(viableConfig.groupId, groupId));
+      await tx
+        .delete(viableConfigMember)
+        .where(inArray(viableConfigMember.viableConfigId, vcIds));
+
+      // 4. Delete viable configs
+      await tx.delete(viableConfig).where(eq(viableConfig.groupId, groupId));
+
+      // 5. Delete conflicts
+      await tx.delete(conflict).where(eq(conflict.groupId, groupId));
+
+      // 6. Delete window rankings
+      await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
+
+      // 7. Get all member IDs for the group
+      const memberIds = tx
+        .select({ id: member.id })
+        .from(member)
+        .where(eq(member.groupId, groupId));
+
+      // 8. Delete session preferences
+      await tx
+        .delete(sessionPreference)
+        .where(inArray(sessionPreference.memberId, memberIds));
+
+      // 9. Delete buddy constraints
+      await tx
+        .delete(buddyConstraint)
+        .where(
+          or(
+            inArray(buddyConstraint.memberId, memberIds),
+            inArray(buddyConstraint.buddyMemberId, memberIds)
+          )
+        );
+
+      // 10. Delete members
+      await tx.delete(member).where(eq(member.groupId, groupId));
+
+      // 11. Delete group
+      await tx.delete(group).where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: "Failed to delete group. Please try again." };
+  }
+
+  revalidatePath("/");
+  return { success: true };
+}
+
 export async function transferOwnership(
   groupId: string,
   targetMemberId: string

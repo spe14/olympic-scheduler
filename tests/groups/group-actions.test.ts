@@ -7,6 +7,7 @@ import {
   leaveGroup,
   removeMember,
   transferOwnership,
+  deleteGroup,
 } from "@/app/(main)/groups/[groupId]/actions";
 
 // Mock next/cache
@@ -818,6 +819,70 @@ describe("transferOwnership", () => {
     expect(result.error).toBe(
       "Failed to transfer ownership. Please try again."
     );
+  });
+});
+
+describe("deleteGroup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+    // Reset transaction to default (succeeds)
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txSelect = vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r([]);
+            },
+          })),
+        })),
+      }));
+      const txDeleteWhere = vi.fn(() => Promise.resolve());
+      const tx = {
+        select: txSelect,
+        delete: vi.fn(() => ({ where: txDeleteWhere })),
+      };
+      return cb(tx);
+    });
+  });
+
+  it("returns error when not logged in", async () => {
+    mockGetCurrentUser.mockResolvedValue(null);
+
+    const result = await deleteGroup("group-1");
+
+    expect(result.error).toBe("Only the group owner can delete the group.");
+  });
+
+  it("returns error when user is not the owner", async () => {
+    mockNonOwner();
+
+    const result = await deleteGroup("group-1");
+
+    expect(result.error).toBe("Only the group owner can delete the group.");
+  });
+
+  it("succeeds and runs transaction for owner", async () => {
+    mockOwner();
+
+    const result = await deleteGroup("group-1");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockOwner();
+    mockTransaction.mockRejectedValue(new Error("TX error"));
+
+    const result = await deleteGroup("group-1");
+
+    expect(result.error).toBe("Failed to delete group. Please try again.");
   });
 });
 

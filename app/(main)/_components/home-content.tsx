@@ -16,7 +16,7 @@ export default function HomeContent({
   const [showJoinModal, setShowJoinModal] = useState(false);
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
+    <main className="mx-auto max-w-[1060px] px-6 py-10">
       {groups.length > 0 && (
         <div className="mb-8 flex items-center justify-between">
           <h1 className="text-3xl font-bold text-slate-900">My Groups</h1>
