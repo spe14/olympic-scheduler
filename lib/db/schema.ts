@@ -159,6 +159,7 @@ export const member = pgTable(
     sportRankings: jsonb("sport_rankings").$type<string[]>(),
     status: memberStatusEnum("status").notNull().default("pending_approval"),
     preferenceStep: preferenceStepEnum("preference_step"),
+    joinedAt: timestamp("joined_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [unique().on(table.userId, table.groupId)]

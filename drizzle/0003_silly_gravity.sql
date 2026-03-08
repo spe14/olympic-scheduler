@@ -1,0 +1,1 @@
+ALTER TABLE "member" ADD COLUMN "joined_at" timestamp;

@@ -5,6 +5,7 @@ import {
   denyMember,
   leaveGroup,
   removeMember,
+  transferOwnership,
 } from "@/app/(main)/groups/[groupId]/actions";
 
 // Mock next/cache
@@ -227,7 +228,27 @@ describe("approveMember", () => {
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
-    expect(mockSet).toHaveBeenCalledWith({ status: "joined" });
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "joined", joinedAt: expect.any(Date) })
+    );
+  });
+
+  it("sets joinedAt to current time on approval", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", status: "pending_approval" },
+    ]);
+    directWhereResults.push([{ count: 5 }]);
+
+    const before = new Date();
+    await approveMember("group-1", "member-2");
+    const after = new Date();
+
+    const calledWith = mockSet.mock.calls[0][0] as { joinedAt: Date };
+    expect(calledWith.joinedAt.getTime()).toBeGreaterThanOrEqual(
+      before.getTime()
+    );
+    expect(calledWith.joinedAt.getTime()).toBeLessThanOrEqual(after.getTime());
   });
 
   it("returns error when group is full", async () => {
@@ -652,5 +673,149 @@ describe("removeMember", () => {
     const result = await removeMember("group-1", "member-2");
 
     expect(result.error).toBe("Failed to remove member. Please try again.");
+  });
+});
+
+describe("transferOwnership", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+    // Reset transaction to default (succeeds)
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txUpdateWhere = vi.fn(() => Promise.resolve());
+      const tx = {
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: txUpdateWhere })),
+        })),
+      };
+      return cb(tx);
+    });
+  });
+
+  it("returns error when caller is not the owner", async () => {
+    mockNonOwner();
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.error).toBe("Only the group owner can transfer ownership.");
+  });
+
+  it("returns error when not logged in", async () => {
+    mockGetCurrentUser.mockResolvedValue(null);
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.error).toBe("Only the group owner can transfer ownership.");
+  });
+
+  it("returns error when target is the owner themselves", async () => {
+    mockOwner();
+
+    const result = await transferOwnership("group-1", "owner-member-1");
+
+    expect(result.error).toBe("You are already the owner.");
+  });
+
+  it("returns error when target member not found", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([]); // target not found
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.error).toBe("Member not found.");
+  });
+
+  it("returns error when target is pending_approval", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "pending_approval",
+        groupId: "group-1",
+      },
+    ]);
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.error).toBe(
+      "Cannot transfer ownership to a pending or denied member."
+    );
+  });
+
+  it("returns error when target is denied", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "denied",
+        groupId: "group-1",
+      },
+    ]);
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.error).toBe(
+      "Cannot transfer ownership to a pending or denied member."
+    );
+  });
+
+  it("succeeds for valid active member", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]);
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("succeeds for member with preferences_set status", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]);
+    mockTransaction.mockRejectedValue(new Error("TX error"));
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.error).toBe(
+      "Failed to transfer ownership. Please try again."
+    );
   });
 });

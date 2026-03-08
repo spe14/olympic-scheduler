@@ -37,9 +37,14 @@ export default function OverviewContent() {
   const group = useGroup();
   const isOwner = group.myRole === "owner";
 
-  const activeMembers = group.members.filter(
-    (m) => m.status !== "pending_approval"
-  );
+  const activeMembers = group.members
+    .filter((m) => m.status !== "pending_approval")
+    .sort((a, b) => {
+      if (a.role === "owner") return -1;
+      if (b.role === "owner") return 1;
+      if (!a.joinedAt || !b.joinedAt) return 0;
+      return new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
+    });
   const pendingMembers = group.members.filter(
     (m) => m.status === "pending_approval"
   );

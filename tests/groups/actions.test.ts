@@ -119,6 +119,33 @@ describe("createGroup", () => {
     expect(mockInsert).toHaveBeenCalled();
   });
 
+  it("sets joinedAt on owner member insert", async () => {
+    let insertedValues: Record<string, unknown> | null = null;
+    mockInsert.mockImplementation(() => ({
+      values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
+        if (vals.role) {
+          insertedValues = vals;
+          return Promise.resolve();
+        }
+        return { returning: mockReturning };
+      }),
+    }));
+
+    const fd = makeFormData({ name: "My Group" });
+    const before = new Date();
+    await createGroup(null, fd);
+    const after = new Date();
+
+    expect(insertedValues).not.toBeNull();
+    expect(insertedValues!.joinedAt).toBeInstanceOf(Date);
+    expect((insertedValues!.joinedAt as Date).getTime()).toBeGreaterThanOrEqual(
+      before.getTime()
+    );
+    expect((insertedValues!.joinedAt as Date).getTime()).toBeLessThanOrEqual(
+      after.getTime()
+    );
+  });
+
   it("creates group with consecutive date mode", async () => {
     const fd = makeFormData({
       name: "My Group",

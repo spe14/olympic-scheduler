@@ -80,6 +80,7 @@ export async function createGroup(
       groupId: newGroup.id,
       role: "owner",
       status: "joined",
+      joinedAt: new Date(),
     });
   } catch {
     return { error: "Failed to create group. Please try again." };

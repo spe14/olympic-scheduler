@@ -102,7 +102,7 @@ export async function approveMember(
   try {
     await db
       .update(member)
-      .set({ status: "joined" })
+      .set({ status: "joined", joinedAt: new Date() })
       .where(eq(member.id, memberId));
   } catch {
     return {
@@ -358,6 +358,59 @@ export async function removeMember(
     });
   } catch {
     return { error: "Failed to remove member. Please try again." };
+  }
+
+  revalidatePath(`/groups/${groupId}`);
+  return { success: true };
+}
+
+export async function transferOwnership(
+  groupId: string,
+  targetMemberId: string
+): Promise<ActionResult> {
+  const ownership = await getOwnerMembership(groupId);
+  if (!ownership) {
+    return { error: "Only the group owner can transfer ownership." };
+  }
+
+  if (ownership.id === targetMemberId) {
+    return { error: "You are already the owner." };
+  }
+
+  const [target] = await db
+    .select({
+      id: member.id,
+      role: member.role,
+      status: member.status,
+      groupId: member.groupId,
+    })
+    .from(member)
+    .where(and(eq(member.id, targetMemberId), eq(member.groupId, groupId)))
+    .limit(1);
+
+  if (!target) {
+    return { error: "Member not found." };
+  }
+
+  if (target.status === "pending_approval" || target.status === "denied") {
+    return {
+      error: "Cannot transfer ownership to a pending or denied member.",
+    };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(member)
+        .set({ role: "member" })
+        .where(eq(member.id, ownership.id));
+      await tx
+        .update(member)
+        .set({ role: "owner" })
+        .where(eq(member.id, targetMemberId));
+    });
+  } catch {
+    return { error: "Failed to transfer ownership. Please try again." };
   }
 
   revalidatePath(`/groups/${groupId}`);

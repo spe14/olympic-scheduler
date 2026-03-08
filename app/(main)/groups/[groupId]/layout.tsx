@@ -60,6 +60,7 @@ export default async function GroupLayout({
       role: member.role,
       status: member.status,
       budget: member.budget,
+      joinedAt: member.joinedAt,
       createdAt: member.createdAt,
     })
     .from(member)

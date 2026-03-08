@@ -30,6 +30,7 @@ export type GroupDetailMember = {
   role: string;
   status: string;
   budget: number | null;
+  joinedAt: Date | string | null;
   createdAt: Date | string;
 };
 
