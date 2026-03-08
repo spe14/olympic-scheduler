@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import PasswordInput from "@/components/password-input";
 import { loginSchema } from "@/lib/validations";
+import { inputClass } from "@/lib/constants";
 
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, null);
@@ -62,7 +63,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                className={inputClass}
                 placeholder="jane@example.com"
               />
               {state?.fieldErrors?.email && (
@@ -85,7 +86,7 @@ export default function LoginPage() {
                 name="password"
                 value={password}
                 onChange={setPassword}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                className={inputClass}
                 placeholder="Your password"
               />
               {state?.fieldErrors?.password && (

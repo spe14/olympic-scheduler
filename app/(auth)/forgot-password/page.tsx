@@ -4,6 +4,7 @@ import { forgotPassword } from "../actions";
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { emailSchema } from "@/lib/validations";
+import { inputClass } from "@/lib/constants";
 
 export default function ForgotPasswordPage() {
   const [state, formAction, pending] = useActionState(forgotPassword, null);
@@ -63,7 +64,7 @@ export default function ForgotPasswordPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                className={inputClass}
                 placeholder="jane@example.com"
               />
               {state?.fieldErrors?.email?.map((err) => (

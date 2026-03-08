@@ -1,6 +1,6 @@
 "use client";
 
-import { useGroup } from "../group-context";
+import { useGroup } from "../_components/group-context";
 
 export default function MySchedulePage() {
   const group = useGroup();

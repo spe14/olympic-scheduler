@@ -4,9 +4,7 @@ import { resetPassword } from "../actions";
 import { useActionState, useState } from "react";
 import PasswordInput from "@/components/password-input";
 import { resetPasswordSchema, passwordSchema } from "@/lib/validations";
-
-const inputClass =
-  "w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20";
+import { inputClass } from "@/lib/constants";
 
 export default function ResetPasswordPage() {
   const [state, formAction, pending] = useActionState(resetPassword, null);

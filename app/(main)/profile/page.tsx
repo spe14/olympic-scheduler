@@ -1,6 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import ProfileForm from "./profile-form";
+import ProfileForm from "./_components/profile-form";
 
 export default async function ProfilePage() {
   const user = await getCurrentUser();

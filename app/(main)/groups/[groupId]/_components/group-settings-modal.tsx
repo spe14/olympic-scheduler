@@ -2,6 +2,7 @@
 
 import Modal from "@/components/modal";
 import type { GroupDetail } from "@/lib/types";
+import { getDateDisplay } from "@/lib/utils";
 
 export default function GroupSettingsModal({
   group,
@@ -12,32 +13,16 @@ export default function GroupSettingsModal({
   isOwner: boolean;
   onClose: () => void;
 }) {
-  let dateDisplay: string;
-  if (group.dateMode === "consecutive" && group.consecutiveDays) {
-    dateDisplay = `${group.consecutiveDays} consecutive days`;
-  } else if (
-    group.dateMode === "specific" &&
-    group.startDate &&
-    group.endDate
-  ) {
-    const fmt = new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-    const start = new Date(group.startDate + "T00:00:00");
-    const end = new Date(group.endDate + "T00:00:00");
-    dateDisplay = `${fmt.format(start)} - ${fmt.format(end)}`;
-  } else {
-    dateDisplay = "Not configured yet";
-  }
+  const dateDisplay = group.dateMode
+    ? getDateDisplay(group)
+    : "Not configured yet";
 
   return (
     <Modal title="Group Settings" onClose={onClose}>
       <div className="space-y-6">
         {/* Date Configuration */}
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-700">
+          <h3 className="mb-3 text-sm font-semibold text-slate-600">
             Date Configuration
           </h3>
           <div className="rounded-lg border border-slate-200 px-4 py-3">
@@ -71,7 +56,7 @@ export default function GroupSettingsModal({
         {/* Transfer Ownership */}
         {isOwner && (
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-slate-700">
+            <h3 className="mb-3 text-sm font-semibold text-slate-600">
               Ownership
             </h3>
             <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">

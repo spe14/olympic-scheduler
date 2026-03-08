@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { group, member, user } from "@/lib/db/schema";
 import { eq, and, notInArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import GroupShell from "./group-shell";
+import GroupShell from "./_components/group-shell";
 import type { GroupDetail } from "@/lib/types";
 
 export default async function GroupLayout({

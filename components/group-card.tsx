@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { phaseLabels, statusLabels, avatarColors } from "@/lib/constants";
+import { phaseLabels, statusLabels } from "@/lib/constants";
+import UserAvatar from "@/components/user-avatar";
 import { Group } from "@/lib/types";
 import { removeMembership } from "@/app/(main)/actions";
 
@@ -148,16 +149,11 @@ export default function GroupCard({
           <div className="mt-4 flex items-center gap-1.5">
             {g.members.map((m, i) => (
               <div key={i} className="group/avatar relative">
-                <div
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
-                  style={{
-                    backgroundColor: avatarColors[m.avatarColor ?? "blue"].bg,
-                    color: avatarColors[m.avatarColor ?? "blue"].text,
-                  }}
-                >
-                  {m.firstName[0].toUpperCase()}
-                  {m.lastName[0].toUpperCase()}
-                </div>
+                <UserAvatar
+                  firstName={m.firstName}
+                  lastName={m.lastName}
+                  avatarColor={m.avatarColor ?? "blue"}
+                />
                 <div className="pointer-events-none absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-800 px-3.5 py-2 text-sm text-white opacity-0 shadow-lg transition-opacity group-hover/avatar:opacity-100">
                   {m.firstName} {m.lastName}
                 </div>

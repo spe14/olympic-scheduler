@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { avatarColors, MAX_GROUP_MEMBERS } from "@/lib/constants";
+import { MAX_GROUP_MEMBERS } from "@/lib/constants";
+import UserAvatar from "@/components/user-avatar";
 import type { GroupDetailMember } from "@/lib/types";
 import { useGroup } from "./group-context";
-import { approveMember, denyMember } from "./actions";
+import { approveMember, denyMember } from "../actions";
 
 const progressSteps = [
   {
@@ -74,16 +75,11 @@ export default function OverviewContent() {
             }`}
           >
             <div className="flex items-center gap-3">
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
-                style={{
-                  backgroundColor: avatarColors[m.avatarColor ?? "blue"].bg,
-                  color: avatarColors[m.avatarColor ?? "blue"].text,
-                }}
-              >
-                {m.firstName[0].toUpperCase()}
-                {m.lastName[0].toUpperCase()}
-              </div>
+              <UserAvatar
+                firstName={m.firstName}
+                lastName={m.lastName}
+                avatarColor={m.avatarColor ?? "blue"}
+              />
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-slate-900">
                   {m.firstName} {m.lastName}
@@ -199,16 +195,12 @@ function PendingMemberRow({
     <div className={`px-5 py-3 ${!isLast ? "border-b border-slate-100" : ""}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium opacity-60"
-            style={{
-              backgroundColor: avatarColors[m.avatarColor ?? "blue"].bg,
-              color: avatarColors[m.avatarColor ?? "blue"].text,
-            }}
-          >
-            {m.firstName[0].toUpperCase()}
-            {m.lastName[0].toUpperCase()}
-          </div>
+          <UserAvatar
+            firstName={m.firstName}
+            lastName={m.lastName}
+            avatarColor={m.avatarColor ?? "blue"}
+            className="opacity-60"
+          />
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-slate-500">
               {m.firstName} {m.lastName}

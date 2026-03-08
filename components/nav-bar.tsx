@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import { logout } from "@/app/(auth)/actions";
-import { avatarColors, type AvatarColor } from "@/lib/constants";
+import { type AvatarColor } from "@/lib/constants";
+import UserAvatar from "@/components/user-avatar";
 
 type NavBarProps = {
   firstName: string;
@@ -109,16 +110,11 @@ export default function NavBar({
             className="flex items-center gap-3 rounded-lg px-2 py-1 transition-colors hover:bg-slate-50"
           >
             <span className="text-sm text-slate-600">@{username}</span>
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium"
-              style={{
-                backgroundColor: avatarColors[avatarColor].bg,
-                color: avatarColors[avatarColor].text,
-              }}
-            >
-              {firstName[0].toUpperCase()}
-              {lastName[0].toUpperCase()}
-            </div>
+            <UserAvatar
+              firstName={firstName}
+              lastName={lastName}
+              avatarColor={avatarColor}
+            />
           </button>
 
           {isDropdownOpen && (
