@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   updateGroupName,
+  updateDateConfig,
   approveMember,
   denyMember,
   leaveGroup,
@@ -817,5 +818,250 @@ describe("transferOwnership", () => {
     expect(result.error).toBe(
       "Failed to transfer ownership. Please try again."
     );
+  });
+});
+
+describe("updateDateConfig", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+  });
+
+  it("returns error when not logged in", async () => {
+    mockGetCurrentUser.mockResolvedValue(null);
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toContain("owner");
+  });
+
+  it("returns error when user is not the owner", async () => {
+    mockNonOwner();
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toContain("owner");
+  });
+
+  it("updates to consecutive mode successfully", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockSet).toHaveBeenCalledWith({
+      dateMode: "consecutive",
+      consecutiveDays: 5,
+      startDate: null,
+      endDate: null,
+    });
+  });
+
+  it("updates to specific mode successfully", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-14",
+      endDate: "2028-07-18",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockSet).toHaveBeenCalledWith({
+      dateMode: "specific",
+      startDate: "2028-07-14",
+      endDate: "2028-07-18",
+      consecutiveDays: null,
+    });
+  });
+
+  it("clears specific date fields when switching to consecutive", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "3" });
+    await updateDateConfig("group-1", fd);
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ startDate: null, endDate: null })
+    );
+  });
+
+  it("clears consecutive days when switching to specific", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-12",
+      endDate: "2028-07-20",
+    });
+    await updateDateConfig("group-1", fd);
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveDays: null })
+    );
+  });
+
+  it("returns error for invalid consecutive days (0)", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "0" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("returns error for consecutive days over 19", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "20" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("accepts consecutive days at boundary 1", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "1" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts consecutive days at boundary 19", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "19" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.success).toBe(true);
+  });
+
+  it("returns error for non-integer consecutive days", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "consecutive",
+      consecutiveDays: "2.5",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("returns error for reversed date range", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-20",
+      endDate: "2028-07-14",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("returns error for start date before Olympic period", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-11",
+      endDate: "2028-07-14",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("returns error for end date after Olympic period", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-14",
+      endDate: "2028-07-31",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("accepts dates at Olympic period boundaries", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-12",
+      endDate: "2028-07-30",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.success).toBe(true);
+  });
+
+  it("returns error for missing start date in specific mode", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "",
+      endDate: "2028-07-18",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("returns error for missing end date in specific mode", async () => {
+    mockOwner();
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-14",
+      endDate: "",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBeDefined();
+    expect(result.success).toBeUndefined();
+  });
+
+  it("returns error for invalid date mode", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "unknown" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBe("Invalid date mode.");
+  });
+
+  it("returns error for empty date mode", async () => {
+    mockOwner();
+    const fd = makeFormData({ dateMode: "" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toBe("Invalid date mode.");
+  });
+
+  it("returns error when db update fails for consecutive mode", async () => {
+    mockOwner();
+    mockUpdateWhere.mockRejectedValue(new Error("DB error"));
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toContain("Failed to update date configuration");
+  });
+
+  it("returns error when db update fails for specific mode", async () => {
+    mockOwner();
+    mockUpdateWhere.mockRejectedValue(new Error("DB error"));
+    const fd = makeFormData({
+      dateMode: "specific",
+      startDate: "2028-07-14",
+      endDate: "2028-07-18",
+    });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.error).toContain("Failed to update date configuration");
   });
 });

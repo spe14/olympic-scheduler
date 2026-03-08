@@ -4,9 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/modal";
 import UserAvatar from "@/components/user-avatar";
+import {
+  DateModeOption,
+  ConsecutiveDaysInput,
+  SpecificDatesInput,
+  useDateValidation,
+} from "@/components/date-mode-fields";
 import type { GroupDetail } from "@/lib/types";
 import { getDateDisplay } from "@/lib/utils";
-import { transferOwnership } from "../actions";
+import { transferOwnership, updateDateConfig } from "../actions";
+
+type DateMode = "consecutive" | "specific";
 
 export default function GroupSettingsModal({
   group,
@@ -22,6 +30,18 @@ export default function GroupSettingsModal({
     ? getDateDisplay(group)
     : "Not configured yet";
 
+  const [showDateEdit, setShowDateEdit] = useState(false);
+  const [dateMode, setDateMode] = useState<DateMode>(
+    group.dateMode ?? "consecutive"
+  );
+  const [consecutiveDays, setConsecutiveDays] = useState(
+    group.consecutiveDays?.toString() ?? ""
+  );
+  const [startDate, setStartDate] = useState(group.startDate ?? "");
+  const [endDate, setEndDate] = useState(group.endDate ?? "");
+  const [dateLoading, setDateLoading] = useState(false);
+  const [dateError, setDateError] = useState("");
+
   const [showTransfer, setShowTransfer] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [transferLoading, setTransferLoading] = useState(false);
@@ -34,6 +54,33 @@ export default function GroupSettingsModal({
       m.status !== "pending_approval" &&
       m.status !== "denied"
   );
+
+  const {
+    daysHints,
+    dateRangeHints,
+    isValid: isDateFormValid,
+  } = useDateValidation(dateMode, consecutiveDays, startDate, endDate);
+
+  async function handleDateSubmit() {
+    setDateLoading(true);
+    setDateError("");
+    const formData = new FormData();
+    formData.set("dateMode", dateMode);
+    if (dateMode === "consecutive") {
+      formData.set("consecutiveDays", consecutiveDays);
+    } else {
+      formData.set("startDate", startDate);
+      formData.set("endDate", endDate);
+    }
+    const result = await updateDateConfig(group.id, formData);
+    setDateLoading(false);
+    if (result.error) {
+      setDateError(result.error);
+    } else {
+      setShowDateEdit(false);
+      router.refresh();
+    }
+  }
 
   async function handleTransfer() {
     if (!selectedMemberId) return;
@@ -147,6 +194,77 @@ export default function GroupSettingsModal({
     );
   }
 
+  if (showDateEdit) {
+    return (
+      <Modal
+        title="Date Configuration"
+        onClose={() => {
+          setShowDateEdit(false);
+          setDateError("");
+        }}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <DateModeOption
+              selected={dateMode === "consecutive"}
+              onClick={() => setDateMode("consecutive")}
+              label="Consecutive Days"
+              description="The algorithm will find the best N-day window for your group."
+            />
+            <DateModeOption
+              selected={dateMode === "specific"}
+              onClick={() => setDateMode("specific")}
+              label="Specific Dates"
+              description="Your group has already chosen specific dates to attend."
+            />
+          </div>
+
+          {dateMode === "consecutive" && (
+            <ConsecutiveDaysInput
+              value={consecutiveDays}
+              onChange={setConsecutiveDays}
+              hints={daysHints}
+            />
+          )}
+
+          {dateMode === "specific" && (
+            <SpecificDatesInput
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              hints={dateRangeHints}
+            />
+          )}
+
+          {dateError && <p className="text-sm text-red-600">{dateError}</p>}
+
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShowDateEdit(false);
+                setDateError("");
+              }}
+              disabled={dateLoading}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDateSubmit}
+              disabled={!isDateFormValid || dateLoading}
+              className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
+            >
+              {dateLoading ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal title="Group Settings" onClose={onClose}>
       <div className="space-y-6">
@@ -158,7 +276,9 @@ export default function GroupSettingsModal({
           <div className="rounded-lg border border-slate-200 px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Attendance Dates</p>
+                <p className="text-sm font-medium text-slate-900">
+                  Attendance Dates
+                </p>
                 <p className="mt-0.5 font-medium text-slate-900">
                   {dateDisplay}
                 </p>
@@ -166,15 +286,17 @@ export default function GroupSettingsModal({
               {isOwner && (
                 <button
                   className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
-                  onClick={() => {
-                    // TODO: open date config edit form
-                  }}
+                  onClick={() => setShowDateEdit(true)}
                 >
                   {group.dateMode ? "Edit" : "Configure"}
                 </button>
               )}
             </div>
-            {!group.dateMode && (
+            {group.dateMode ? (
+              <p className="mt-2 text-sm text-slate-500">
+                You can update this at any time.
+              </p>
+            ) : (
               <p className="mt-2 text-sm text-amber-600">
                 Date configuration must be set before schedules can be
                 generated.

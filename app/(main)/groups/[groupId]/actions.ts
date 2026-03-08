@@ -16,7 +16,11 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, or, notInArray, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { groupNameSchema } from "@/lib/validations";
+import {
+  groupNameSchema,
+  consecutiveDaysSchema,
+  dateRangeSchema,
+} from "@/lib/validations";
 import { MAX_GROUP_MEMBERS } from "@/lib/constants";
 
 export type ActionResult = {
@@ -358,6 +362,68 @@ export async function removeMember(
     });
   } catch {
     return { error: "Failed to remove member. Please try again." };
+  }
+
+  revalidatePath(`/groups/${groupId}`);
+  return { success: true };
+}
+
+export async function updateDateConfig(
+  groupId: string,
+  formData: FormData
+): Promise<ActionResult> {
+  const ownership = await getOwnerMembership(groupId);
+  if (!ownership) {
+    return { error: "Only the group owner can update date configuration." };
+  }
+
+  const dateMode = formData.get("dateMode") as string;
+
+  if (dateMode === "consecutive") {
+    const days = formData.get("consecutiveDays") as string;
+    const daysResult = consecutiveDaysSchema.safeParse(days);
+    if (!daysResult.success) {
+      return { error: daysResult.error.issues[0].message };
+    }
+    try {
+      await db
+        .update(group)
+        .set({
+          dateMode: "consecutive",
+          consecutiveDays: daysResult.data,
+          startDate: null,
+          endDate: null,
+        })
+        .where(eq(group.id, groupId));
+    } catch {
+      return {
+        error: "Failed to update date configuration. Please try again.",
+      };
+    }
+  } else if (dateMode === "specific") {
+    const startDate = formData.get("startDate") as string;
+    const endDate = formData.get("endDate") as string;
+    const rangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+    if (!rangeResult.success) {
+      return { error: rangeResult.error.issues[0].message };
+    }
+    try {
+      await db
+        .update(group)
+        .set({
+          dateMode: "specific",
+          startDate: rangeResult.data.startDate,
+          endDate: rangeResult.data.endDate,
+          consecutiveDays: null,
+        })
+        .where(eq(group.id, groupId));
+    } catch {
+      return {
+        error: "Failed to update date configuration. Please try again.",
+      };
+    }
+  } else {
+    return { error: "Invalid date mode." };
   }
 
   revalidatePath(`/groups/${groupId}`);
