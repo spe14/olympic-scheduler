@@ -84,14 +84,14 @@ export default function CreateGroupModal({
     dateRangeHints.length === 0;
 
   const inputClass =
-    "w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20";
+    "w-full rounded-xl border border-slate-200 bg-slate-50 px-5 py-3.5 text-lg text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20";
 
   return (
-    <Modal title="Create a Group" onClose={onClose}>
-      <form action={formAction} className="space-y-5">
+    <Modal title="Create Group" onClose={onClose}>
+      <form action={formAction} className="space-y-6">
         {/* Group Name */}
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-600">
+          <label className="mb-2.5 block text-lg font-medium text-slate-600">
             Group Name
           </label>
           <input
@@ -104,7 +104,7 @@ export default function CreateGroupModal({
             className={inputClass}
           />
           {nameHints.map((h) => (
-            <p key={h} className="mt-1 text-xs text-slate-400">
+            <p key={h} className="mt-2 text-base text-slate-400">
               {h}
             </p>
           ))}
@@ -112,8 +112,8 @@ export default function CreateGroupModal({
 
         {/* Date Mode */}
         <div>
-          <div className="mb-1 flex items-center gap-1.5">
-            <label className="text-sm font-medium text-slate-600">
+          <div className="mb-2 flex items-center gap-2">
+            <label className="text-lg font-medium text-slate-600">
               When are you planning to attend?
             </label>
             <div
@@ -125,16 +125,16 @@ export default function CreateGroupModal({
               <button
                 type="button"
                 onClick={() => setShowDateInfo(!showDateInfo)}
-                className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-medium text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-500"
+                className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-xs font-medium text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-500"
               >
                 ?
               </button>
               {showDateInfo && (
-                <div className="absolute left-1/2 top-6 z-10 w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
-                  <p className="mb-2 text-xs font-medium text-slate-700">
+                <div className="absolute left-1/2 top-7 z-10 w-80 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
+                  <p className="mb-2.5 text-sm font-medium text-slate-700">
                     Date Mode Options
                   </p>
-                  <p className="mb-1.5 text-xs text-slate-500">
+                  <p className="mb-2 text-sm text-slate-500">
                     <span className="font-medium text-slate-600">
                       Consecutive Days
                     </span>{" "}
@@ -142,7 +142,7 @@ export default function CreateGroupModal({
                     days). The algorithm will find the best window of that
                     length.
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-sm text-slate-500">
                     <span className="font-medium text-slate-600">
                       Specific Dates
                     </span>{" "}
@@ -153,7 +153,7 @@ export default function CreateGroupModal({
               )}
             </div>
           </div>
-          <p className="mb-3 text-xs text-slate-400">
+          <p className="mb-4 text-base text-slate-400">
             You can always change this later in group settings.
           </p>
 
@@ -164,7 +164,7 @@ export default function CreateGroupModal({
             value={dateMode === "deferred" || dateMode === null ? "" : dateMode}
           />
 
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <DateModeOption
               selected={dateMode === "consecutive"}
               onClick={() => setDateMode("consecutive")}
@@ -187,8 +187,8 @@ export default function CreateGroupModal({
 
           {/* Consecutive Days Input */}
           {dateMode === "consecutive" && (
-            <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
-              <label className="mb-1.5 block text-xs font-medium text-slate-600">
+            <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+              <label className="mb-2.5 block text-base font-medium text-slate-600">
                 Number of Days
               </label>
               <input
@@ -204,13 +204,13 @@ export default function CreateGroupModal({
                   }
                 }}
                 placeholder="e.g. 5"
-                className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                className="w-28 rounded-xl border border-slate-200 bg-white px-4 py-3 text-lg text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
               />
-              <p className="mt-2 text-xs text-slate-400">
+              <p className="mt-2.5 text-base text-slate-400">
                 Olympic Period: 19 days
               </p>
               {daysHints.map((h) => (
-                <p key={h} className="mt-1 text-xs text-red-500">
+                <p key={h} className="mt-2 text-base text-red-500">
                   {h}
                 </p>
               ))}
@@ -219,10 +219,10 @@ export default function CreateGroupModal({
 
           {/* Specific Dates Inputs */}
           {dateMode === "specific" && (
-            <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
-              <div className="flex gap-3">
+            <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+              <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                  <label className="mb-2.5 block text-base font-medium text-slate-600">
                     Start Date
                   </label>
                   <input
@@ -232,11 +232,11 @@ export default function CreateGroupModal({
                     max="2028-07-30"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-lg text-slate-900 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                  <label className="mb-2.5 block text-base font-medium text-slate-600">
                     End Date
                   </label>
                   <input
@@ -246,15 +246,15 @@ export default function CreateGroupModal({
                     max="2028-07-30"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-lg text-slate-900 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
                   />
                 </div>
               </div>
-              <p className="mt-2 text-xs text-slate-400">
+              <p className="mt-2.5 text-base text-slate-400">
                 Olympic Period: Jul 12, 2028 - Jul 30, 2028
               </p>
               {dateRangeHints.map((h) => (
-                <p key={h} className="mt-1 text-xs text-red-500">
+                <p key={h} className="mt-2 text-base text-red-500">
                   {h}
                 </p>
               ))}
@@ -262,21 +262,23 @@ export default function CreateGroupModal({
           )}
         </div>
 
-        {state?.error && <p className="text-xs text-red-500">{state.error}</p>}
+        {state?.error && (
+          <p className="text-base text-red-500">{state.error}</p>
+        )}
 
-        <div className="flex justify-end gap-3">
+        <div className="mt-2 flex justify-end gap-4">
           <button
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-xl border border-slate-200 px-6 py-3 text-lg font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={pending || !canSubmit}
-            className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl bg-[#009de5] px-6 py-3 text-lg font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Creating..." : "Create Group"}
           </button>
@@ -301,28 +303,28 @@ function DateModeOption({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-all ${
+      className={`flex w-full items-start gap-3.5 rounded-xl border px-4 py-3.5 text-left transition-all ${
         selected
           ? "border-[#009de5]/40 bg-[#009de5]/5 ring-1 ring-[#009de5]/20"
           : "border-slate-200 bg-white hover:border-slate-300"
       }`}
     >
       <div
-        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+        className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
           selected ? "border-[#009de5]" : "border-slate-300"
         }`}
       >
-        {selected && <div className="h-2 w-2 rounded-full bg-[#009de5]" />}
+        {selected && <div className="h-2.5 w-2.5 rounded-full bg-[#009de5]" />}
       </div>
       <div>
         <p
-          className={`text-sm font-medium ${
+          className={`text-lg font-medium ${
             selected ? "text-slate-900" : "text-slate-700"
           }`}
         >
           {label}
         </p>
-        <p className="text-xs text-slate-400">{description}</p>
+        <p className="text-base text-slate-400">{description}</p>
       </div>
     </button>
   );

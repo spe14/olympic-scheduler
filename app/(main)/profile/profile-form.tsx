@@ -185,12 +185,12 @@ function EditableField({
           autoFocus
         />
         {hints.map((hint) => (
-          <p key={hint} className="mt-1 text-xs text-slate-400">
+          <p key={hint} className="mt-1 text-sm text-slate-400">
             {hint}
           </p>
         ))}
         {state?.error && (
-          <p className="mt-1 text-xs text-red-500">{state.error}</p>
+          <p className="mt-1 text-sm text-red-500">{state.error}</p>
         )}
         <div className="mt-2 flex gap-2">
           <button
@@ -249,8 +249,8 @@ function AvatarColorPicker({
             color: avatarColors[selected].text,
           }}
         >
-          {firstName[0]}
-          {lastName[0]}
+          {firstName[0].toUpperCase()}
+          {lastName[0].toUpperCase()}
         </div>
 
         <div className="flex gap-3">
@@ -274,8 +274,8 @@ function AvatarColorPicker({
               }}
               title={avatarColors[color].label}
             >
-              {firstName[0]}
-              {lastName[0]}
+              {firstName[0].toUpperCase()}
+              {lastName[0].toUpperCase()}
             </button>
           ))}
         </div>
@@ -367,7 +367,7 @@ function PasswordSection({ inputClass }: { inputClass: string }) {
             errors={passwordState?.fieldErrors?.newPassword}
           />
           {passwordHints.map((hint) => (
-            <p key={hint} className="mt-1 text-xs text-slate-400">
+            <p key={hint} className="mt-1 text-sm text-slate-400">
               {hint}
             </p>
           ))}
@@ -389,7 +389,7 @@ function PasswordSection({ inputClass }: { inputClass: string }) {
             errors={passwordState?.fieldErrors?.confirmPassword}
           />
           {confirmHints.map((hint) => (
-            <p key={hint} className="mt-1 text-xs text-slate-400">
+            <p key={hint} className="mt-1 text-sm text-slate-400">
               {hint}
             </p>
           ))}

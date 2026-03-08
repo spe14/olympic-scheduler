@@ -116,8 +116,8 @@ export default function NavBar({
                 color: avatarColors[avatarColor].text,
               }}
             >
-              {firstName[0]}
-              {lastName[0]}
+              {firstName[0].toUpperCase()}
+              {lastName[0].toUpperCase()}
             </div>
           </button>
 

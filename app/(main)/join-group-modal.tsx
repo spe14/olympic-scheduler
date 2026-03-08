@@ -20,9 +20,14 @@ export default function JoinGroupModal({
 
   if (prevState !== state) {
     setPrevState(state);
-    setDismissed(false);
-    if (state?.success) onJoined();
+    if (state) {
+      setDismissed(false);
+    }
   }
+
+  useEffect(() => {
+    if (state?.success) onJoined();
+  }, [state, onJoined]);
 
   const codeResult = inviteCodeSchema.safeParse(code);
   const hints =
@@ -37,7 +42,7 @@ export default function JoinGroupModal({
   return (
     <Modal title="Join Group" onClose={onClose}>
       <form action={formAction}>
-        <label className="mb-1.5 block text-sm font-medium text-slate-600">
+        <label className="mb-2.5 block text-lg font-medium text-slate-600">
           Invite Code
         </label>
         <input
@@ -50,25 +55,25 @@ export default function JoinGroupModal({
             setDismissed(true);
           }}
           placeholder="Enter the invite code"
-          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-5 py-3.5 text-lg text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
         />
         {hints.map((h) => (
-          <p key={h} className="mt-1 text-xs text-slate-400">
+          <p key={h} className="mt-2 text-base text-slate-400">
             {h}
           </p>
         ))}
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-3 text-base text-slate-400">
           Ask a group member for their invite code to join.
         </p>
         {state?.error && !dismissed && (
-          <p className="mt-1 text-xs text-red-500">{state.error}</p>
+          <p className="mt-2 text-base text-red-500">{state.error}</p>
         )}
-        <div className="mt-5 flex justify-end gap-3">
+        <div className="mt-8 flex justify-end gap-4">
           <button
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-xl border border-slate-200 px-6 py-3 text-lg font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -80,7 +85,7 @@ export default function JoinGroupModal({
               hints.length > 0 ||
               (!dismissed && state?.code === "already_member")
             }
-            className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl bg-[#009de5] px-6 py-3 text-lg font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Joining..." : "Join Group"}
           </button>

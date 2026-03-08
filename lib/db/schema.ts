@@ -50,6 +50,7 @@ export const memberRoleEnum = pgEnum("member_role_enum", ["owner", "member"]);
 
 export const memberStatusEnum = pgEnum("member_status_enum", [
   "pending_approval",
+  "denied",
   "joined",
   "preferences_set",
   "schedule_review_pending",

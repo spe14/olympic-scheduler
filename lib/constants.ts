@@ -1,9 +1,11 @@
 export const phaseLabels: Record<string, string> = {
   preferences: "Entering Preferences",
-  schedule_review: "Schedule Review",
+  schedule_review: "Reviewing Schedules",
   conflict_resolution: "Resolving Conflicts",
   completed: "Completed",
 };
+
+export const MAX_GROUP_MEMBERS = 12;
 
 // Session timeout constants (in seconds)
 export const MAX_SESSION_DURATION = 7 * 24 * 60 * 60; // 7 days
@@ -44,9 +46,9 @@ export const avatarColors: Record<
 export const statusLabels: Record<string, string> = {
   pending_approval: "Pending Approval",
   joined: "Joined",
-  preferences_set: "Preferences Set",
+  preferences_set: "Entered Preferences",
   schedule_review_pending: "Reviewing Schedule",
-  schedule_review_confirmed: "Schedule Confirmed",
+  schedule_review_confirmed: "Confirmed Schedule",
   conflict_resolution_pending: "Resolving Conflicts",
-  conflict_resolution_confirmed: "Conflicts Resolved",
+  conflict_resolution_confirmed: "Resolved Conflicts",
 };

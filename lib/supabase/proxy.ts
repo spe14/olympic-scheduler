@@ -57,10 +57,21 @@ export async function updateSession(request: NextRequest) {
     );
     const lastActive = Number(request.cookies.get(LAST_ACTIVE_COOKIE)?.value);
 
+    const hasSessionStartCookie = request.cookies.has(SESSION_START_COOKIE);
+    const hasLastActiveCookie = request.cookies.has(LAST_ACTIVE_COOKIE);
+
     const sessionExpired =
-      sessionStart && now - sessionStart > MAX_SESSION_DURATION;
-    const inactivityExpired =
-      lastActive && now - lastActive > INACTIVITY_TIMEOUT;
+      hasSessionStartCookie && now - sessionStart > MAX_SESSION_DURATION;
+
+    // Only check inactivity if the session has been initialized (has a
+    // session_start cookie). On a fresh login, neither cookie exists yet —
+    // they get set below. Once initialized, the user is only considered
+    // active if the last_active cookie exists AND is within the timeout.
+    // All other cases (cookie expired via maxAge, cookie stale, etc.) are
+    // treated as inactivity timeout.
+    const inactivityExpired = hasSessionStartCookie
+      ? !(hasLastActiveCookie && now - lastActive <= INACTIVITY_TIMEOUT)
+      : false;
 
     if (sessionExpired || inactivityExpired) {
       await supabase.auth.signOut();

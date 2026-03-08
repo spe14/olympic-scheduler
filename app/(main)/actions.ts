@@ -3,7 +3,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { group, member } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, notInArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import {
   groupNameSchema,
@@ -12,6 +12,7 @@ import {
   consecutiveDaysSchema,
 } from "@/lib/validations";
 import crypto from "crypto";
+import { MAX_GROUP_MEMBERS } from "@/lib/constants";
 
 export type GroupActionResult = {
   error?: string;
@@ -116,16 +117,52 @@ export async function joinGroup(
   const groupId = matchingGroup[0].id;
 
   const existingMember = await db
-    .select({ id: member.id })
+    .select({ id: member.id, status: member.status })
     .from(member)
     .where(and(eq(member.userId, user.id), eq(member.groupId, groupId)))
     .limit(1);
 
   if (existingMember.length > 0) {
-    return {
-      error: "You are already a member of this group.",
-      code: "already_member",
-    };
+    if (existingMember[0].status === "pending_approval") {
+      return {
+        error: "You already have a pending join request for this group.",
+        code: "pending_approval",
+      };
+    }
+    if (existingMember[0].status !== "denied") {
+      return {
+        error: "You are already a member of this group.",
+        code: "already_member",
+      };
+    }
+  }
+
+  const [{ count: activeCount }] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(member)
+    .where(
+      and(
+        eq(member.groupId, groupId),
+        notInArray(member.status, ["pending_approval", "denied"])
+      )
+    );
+
+  if (activeCount >= MAX_GROUP_MEMBERS) {
+    return { error: "This group is full. Groups are limited to 12 members." };
+  }
+
+  if (existingMember.length > 0) {
+    // Status must be "denied" — reset to pending
+    try {
+      await db
+        .update(member)
+        .set({ status: "pending_approval" })
+        .where(eq(member.id, existingMember[0].id));
+    } catch {
+      return { error: "Failed to join group. Please try again." };
+    }
+    revalidatePath("/");
+    return { success: true };
   }
 
   try {
@@ -137,6 +174,41 @@ export async function joinGroup(
     });
   } catch {
     return { error: "Failed to join group. Please try again." };
+  }
+
+  revalidatePath("/");
+  return { success: true };
+}
+
+export async function removeMembership(
+  memberId: string
+): Promise<GroupActionResult> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { error: "You must be logged in." };
+  }
+
+  const [membership] = await db
+    .select({ id: member.id, userId: member.userId, status: member.status })
+    .from(member)
+    .where(eq(member.id, memberId))
+    .limit(1);
+
+  if (!membership || membership.userId !== user.id) {
+    return { error: "Membership not found." };
+  }
+
+  if (
+    membership.status !== "pending_approval" &&
+    membership.status !== "denied"
+  ) {
+    return { error: "You must leave the group from the group page." };
+  }
+
+  try {
+    await db.delete(member).where(eq(member.id, memberId));
+  } catch {
+    return { error: "Failed to remove membership. Please try again." };
   }
 
   revalidatePath("/");

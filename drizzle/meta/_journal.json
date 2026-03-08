@@ -15,6 +15,13 @@
       "when": 1772911331427,
       "tag": "0001_secret_mauler",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772923186883,
+      "tag": "0002_odd_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

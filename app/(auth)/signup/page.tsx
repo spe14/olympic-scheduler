@@ -99,7 +99,7 @@ export default function SignUpPage() {
                   placeholder="Jane"
                 />
                 {state?.fieldErrors?.firstName?.map((err) => (
-                  <p key={err} className="mt-1 text-xs text-red-500">
+                  <p key={err} className="mt-1 text-sm text-red-500">
                     {err}
                   </p>
                 ))}
@@ -122,7 +122,7 @@ export default function SignUpPage() {
                   placeholder="Doe"
                 />
                 {state?.fieldErrors?.lastName?.map((err) => (
-                  <p key={err} className="mt-1 text-xs text-red-500">
+                  <p key={err} className="mt-1 text-sm text-red-500">
                     {err}
                   </p>
                 ))}
@@ -148,12 +148,12 @@ export default function SignUpPage() {
                 placeholder="janedoe"
               />
               {state?.fieldErrors?.username?.map((err) => (
-                <p key={err} className="mt-1 text-xs text-red-500">
+                <p key={err} className="mt-1 text-sm text-red-500">
                   {err}
                 </p>
               ))}
               {usernameHints.map((hint) => (
-                <p key={hint} className="mt-1 text-xs text-slate-400">
+                <p key={hint} className="mt-1 text-sm text-slate-400">
                   {hint}
                 </p>
               ))}
@@ -178,12 +178,12 @@ export default function SignUpPage() {
                 placeholder="jane@example.com"
               />
               {state?.fieldErrors?.email?.map((err) => (
-                <p key={err} className="mt-1 text-xs text-red-500">
+                <p key={err} className="mt-1 text-sm text-red-500">
                   {err}
                 </p>
               ))}
               {emailHint && (
-                <p className="mt-1 text-xs text-slate-400">{emailHint}</p>
+                <p className="mt-1 text-sm text-slate-400">{emailHint}</p>
               )}
             </div>
 
@@ -204,12 +204,12 @@ export default function SignUpPage() {
                 placeholder="At least 8 characters"
               />
               {state?.fieldErrors?.password?.map((err) => (
-                <p key={err} className="mt-1 text-xs text-red-500">
+                <p key={err} className="mt-1 text-sm text-red-500">
                   {err}
                 </p>
               ))}
               {passwordHints.map((hint) => (
-                <p key={hint} className="mt-1 text-xs text-slate-400">
+                <p key={hint} className="mt-1 text-sm text-slate-400">
                   {hint}
                 </p>
               ))}

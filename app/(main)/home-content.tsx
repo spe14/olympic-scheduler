@@ -43,7 +43,10 @@ export default function HomeContent({
           onJoinClick={() => setShowJoinModal(true)}
         />
       ) : (
-        <GroupsList groups={groups} />
+        <GroupsList
+          groups={groups}
+          onRefresh={() => refreshGroups(setGroups)}
+        />
       )}
 
       {showCreateModal && (
@@ -113,9 +116,18 @@ function EmptyState({
   );
 }
 
-function GroupsList({ groups }: { groups: Group[] }) {
-  const owned = groups.filter((g) => g.myRole === "owner");
-  const joined = groups.filter((g) => g.myRole !== "owner");
+function GroupsList({
+  groups,
+  onRefresh,
+}: {
+  groups: Group[];
+  onRefresh: () => void;
+}) {
+  const isActive = (g: Group) =>
+    g.myStatus !== "pending_approval" && g.myStatus !== "denied";
+  const owned = groups.filter((g) => g.myRole === "owner" && isActive(g));
+  const joined = groups.filter((g) => g.myRole !== "owner" && isActive(g));
+  const pending = groups.filter((g) => !isActive(g));
 
   return (
     <div className="space-y-8">
@@ -126,7 +138,7 @@ function GroupsList({ groups }: { groups: Group[] }) {
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
             {owned.map((g) => (
-              <GroupCard key={g.id} group={g} />
+              <GroupCard key={g.id} group={g} onRemoved={onRefresh} />
             ))}
           </div>
         </div>
@@ -138,7 +150,19 @@ function GroupsList({ groups }: { groups: Group[] }) {
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
             {joined.map((g) => (
-              <GroupCard key={g.id} group={g} />
+              <GroupCard key={g.id} group={g} onRemoved={onRefresh} />
+            ))}
+          </div>
+        </div>
+      )}
+      {pending.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-base font-semibold text-slate-500">
+            Pending Requests
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {pending.map((g) => (
+              <GroupCard key={g.id} group={g} onRemoved={onRefresh} />
             ))}
           </div>
         </div>

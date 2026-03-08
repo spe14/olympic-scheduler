@@ -67,12 +67,12 @@ export default function ForgotPasswordPage() {
                 placeholder="jane@example.com"
               />
               {state?.fieldErrors?.email?.map((err) => (
-                <p key={err} className="mt-1 text-xs text-red-500">
+                <p key={err} className="mt-1 text-sm text-red-500">
                   {err}
                 </p>
               ))}
               {emailHint && (
-                <p className="mt-1 text-xs text-slate-400">{emailHint}</p>
+                <p className="mt-1 text-sm text-slate-400">{emailHint}</p>
               )}
             </div>
 

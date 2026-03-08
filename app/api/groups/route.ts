@@ -20,10 +20,11 @@ export async function GET() {
       createdAt: group.createdAt,
       myRole: member.role,
       myStatus: member.status,
+      myMemberId: member.id,
       memberCount: sql<number>`(
         SELECT COUNT(*)::int FROM member m2
         WHERE m2.group_id = ${group.id}
-          AND m2.status != 'pending_approval'
+          AND m2.status NOT IN ('pending_approval', 'denied')
       )`,
       pendingCount: sql<number>`(
         SELECT COUNT(*)::int FROM member m2
@@ -39,7 +40,7 @@ export async function GET() {
         FROM member m3
         JOIN users u ON u.id = m3.user_id
         WHERE m3.group_id = ${group.id}
-          AND m3.status != 'pending_approval'
+          AND m3.status NOT IN ('pending_approval', 'denied')
       )`,
     })
     .from(member)

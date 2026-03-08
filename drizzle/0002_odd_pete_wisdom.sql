@@ -1,0 +1,1 @@
+ALTER TYPE "public"."member_status_enum" ADD VALUE 'denied' BEFORE 'joined';

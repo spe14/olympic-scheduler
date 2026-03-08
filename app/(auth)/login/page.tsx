@@ -66,7 +66,7 @@ export default function LoginPage() {
                 placeholder="jane@example.com"
               />
               {state?.fieldErrors?.email && (
-                <p className="mt-1 text-xs text-red-500">
+                <p className="mt-1 text-sm text-red-500">
                   {state.fieldErrors.email[0]}
                 </p>
               )}
@@ -89,7 +89,7 @@ export default function LoginPage() {
                 placeholder="Your password"
               />
               {state?.fieldErrors?.password && (
-                <p className="mt-1 text-xs text-red-500">
+                <p className="mt-1 text-sm text-red-500">
                   {state.fieldErrors.password[0]}
                 </p>
               )}

@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import NavBar from "@/components/nav-bar";
+import InactivityGuard from "@/components/inactivity-guard";
 
 export default async function MainLayout({
   children,
@@ -15,6 +16,7 @@ export default async function MainLayout({
 
   return (
     <>
+      <InactivityGuard />
       <NavBar
         firstName={user.firstName}
         lastName={user.lastName}
