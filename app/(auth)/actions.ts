@@ -6,13 +6,13 @@ import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import {
   signUpSchema,
   loginSchema,
   resetPasswordSchema,
   emailSchema,
 } from "@/lib/validations";
+import { parseFieldErrors } from "@/lib/utils";
 
 export type AuthResult = {
   error?: string;
@@ -35,16 +35,7 @@ export async function signUp(
   const result = signUpSchema.safeParse(raw);
 
   if (!result.success) {
-    const tree = z.treeifyError(result.error);
-    const fieldErrors: Record<string, string[]> = {};
-
-    for (const [key, value] of Object.entries(tree.properties ?? {})) {
-      if (value?.errors) {
-        fieldErrors[key] = value.errors;
-      }
-    }
-
-    return { fieldErrors, values: raw };
+    return { fieldErrors: parseFieldErrors(result.error), values: raw };
   }
 
   const { email, password, username, firstName, lastName } = result.data;
@@ -109,16 +100,7 @@ export async function login(
   const result = loginSchema.safeParse(raw);
 
   if (!result.success) {
-    const tree = z.treeifyError(result.error);
-    const fieldErrors: Record<string, string[]> = {};
-
-    for (const [key, value] of Object.entries(tree.properties ?? {})) {
-      if (value?.errors) {
-        fieldErrors[key] = value.errors;
-      }
-    }
-
-    return { fieldErrors, values: raw };
+    return { fieldErrors: parseFieldErrors(result.error), values: raw };
   }
 
   const { email, password } = result.data;
@@ -181,16 +163,7 @@ export async function resetPassword(
   const result = resetPasswordSchema.safeParse(raw);
 
   if (!result.success) {
-    const tree = z.treeifyError(result.error);
-    const fieldErrors: Record<string, string[]> = {};
-
-    for (const [key, value] of Object.entries(tree.properties ?? {})) {
-      if (value?.errors) {
-        fieldErrors[key] = value.errors;
-      }
-    }
-
-    return { fieldErrors };
+    return { fieldErrors: parseFieldErrors(result.error) };
   }
 
   const supabase = await createClient();

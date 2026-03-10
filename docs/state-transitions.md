@@ -176,26 +176,33 @@ These transitions affect ALL members simultaneously:
 
 ### Re-enter Preferences (Any Member)
 
-| Effect                      | Details                                                                                                                   |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Triggering member           | → `joined`, `preference_step` → `'buddies'` (sport rankings and session preferences preserved; user can skip to any step) |
-| All other members           | → `preferences_set` (preferences preserved)                                                                               |
-| Group phase                 | → `preferences`                                                                                                           |
-| Algorithm outputs           | Preserved until owner triggers new generation                                                                             |
-| Override and excluded flags | Reset to `false` for all members (previously excluded sessions reconsidered on re-generation)                             |
+| Effect                      | Details                                                                                                                          |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Triggering member           | → `joined`, `preference_step` → `'buddies_budget'` (sport rankings and session preferences preserved; user can skip to any step) |
+| All other members           | → `preferences_set` (preferences preserved)                                                                                      |
+| Group phase                 | → `preferences`                                                                                                                  |
+| Algorithm outputs           | Preserved until owner triggers new generation                                                                                    |
+| Override and excluded flags | Reset to `false` for all members (previously excluded sessions reconsidered on re-generation)                                    |
 
 ### Member Leaves Group
 
-When a member leaves after algorithm has run:
+When a member leaves during `preferences` phase:
 
-| Effect                                  | Details                                                                                                     |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                    |
-| Members who had leaving member as buddy | → `joined` with `preference_step = 'buddies'` (buddy constraints auto-removed, other preferences preserved) |
-| Members with no buddy connection        | → `preferences_set`                                                                                         |
-| Group phase                             | → `preferences`                                                                                             |
-| Algorithm outputs                       | Deleted                                                                                                     |
-| Override and excluded flags             | Reset to `false` for all remaining members                                                                  |
+| Effect                                  | Details                                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                           |
+| Members who had leaving member as buddy | → `joined` with `preference_step = 'buddies_budget'` (buddy constraints auto-removed, other preferences preserved) |
+
+When a member leaves after algorithm has run (post-preferences phase):
+
+| Effect                                  | Details                                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                           |
+| Members who had leaving member as buddy | → `joined` with `preference_step = 'buddies_budget'` (buddy constraints auto-removed, other preferences preserved) |
+| Members with no buddy connection        | → `preferences_set`                                                                                                |
+| Group phase                             | → `preferences`                                                                                                    |
+| Algorithm outputs                       | Deleted                                                                                                            |
+| Override and excluded flags             | Reset to `false` for all remaining members                                                                         |
 
 ### Cascade (Conflict Resolution)
 

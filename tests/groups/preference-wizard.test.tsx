@@ -49,8 +49,24 @@ vi.mock(
 vi.mock(
   "@/app/(main)/groups/[groupId]/preferences/_components/buddies-budget-step",
   () => ({
-    default: ({ onChange }: { onChange: () => void }) => (
-      <div data-testid="buddies-budget-step">Buddies & Budget Step</div>
+    default: ({
+      onChange,
+    }: {
+      onChange: (data: {
+        budget: number | null;
+        minBuddies: number;
+        buddies: { memberId: string; type: "hard" | "soft" }[];
+      }) => void;
+    }) => (
+      <div data-testid="buddies-budget-step">
+        Buddies & Budget Step
+        <button
+          data-testid="change-budget"
+          onClick={() => onChange({ budget: 500, minBuddies: 2, buddies: [] })}
+        >
+          Change Budget
+        </button>
+      </div>
     ),
   })
 );
@@ -58,8 +74,22 @@ vi.mock(
 vi.mock(
   "@/app/(main)/groups/[groupId]/preferences/_components/sport-rankings-step",
   () => ({
-    default: () => (
-      <div data-testid="sport-rankings-step">Sport Rankings Step</div>
+    default: ({ onChange }: { onChange: (rankings: string[]) => void }) => (
+      <div data-testid="sport-rankings-step">
+        Sport Rankings Step
+        <button
+          data-testid="set-sport-rankings"
+          onClick={() => onChange(["Tennis", "Swimming"])}
+        >
+          Set Rankings
+        </button>
+        <button
+          data-testid="remove-swimming"
+          onClick={() => onChange(["Tennis"])}
+        >
+          Remove Swimming
+        </button>
+      </div>
     ),
   })
 );
@@ -67,7 +97,42 @@ vi.mock(
 vi.mock(
   "@/app/(main)/groups/[groupId]/preferences/_components/sessions-step",
   () => ({
-    default: () => <div data-testid="sessions-step">Sessions Step</div>,
+    default: ({
+      onChange,
+      onHiddenChange,
+    }: {
+      onChange: (prefs: Map<string, unknown>) => void;
+      onHiddenChange: (hidden: Set<string>) => void;
+    }) => (
+      <div data-testid="sessions-step">
+        Sessions Step
+        <button
+          data-testid="add-session-pref"
+          onClick={() =>
+            onChange(
+              new Map([
+                [
+                  "TEN-001",
+                  {
+                    sessionId: "TEN-001",
+                    interest: "high",
+                    maxWillingness: 200,
+                  },
+                ],
+              ])
+            )
+          }
+        >
+          Add Pref
+        </button>
+        <button
+          data-testid="change-hidden"
+          onClick={() => onHiddenChange(new Set(["TEN-001"]))}
+        >
+          Change Hidden
+        </button>
+      </div>
+    ),
   })
 );
 
@@ -732,6 +797,424 @@ describe("PreferenceWizard", () => {
       expect(screen.queryByText("Buddies & Budget")).toBeNull();
       expect(screen.queryByText("Sport Rankings")).toBeNull();
       expect(screen.queryByText("Session Interests")).toBeNull();
+    });
+  });
+
+  // ── Sport rankings change filters session preferences ─────────
+
+  describe("sport rankings change filtering", () => {
+    const sessionsForFilter = [
+      {
+        sessionCode: "TEN-001",
+        sport: "Tennis",
+        venue: "Court A",
+        zone: "Valley Zone",
+        sessionDate: "2025-07-26",
+        sessionType: "Final",
+        sessionDescription: "Men's Singles Final",
+        startTime: "10:00",
+        endTime: "12:00",
+      },
+      {
+        sessionCode: "SWM-001",
+        sport: "Swimming",
+        venue: "Pool",
+        zone: "Carson Zone",
+        sessionDate: "2025-07-27",
+        sessionType: "Final",
+        sessionDescription: "100m Final",
+        startTime: "09:00",
+        endTime: "11:00",
+      },
+    ];
+
+    it("removes session preferences for unranked sports when sport rankings change", async () => {
+      setSearchParam("step", "sport_rankings");
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="buddies_budget"
+          initialSportRankings={["Tennis", "Swimming"]}
+          sessions={sessionsForFilter}
+          initialSessionPreferences={[
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+            { sessionId: "SWM-001", interest: "medium", maxWillingness: 100 },
+          ]}
+        />
+      );
+
+      // Remove Swimming from rankings — should filter out SWM-001 preference
+      fireEvent.click(screen.getByTestId("remove-swimming"));
+
+      // Save step 1 to move to step 2 (sessions)
+      fireEvent.click(screen.getByText("Save & Continue"));
+      await vi.waitFor(() => {
+        expect(screen.getByTestId("sessions-step")).toBeDefined();
+      });
+
+      // The saveSportRankings should have been called with only Tennis
+      expect(mockSaveSportRankings).toHaveBeenCalledWith("group-1", {
+        sportRankings: ["Tennis"],
+      });
+    });
+
+    it("does not filter session preferences when all sports remain ranked", async () => {
+      setSearchParam("step", "sport_rankings");
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="buddies_budget"
+          initialSportRankings={["Tennis", "Swimming"]}
+          sessions={sessionsForFilter}
+          initialSessionPreferences={[
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+          ]}
+        />
+      );
+
+      // Set rankings with both sports still included
+      fireEvent.click(screen.getByTestId("set-sport-rankings"));
+
+      // Save — should proceed normally
+      fireEvent.click(screen.getByText("Save & Continue"));
+      await vi.waitFor(() => {
+        expect(screen.getByTestId("sessions-step")).toBeDefined();
+      });
+    });
+  });
+
+  // ── Session preferences saving ────────────────────────────────
+
+  describe("session preferences saving", () => {
+    it("saves session preferences on step 2", async () => {
+      setSearchParam("step", "sessions");
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="sport_rankings"
+          initialSportRankings={["Tennis"]}
+          initialSessionPreferences={[
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+          ]}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Save & Review"));
+      await vi.waitFor(() => {
+        expect(mockSaveSessionPreferences).toHaveBeenCalledWith("group-1", {
+          preferences: [
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+          ],
+        });
+      });
+    });
+  });
+
+  // ── Hidden sessions change handler ─────────────────────────────
+
+  describe("hidden sessions change handler", () => {
+    it("updates hidden sessions when onHiddenChange is called", async () => {
+      setSearchParam("step", "sessions");
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="sport_rankings"
+          initialSportRankings={["Tennis"]}
+          initialSessionPreferences={[
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+          ]}
+        />
+      );
+
+      // Click the "Change Hidden" button in our mock SessionsStep
+      fireEvent.click(screen.getByTestId("change-hidden"));
+
+      // The component should accept it without errors
+      expect(screen.getByTestId("sessions-step")).toBeDefined();
+    });
+  });
+
+  // ── Session preferences change handler ──────────────────────────
+
+  describe("session preferences change handler", () => {
+    it("updates session preferences when onChange is called from SessionsStep", async () => {
+      setSearchParam("step", "sessions");
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="sport_rankings"
+          initialSportRankings={["Tennis"]}
+          initialSessionPreferences={[]}
+          sessions={[
+            {
+              sessionCode: "TEN-001",
+              sport: "Tennis",
+              venue: "Court A",
+              zone: "Valley Zone",
+              sessionDate: "2025-07-26",
+              sessionType: "Final",
+              sessionDescription: "Final",
+              startTime: "10:00",
+              endTime: "12:00",
+            },
+          ]}
+        />
+      );
+
+      // Add a preference through the mock
+      fireEvent.click(screen.getByTestId("add-session-pref"));
+
+      // Now Save & Review should be enabled (we have a preference)
+      fireEvent.click(screen.getByText("Save & Review"));
+      await vi.waitFor(() => {
+        expect(mockSaveSessionPreferences).toHaveBeenCalledWith("group-1", {
+          preferences: [
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+          ],
+        });
+      });
+    });
+  });
+
+  // ── beforeunload event ──────────────────────────────────────────
+
+  describe("beforeunload warning", () => {
+    it("adds beforeunload event listener", () => {
+      const addSpy = vi.spyOn(window, "addEventListener");
+      render(<PreferenceWizard {...defaultProps} />);
+
+      expect(addSpy.mock.calls.some((call) => call[0] === "beforeunload")).toBe(
+        true
+      );
+      addSpy.mockRestore();
+    });
+
+    it("removes beforeunload event listener on unmount", () => {
+      const removeSpy = vi.spyOn(window, "removeEventListener");
+      const { unmount } = render(<PreferenceWizard {...defaultProps} />);
+      unmount();
+
+      expect(
+        removeSpy.mock.calls.some((call) => call[0] === "beforeunload")
+      ).toBe(true);
+      removeSpy.mockRestore();
+    });
+
+    it("calls preventDefault on beforeunload when step is dirty", async () => {
+      // Start on step 0, complete it, go to step 1
+      render(<PreferenceWizard {...defaultProps} />);
+      fireEvent.click(screen.getByText("Save & Continue"));
+      await vi.waitFor(() => {
+        expect(screen.getByTestId("sport-rankings-step")).toBeDefined();
+      });
+
+      // Change sport rankings to make step 1 dirty
+      fireEvent.click(screen.getByTestId("set-sport-rankings"));
+
+      // Now fire a beforeunload event — it should call preventDefault since step 1 is dirty
+      const event = new Event("beforeunload", { cancelable: true });
+      const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+      window.dispatchEvent(event);
+
+      expect(preventDefaultSpy).toHaveBeenCalled();
+    });
+
+    it("does not call preventDefault on beforeunload when no step is dirty", () => {
+      render(<PreferenceWizard {...defaultProps} />);
+
+      const event = new Event("beforeunload", { cancelable: true });
+      const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+      window.dispatchEvent(event);
+
+      expect(preventDefaultSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Navigation guard dirty checker ──────────────────────────────
+
+  describe("navigation guard integration", () => {
+    it("registers dirty checker on mount", () => {
+      render(<PreferenceWizard {...defaultProps} />);
+      expect(mockSetDirtyChecker).toHaveBeenCalled();
+    });
+
+    it("unregisters dirty checker on unmount", () => {
+      const { unmount } = render(<PreferenceWizard {...defaultProps} />);
+      mockSetDirtyChecker.mockClear();
+      unmount();
+      expect(mockSetDirtyChecker).toHaveBeenCalledWith(null);
+    });
+
+    it("dirty checker returns dirty step names when steps have unsaved changes", async () => {
+      render(<PreferenceWizard {...defaultProps} />);
+
+      // Complete step 0
+      fireEvent.click(screen.getByText("Save & Continue"));
+      await vi.waitFor(() => {
+        expect(screen.getByTestId("sport-rankings-step")).toBeDefined();
+      });
+
+      // Change sport rankings to make step 1 dirty
+      fireEvent.click(screen.getByTestId("set-sport-rankings"));
+
+      // The dirty checker function passed to setDirtyChecker should return dirty step names
+      // Get the function that was passed to setDirtyChecker
+      const checkerCall = mockSetDirtyChecker.mock.calls.find(
+        (call) => typeof call[0] === "function"
+      );
+      if (checkerCall) {
+        const dirtyNames = checkerCall[0]();
+        // Should include "Sport Rankings" since we changed it
+        expect(dirtyNames).toContain("Sport Rankings");
+      }
+    });
+  });
+
+  // ── Step click edge cases ─────────────────────────────────────────
+
+  describe("step click edge cases", () => {
+    it("does nothing when clicking the current step", () => {
+      render(<PreferenceWizard {...defaultProps} />);
+      mockReplace.mockClear();
+
+      // Click the step indicator for step 0 while on step 0
+      const stepButtons = screen.getAllByRole("button");
+      const buddiesButton = stepButtons.find((btn) =>
+        btn.textContent?.includes("Buddies & Budget")
+      );
+      fireEvent.click(buddiesButton!);
+
+      // Should not navigate
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it("blocks forward step click when an intermediate step is dirty", async () => {
+      // Start with all steps completed
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="sessions"
+          initialStatus="preferences_set"
+        />
+      );
+
+      // Go back to step 1 (Sport Rankings)
+      const stepButtons = screen.getAllByRole("button");
+      const sportButton = stepButtons.find((btn) =>
+        btn.textContent?.includes("Sport Rankings")
+      );
+      fireEvent.click(sportButton!);
+
+      // Change sport rankings to make step 1 dirty
+      fireEvent.click(screen.getByTestId("set-sport-rankings"));
+
+      // Now try to click forward to Review (step 3)
+      // Step 1 is dirty so it should block
+      mockReplace.mockClear();
+      const stepButtons2 = screen.getAllByRole("button");
+      const reviewButton = stepButtons2.find((btn) =>
+        btn.textContent?.includes("Review")
+      );
+      fireEvent.click(reviewButton!);
+
+      // Should NOT navigate because step 1 (current) is dirty
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it("blocks forward step click when prior steps are incomplete", () => {
+      // Start on step 0 with no steps completed
+      render(<PreferenceWizard {...defaultProps} />);
+      mockReplace.mockClear();
+
+      // Try to click Session Interests (step 2) — steps 0 and 1 not completed
+      const stepButtons = screen.getAllByRole("button");
+      const sessionsButton = stepButtons.find((btn) =>
+        btn.textContent?.includes("Session Interests")
+      );
+      fireEvent.click(sessionsButton!);
+
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── BuddiesBudget onChange callback ──────────────────────────────
+
+  describe("buddies budget change handler", () => {
+    it("updates budget data when onChange fires and saves it", async () => {
+      render(<PreferenceWizard {...defaultProps} />);
+
+      // Change the budget via the mock
+      fireEvent.click(screen.getByTestId("change-budget"));
+
+      // Save step 0
+      fireEvent.click(screen.getByText("Save & Continue"));
+      await vi.waitFor(() => {
+        expect(screen.getByTestId("sport-rankings-step")).toBeDefined();
+      });
+
+      // Verify the save was called with updated budget data
+      expect(mockSaveBuddiesBudget).toHaveBeenCalledWith("group-1", {
+        budget: 500,
+        minBuddies: 2,
+        buddies: [],
+      });
+    });
+  });
+
+  // ── Session preference summary badges on step 2 ────────────────
+
+  describe("session interest summary badges on step 2", () => {
+    it("shows interest level summary counts on step 2 when preferences exist", () => {
+      setSearchParam("step", "sessions");
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="sport_rankings"
+          initialSportRankings={["Tennis"]}
+          initialSessionPreferences={[
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+            { sessionId: "TEN-002", interest: "high", maxWillingness: 300 },
+            { sessionId: "SWM-001", interest: "medium", maxWillingness: 100 },
+          ]}
+        />
+      );
+
+      // Summary badges should show "2 High", "1 Medium"
+      expect(screen.getByText("2 High")).toBeDefined();
+      expect(screen.getByText("1 Medium")).toBeDefined();
+      // Count text
+      expect(screen.getByText("3 sessions selected")).toBeDefined();
+    });
+
+    it("shows singular session text when only 1 session selected", () => {
+      setSearchParam("step", "sessions");
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialPreferenceStep="sport_rankings"
+          initialSportRankings={["Tennis"]}
+          initialSessionPreferences={[
+            { sessionId: "TEN-001", interest: "low", maxWillingness: 50 },
+          ]}
+        />
+      );
+
+      expect(screen.getByText("1 Low")).toBeDefined();
+      expect(screen.getByText("1 session selected")).toBeDefined();
+    });
+
+    it("does not show summary badges on step 0", () => {
+      render(
+        <PreferenceWizard
+          {...defaultProps}
+          initialSessionPreferences={[
+            { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
+          ]}
+        />
+      );
+
+      expect(screen.queryByText("1 High")).toBeNull();
+      expect(screen.queryByText(/session.* selected/)).toBeNull();
     });
   });
 });

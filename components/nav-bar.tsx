@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { logout } from "@/app/(auth)/actions";
 import { type AvatarColor } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
+import { globalGuardNavigation } from "@/lib/navigation-guard-store";
 
 type NavBarProps = {
   firstName: string;
@@ -38,7 +39,15 @@ export default function NavBar({
   return (
     <nav className="border-b border-slate-200 bg-white px-6 py-3">
       <div className="flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
+        <Link
+          href="/"
+          className="flex items-center gap-2"
+          onClick={(e) => {
+            if (!globalGuardNavigation("/")) {
+              e.preventDefault();
+            }
+          }}
+        >
           <svg viewBox="0 0 32 40" className="h-8 w-7">
             <defs>
               <linearGradient id="navGold" x1="0" y1="0" x2="1" y2="1">

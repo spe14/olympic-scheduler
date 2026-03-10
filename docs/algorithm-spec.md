@@ -747,7 +747,7 @@ Before entering conflict resolution, each member reviews their generated schedul
 
 **If NO:**
 
-- Member re-enters preferences (status → `joined`, `preference_step` → `buddies`)
+- Member re-enters preferences (status → `joined`, `preference_step` → `buddies_budget`)
 - All other members' statuses → `preferences_set`
 - Group phase → `preferences`
 - The group owner must trigger schedule regeneration after the member re-submits

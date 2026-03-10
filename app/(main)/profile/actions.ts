@@ -5,8 +5,8 @@ import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
-import { z } from "zod";
 import { profileFieldSchemas, updatePasswordSchema } from "@/lib/validations";
+import { parseFieldErrors } from "@/lib/utils";
 import type { AvatarColor } from "@/lib/constants";
 
 export type ProfileResult = {
@@ -95,14 +95,7 @@ export async function updatePassword(
   const result = updatePasswordSchema.safeParse(raw);
 
   if (!result.success) {
-    const tree = z.treeifyError(result.error);
-    const fieldErrors: Record<string, string[]> = {};
-    for (const [key, value] of Object.entries(tree.properties ?? {})) {
-      if (value?.errors) {
-        fieldErrors[key] = value.errors;
-      }
-    }
-    return { fieldErrors };
+    return { fieldErrors: parseFieldErrors(result.error) };
   }
 
   const supabase = await createClient();

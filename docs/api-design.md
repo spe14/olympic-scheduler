@@ -114,7 +114,7 @@ Create a new group. The current user is automatically added as the first member.
 {
   "name": "Olympics Squad",
   "date_mode": "consecutive",
-  "n_days": 5
+  "consecutive_days": 5
 }
 ```
 
@@ -147,7 +147,7 @@ Or with deferred date config:
   "invite_code": "OLYMP-X7K2",
   "phase": "preferences",
   "date_mode": "consecutive",
-  "n_days": 5
+  "consecutive_days": 5
 }
 ```
 
@@ -238,7 +238,7 @@ Returns full group info including all members and their statuses. Used by the gr
   "phase": "conflict_resolution",
   "invite_code": "OLYMP-X7K2",
   "date_mode": "consecutive",
-  "n_days": 5,
+  "consecutive_days": 5,
   "start_date": null,
   "end_date": null,
   "members": [
@@ -265,7 +265,7 @@ Update group settings. **Owner only for date config changes.** Any member can up
 {
   "name": "Olympics Dream Team",
   "date_mode": "consecutive",
-  "n_days": 5
+  "consecutive_days": 5
 }
 ```
 
@@ -282,14 +282,14 @@ Or for specific dates:
 **Notes:**
 
 - All fields are optional — only include fields being changed.
-- Date config changes (`date_mode`, `n_days`, `start_date`, `end_date`) are **owner only**.
+- Date config changes (`date_mode`, `consecutive_days`, `start_date`, `end_date`) are **owner only**.
 - `name` can be updated by any member.
 - Changing date config does NOT automatically recompute window rankings. Rankings are computed explicitly via `POST /api/groups/:groupId/windows`.
 
 **Validation:**
 
 - Date config changes: current user must be the group owner
-- `n_days` must be between 1 and 19 (if provided)
+- `consecutive_days` must be between 1 and 19 (if provided)
 - Specific dates must fall within the Olympic period (if provided)
 
 ### `DELETE /api/groups/:groupId`
@@ -318,7 +318,7 @@ Leave the group (remove yourself). The `:memberId` must belong to the current us
 - Deletes `member` row and all associated data (buddy constraints, session preferences)
 - Auto-removes leaving member from other members' buddy constraints
 - If group is past `'preferences'` phase (algorithm has run):
-  - Members who had leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies'` (other preferences preserved)
+  - Members who had leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies_budget'` (other preferences preserved)
   - Members with no buddy connection: status → `'preferences_set'`
   - Group phase → `'preferences'`
   - All algorithm outputs deleted
@@ -377,7 +377,7 @@ Returns saved preferences for a member. Used to populate the preference wizard w
 
 **Notes:**
 
-- `preference_step` indicates which wizard step the user last completed (`'buddies'`, `'sport_rankings'`, or `'sessions'`). Used by the frontend to show "continue where you left off."
+- `preference_step` indicates which wizard step the user last completed (`'buddies_budget'`, `'sport_rankings'`, or `'sessions'`). Used by the frontend to show "continue where you left off."
 - If user hasn't started, returns empty/default values with `preference_step: null`.
 - This endpoint is available at **any group phase** for read-only viewing. Editing is restricted to the preference wizard (PUT route below), which requires the `preferences` phase.
 
@@ -389,7 +389,7 @@ Save preferences for a specific wizard step. Each call saves the data for one st
 
 ```json
 {
-  "preference_step": "buddies",
+  "preference_step": "buddies_budget",
   "budget": 500,
   "buddy_constraints": [
     { "buddy_member_id": "uuid", "type": "hard" },
@@ -408,7 +408,7 @@ Save preferences for a specific wizard step. Each call saves the data for one st
 
 **Notes:**
 
-- Only include fields relevant to the current step. For example, saving the `buddies` step only requires `preference_step`, `budget`, and `buddy_constraints`.
+- Only include fields relevant to the current step. For example, saving the `buddies_budget` step only requires `preference_step`, `budget`, and `buddy_constraints`.
 - `preference_step` is required on every call — it indicates which step is being saved.
 - Users can navigate to any step and save it without re-saving earlier steps. This supports the re-enter preferences flow where a user only wants to change one thing.
 
@@ -416,11 +416,11 @@ Save preferences for a specific wizard step. Each call saves the data for one st
 
 - Saves the data for the specified step and updates `member.preference_step`
 - If `preference_step = 'sessions'`: member status transitions from `'joined'` to `'preferences_set'`
-- If `preference_step` is `'buddies'` or `'sport_rankings'`: member status stays `'joined'`
+- If `preference_step` is `'buddies_budget'` or `'sport_rankings'`: member status stays `'joined'`
 
 **Side effects:**
 
-- `buddies` step: updates `member.budget`, upserts `buddy_constraint` rows (deletes old ones, inserts new ones), updates `member.min_buddies`
+- `buddies_budget` step: updates `member.budget`, upserts `buddy_constraint` rows (deletes old ones, inserts new ones), updates `member.min_buddies`
 - `sport_rankings` step: updates `member.sport_rankings`
 - `sessions` step: upserts `session_preference` rows (deletes removed ones, inserts/updates new ones)
 - On status transition to `'preferences_set'`: if this member was re-entering preferences after an algorithm run, the group phase and other members' statuses were already reset when the member first re-entered (see state transitions doc)
@@ -811,7 +811,7 @@ Compute window rankings based on the group's date configuration and finalized co
 
 - Current user must be the group owner
 - Group phase must be `'completed'` (all members confirmed, combo scores finalized)
-- Date config (`date_mode` + `n_days` or `start_date`/`end_date`) must be set on the group
+- Date config (`date_mode` + `consecutive_days` or `start_date`/`end_date`) must be set on the group
 
 **Side effects:**
 
@@ -831,7 +831,7 @@ Returns existing window rankings. Used when returning to the page after rankings
 ```json
 {
   "date_mode": "consecutive",
-  "n_days": 5,
+  "consecutive_days": 5,
   "windows": [
     {
       "id": "window-uuid",

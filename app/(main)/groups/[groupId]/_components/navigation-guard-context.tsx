@@ -9,6 +9,7 @@ import {
   useEffect,
 } from "react";
 import { useRouter } from "next/navigation";
+import { setGlobalGuard } from "@/lib/navigation-guard-store";
 
 type DirtyChecker = (() => string[]) | null;
 
@@ -49,6 +50,12 @@ export function NavigationGuardProvider({
     }
     return true;
   }, []);
+
+  // Register guardNavigation in the global store so NavBar (outside this provider) can use it
+  useEffect(() => {
+    setGlobalGuard(guardNavigation);
+    return () => setGlobalGuard(null);
+  }, [guardNavigation]);
 
   // Guard browser back/forward using the Navigation API
   // Fires BEFORE navigation happens and is cancellable via preventDefault()

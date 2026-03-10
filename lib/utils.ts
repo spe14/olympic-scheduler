@@ -1,8 +1,23 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { z } from "zod";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+export function parseFieldErrors(error: z.ZodError): Record<string, string[]> {
+  const tree = z.treeifyError(error) as {
+    errors: string[];
+    properties?: Record<string, { errors?: string[] }>;
+  };
+  const fieldErrors: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(tree.properties ?? {})) {
+    if (value?.errors) {
+      fieldErrors[key] = value.errors;
+    }
+  }
+  return fieldErrors;
 }
 
 export function getDateDisplay(group: {

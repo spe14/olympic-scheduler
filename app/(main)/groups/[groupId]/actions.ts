@@ -1,6 +1,6 @@
 "use server";
 
-import { getCurrentUser } from "@/lib/auth";
+import { getMembership, getOwnerMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   group,
@@ -22,25 +22,7 @@ import {
   dateRangeSchema,
 } from "@/lib/validations";
 import { MAX_GROUP_MEMBERS } from "@/lib/constants";
-
-export type ActionResult = {
-  error?: string;
-  success?: boolean;
-};
-
-async function getOwnerMembership(groupId: string) {
-  const user = await getCurrentUser();
-  if (!user) return null;
-
-  const [membership] = await db
-    .select({ id: member.id, role: member.role })
-    .from(member)
-    .where(and(eq(member.groupId, groupId), eq(member.userId, user.id)))
-    .limit(1);
-
-  if (!membership || membership.role !== "owner") return null;
-  return membership;
-}
+import type { ActionResult } from "@/lib/types";
 
 export async function updateGroupName(
   groupId: string,
@@ -148,29 +130,6 @@ export async function denyMember(
 
   revalidatePath(`/groups/${groupId}`);
   return { success: true };
-}
-
-async function getMembership(groupId: string) {
-  const user = await getCurrentUser();
-  if (!user) return null;
-
-  const [membership] = await db
-    .select({
-      id: member.id,
-      role: member.role,
-      status: member.status,
-    })
-    .from(member)
-    .where(
-      and(
-        eq(member.groupId, groupId),
-        eq(member.userId, user.id),
-        notInArray(member.status, ["pending_approval", "denied"])
-      )
-    )
-    .limit(1);
-
-  return membership ?? null;
 }
 
 async function removeMemberTransaction(

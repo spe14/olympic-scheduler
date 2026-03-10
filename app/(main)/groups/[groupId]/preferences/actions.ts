@@ -1,6 +1,6 @@
 "use server";
 
-import { getCurrentUser } from "@/lib/auth";
+import { getMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   member,
@@ -10,7 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, notInArray, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import type { ActionResult } from "../actions";
+import type { ActionResult } from "@/lib/types";
 
 const PREFERENCE_STEP_ORDER = [
   null,
@@ -27,30 +27,6 @@ function shouldAdvanceStep(current: string | null, next: string): boolean {
     next as (typeof PREFERENCE_STEP_ORDER)[number]
   );
   return nextIndex > currentIndex;
-}
-
-async function getMembership(groupId: string) {
-  const user = await getCurrentUser();
-  if (!user) return null;
-
-  const [membership] = await db
-    .select({
-      id: member.id,
-      role: member.role,
-      status: member.status,
-      preferenceStep: member.preferenceStep,
-    })
-    .from(member)
-    .where(
-      and(
-        eq(member.groupId, groupId),
-        eq(member.userId, user.id),
-        notInArray(member.status, ["pending_approval", "denied"])
-      )
-    )
-    .limit(1);
-
-  return membership ?? null;
 }
 
 export async function saveBuddiesBudget(

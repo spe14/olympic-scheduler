@@ -10,10 +10,13 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-// Mock getCurrentUser
+// Mock auth
 const mockGetCurrentUser = vi.fn();
+const mockGetMembership = vi.fn();
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: (...args: unknown[]) => mockGetCurrentUser(...args),
+  getMembership: (...args: unknown[]) => mockGetMembership(...args),
+  getOwnerMembership: vi.fn(),
 }));
 
 // Mock DB
@@ -106,20 +109,19 @@ const mockUser = { id: "user-1", authId: "auth-123" };
 // Helper: getMembership returns active member
 function mockActiveMember(overrides: Record<string, unknown> = {}) {
   mockGetCurrentUser.mockResolvedValue(mockUser);
-  mockLimit.mockResolvedValueOnce([
-    {
-      id: "member-1",
-      role: "member",
-      status: "joined",
-      preferenceStep: null,
-      ...overrides,
-    },
-  ]);
+  mockGetMembership.mockResolvedValue({
+    id: "member-1",
+    role: "member",
+    status: "joined",
+    preferenceStep: null,
+    ...overrides,
+  });
 }
 
 // Helper: getMembership returns null (not logged in or not a member)
 function mockNoMembership() {
   mockGetCurrentUser.mockResolvedValue(null);
+  mockGetMembership.mockResolvedValue(null);
 }
 
 // ─── saveBuddiesBudget ──────────────────────────────────────────────

@@ -11,6 +11,10 @@ import {
   NavigationGuardProvider,
   useNavigationGuard,
 } from "@/app/(main)/groups/[groupId]/_components/navigation-guard-context";
+import {
+  globalGuardNavigation,
+  setGlobalGuard,
+} from "@/lib/navigation-guard-store";
 
 // ─── Mocks ──────────────────────────────────────────────────────────
 
@@ -73,6 +77,8 @@ describe("NavigationGuardProvider & useNavigationGuard", () => {
     cleanup();
     // Clean up any mock navigation API
     delete (window as any).navigation;
+    // Reset global guard store between tests
+    setGlobalGuard(null);
   });
 
   // 1. guardNavigation returns true when no dirty checker registered
@@ -388,6 +394,46 @@ describe("NavigationGuardProvider & useNavigationGuard", () => {
       (screen.getByTestId("try-navigate") as HTMLElement).dataset.result
     ).toBe("true");
     expect(screen.queryByText("Unsaved Changes")).toBeNull();
+  });
+
+  // ── Global store integration ──────────────────────────────────
+
+  it("registers globalGuardNavigation when provider mounts", () => {
+    // Before mount: no guard registered — should return true
+    expect(globalGuardNavigation("/")).toBe(true);
+
+    renderWithProvider(<TestConsumer dirtyChecker={() => ["Sessions"]} />);
+    fireEvent.click(screen.getByTestId("set-checker"));
+
+    // After mount with dirty checker: global guard should block navigation
+    expect(globalGuardNavigation("/")).toBe(false);
+  });
+
+  it("clears globalGuardNavigation when provider unmounts", () => {
+    const { unmount } = renderWithProvider(
+      <TestConsumer dirtyChecker={() => ["Sessions"]} />
+    );
+    fireEvent.click(screen.getByTestId("set-checker"));
+
+    // Guard is active while mounted
+    expect(globalGuardNavigation("/")).toBe(false);
+
+    unmount();
+
+    // After unmount: global guard cleared — navigation proceeds freely
+    expect(globalGuardNavigation("/")).toBe(true);
+  });
+
+  it("globalGuardNavigation returns true when no provider is mounted", () => {
+    // No provider rendered at all
+    expect(globalGuardNavigation("/some/path")).toBe(true);
+  });
+
+  it("globalGuardNavigation returns true when provider is mounted but no dirty steps", () => {
+    renderWithProvider(<TestConsumer dirtyChecker={() => []} />);
+    fireEvent.click(screen.getByTestId("set-checker"));
+
+    expect(globalGuardNavigation("/")).toBe(true);
   });
 
   // Cleanup of Navigation API listener on unmount

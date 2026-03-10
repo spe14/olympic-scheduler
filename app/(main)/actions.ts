@@ -13,11 +13,10 @@ import {
 } from "@/lib/validations";
 import crypto from "crypto";
 import { MAX_GROUP_MEMBERS } from "@/lib/constants";
+import type { ActionResult } from "@/lib/types";
 
-export type GroupActionResult = {
-  error?: string;
+export type GroupActionResult = ActionResult & {
   code?: string;
-  success?: boolean;
 };
 
 export async function createGroup(

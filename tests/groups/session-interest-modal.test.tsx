@@ -261,4 +261,140 @@ describe("SessionInterestModal", () => {
     fireEvent.click(screen.getByText("Remove Session Interest"));
     expect(defaultProps.onClear).toHaveBeenCalledWith("TEN-001");
   });
+
+  // ── Interest info tooltip ──────────────────────────────────────
+
+  describe("interest info tooltip", () => {
+    it("shows interest info tooltip on click", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      // Find the "?" info button near "Interest Level"
+      const infoButtons = screen.getAllByText("?");
+      fireEvent.click(infoButtons[0]);
+
+      expect(
+        screen.getByText("How interested are you in attending this session?")
+      ).toBeDefined();
+    });
+
+    it("hides interest info tooltip on second click", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      const infoButtons = screen.getAllByText("?");
+      fireEvent.click(infoButtons[0]);
+      expect(
+        screen.getByText("How interested are you in attending this session?")
+      ).toBeDefined();
+
+      fireEvent.click(infoButtons[0]);
+      expect(
+        screen.queryByText("How interested are you in attending this session?")
+      ).toBeNull();
+    });
+
+    it("shows interest info tooltip on mouse enter", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      // The wrapper div has onMouseEnter
+      const infoButtons = screen.getAllByText("?");
+      const wrapper = infoButtons[0].parentElement!;
+      fireEvent.mouseEnter(wrapper);
+
+      expect(
+        screen.getByText("How interested are you in attending this session?")
+      ).toBeDefined();
+    });
+
+    it("hides interest info tooltip on mouse leave", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      const infoButtons = screen.getAllByText("?");
+      const wrapper = infoButtons[0].parentElement!;
+      fireEvent.mouseEnter(wrapper);
+      expect(
+        screen.getByText("How interested are you in attending this session?")
+      ).toBeDefined();
+
+      fireEvent.mouseLeave(wrapper);
+      expect(
+        screen.queryByText("How interested are you in attending this session?")
+      ).toBeNull();
+    });
+  });
+
+  // ── Price info tooltip ─────────────────────────────────────────
+
+  describe("price info tooltip", () => {
+    it("shows price info tooltip on click", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      const infoButtons = screen.getAllByText("?");
+      fireEvent.click(infoButtons[1]);
+
+      expect(screen.getByText(/most you'd be willing to pay/)).toBeDefined();
+    });
+
+    it("hides price info tooltip on second click", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      const infoButtons = screen.getAllByText("?");
+      fireEvent.click(infoButtons[1]);
+      expect(screen.getByText(/most you'd be willing to pay/)).toBeDefined();
+
+      fireEvent.click(infoButtons[1]);
+      expect(screen.queryByText(/most you'd be willing to pay/)).toBeNull();
+    });
+
+    it("shows price info tooltip on mouse enter", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      const infoButtons = screen.getAllByText("?");
+      const wrapper = infoButtons[1].parentElement!;
+      fireEvent.mouseEnter(wrapper);
+
+      expect(screen.getByText(/most you'd be willing to pay/)).toBeDefined();
+    });
+
+    it("hides price info tooltip on mouse leave", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      const infoButtons = screen.getAllByText("?");
+      const wrapper = infoButtons[1].parentElement!;
+      fireEvent.mouseEnter(wrapper);
+      fireEvent.mouseLeave(wrapper);
+
+      expect(screen.queryByText(/most you'd be willing to pay/)).toBeNull();
+    });
+  });
+
+  // ── Toggle deselection ─────────────────────────────────────────
+
+  describe("toggle deselection", () => {
+    it("deselects interest level when clicking the same level again", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      fireEvent.click(screen.getByText("High"));
+      fireEvent.click(screen.getByText("<$200"));
+      // Apply should be enabled
+      expect(screen.getByText("Apply").hasAttribute("disabled")).toBe(false);
+
+      // Deselect interest
+      fireEvent.click(screen.getByText("High"));
+      // Apply should be disabled again (interest is null)
+      expect(screen.getByText("Apply").hasAttribute("disabled")).toBe(true);
+    });
+
+    it("deselects willingness when clicking the same bucket again", () => {
+      render(<SessionInterestModal {...defaultProps} />);
+
+      fireEvent.click(screen.getByText("High"));
+      fireEvent.click(screen.getByText("<$200"));
+      expect(screen.getByText("Apply").hasAttribute("disabled")).toBe(false);
+
+      // Deselect willingness
+      fireEvent.click(screen.getByText("<$200"));
+      // Apply should be disabled (willingness is undefined)
+      expect(screen.getByText("Apply").hasAttribute("disabled")).toBe(true);
+    });
+  });
 });

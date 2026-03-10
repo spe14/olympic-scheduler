@@ -1,5 +1,10 @@
 import type { AvatarColor } from "@/lib/constants";
 
+export type ActionResult = {
+  error?: string;
+  success?: boolean;
+};
+
 export type GroupMember = {
   firstName: string;
   lastName: string;

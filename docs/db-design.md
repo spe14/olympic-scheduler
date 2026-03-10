@@ -55,7 +55,7 @@ CREATE TYPE conflict_type_enum AS ENUM ('min_buddies_failure', 'hard_buddy_failu
 
 CREATE TYPE date_mode_enum AS ENUM ('consecutive', 'specific');
 
-CREATE TYPE preference_step_enum AS ENUM ('buddies', 'sport_rankings', 'sessions');
+CREATE TYPE preference_step_enum AS ENUM ('buddies_budget', 'sport_rankings', 'sessions');
 ```
 
 ---
@@ -111,21 +111,21 @@ Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap compu
 
 ### `group`
 
-| Column        | Type               | Constraints                       | Description                                                          |
-| ------------- | ------------------ | --------------------------------- | -------------------------------------------------------------------- |
-| `id`          | `uuid`             | **PK**, DEFAULT gen_random_uuid() | Unique group ID                                                      |
-| `name`        | `text`             | NOT NULL                          | Group display name                                                   |
-| `phase`       | `group_phase_enum` | NOT NULL, DEFAULT 'preferences'   | Current phase of the group workflow                                  |
-| `invite_code` | `text`             | UNIQUE, NOT NULL                  | Human-readable invite code (e.g., "OLYMP-X7K2")                      |
-| `date_mode`   | `date_mode_enum`   |                                   | 'consecutive' or 'specific' (NULL if deferred during group creation) |
-| `n_days`      | `integer`          |                                   | Number of consecutive days (if date_mode = 'consecutive')            |
-| `start_date`  | `date`             |                                   | Start date (if date_mode = 'specific')                               |
-| `end_date`    | `date`             |                                   | End date (if date_mode = 'specific')                                 |
-| `created_at`  | `timestamp`        | DEFAULT now()                     | Group creation time                                                  |
+| Column             | Type               | Constraints                       | Description                                                          |
+| ------------------ | ------------------ | --------------------------------- | -------------------------------------------------------------------- |
+| `id`               | `uuid`             | **PK**, DEFAULT gen_random_uuid() | Unique group ID                                                      |
+| `name`             | `text`             | NOT NULL                          | Group display name                                                   |
+| `phase`            | `group_phase_enum` | NOT NULL, DEFAULT 'preferences'   | Current phase of the group workflow                                  |
+| `invite_code`      | `text`             | UNIQUE, NOT NULL                  | Human-readable invite code (e.g., "OLYMP-X7K2")                      |
+| `date_mode`        | `date_mode_enum`   |                                   | 'consecutive' or 'specific' (NULL if deferred during group creation) |
+| `consecutive_days` | `integer`          |                                   | Number of consecutive days (if date_mode = 'consecutive')            |
+| `start_date`       | `date`             |                                   | Start date (if date_mode = 'specific')                               |
+| `end_date`         | `date`             |                                   | End date (if date_mode = 'specific')                                 |
+| `created_at`       | `timestamp`        | DEFAULT now()                     | Group creation time                                                  |
 
 **Notes:**
 
-- `date_mode`, `n_days`, `start_date`, `end_date` can be set during group creation or deferred and set later. Date config must be set before the owner triggers schedule generation. The owner is encouraged to ensure group agreement on dates before generating.
+- `date_mode`, `consecutive_days`, `start_date`, `end_date` can be set during group creation or deferred and set later. Date config must be set before the owner triggers schedule generation. The owner is encouraged to ensure group agreement on dates before generating.
 - Date config is editable at any point by the owner. Changing date config does NOT require re-running the algorithm — it only affects window ranking computation.
 - Window rankings are computed after all members confirm (during `'completed'` phase). The top-scoring window is auto-selected when rankings are generated.
 - Budget impact can be shown once window rankings are computed and a window is selected (during `'completed'` phase).
@@ -349,20 +349,21 @@ If the group is past `'preferences'` phase (algorithm has run):
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
 | Delete member data                         | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member                                             |
 | Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member                                                    |
-| Flag affected members                      | `member` — members who had the leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies'`                   |
+| Flag affected members                      | `member` — members who had the leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies_budget'`            |
 | Set unaffected members                     | `member` — members with no buddy connection to leaving member: status → `'preferences_set'`                                      |
 | Reset group for re-run                     | `group` — phase → `'preferences'`                                                                                                |
 | Delete algorithm outputs                   | `combo`, `combo_session`, `viable_config`, `viable_config_member`, `conflict`, `window_ranking` — delete all rows for this group |
 | Reset override and excluded flags          | `session_preference` — set `override_hard_buddy`, `override_min_buddies`, and `excluded` to `false` for all remaining members    |
 
-**Note:** Affected members (those who had the leaving member as a hard or soft buddy) go to `joined` with `preference_step = 'buddies'` so the wizard opens on the buddy step for review. Their sport rankings and session preferences are preserved. Unaffected members go to `preferences_set` — they don't need to review anything. The owner sees a warning before approving the departure: "This will reset all generated schedules."
+**Note:** Affected members (those who had the leaving member as a hard or soft buddy) go to `joined` with `preference_step = 'buddies_budget'` so the wizard opens on the buddy step for review. Their sport rankings and session preferences are preserved. Unaffected members go to `preferences_set` — they don't need to review anything. The owner sees a warning before approving the departure: "This will reset all generated schedules."
 
 If the group is still in `'preferences'` phase (no algorithm has run):
 
-| Action                                     | Tables Affected                                                                      |
-| ------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Delete member data                         | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member |
-| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member        |
+| Action                                     | Tables Affected                                                                                                       |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Delete member data                         | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member                                  |
+| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member                                         |
+| Flag affected members                      | `member` — members who had the leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies_budget'` |
 
 ### When Owner Transfers Ownership
 
@@ -429,7 +430,7 @@ Can happen at any point. Date config can be set during group creation or later. 
 
 | Action                                       | Tables Affected                                                                                                                         |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Update group settings                        | `group` — update `date_mode`, `n_days`, `start_date`, `end_date`                                                                        |
+| Update group settings                        | `group` — update `date_mode`, `consecutive_days`, `start_date`, `end_date`                                                              |
 | Regenerate window rankings (if combos exist) | Delete and regenerate `window_ranking` rows for the group. Only possible after algorithm has run (combos must exist to compute scores). |
 | Auto-select top window                       | `window_ranking` — set `selected = true` on the highest-scoring window                                                                  |
 
