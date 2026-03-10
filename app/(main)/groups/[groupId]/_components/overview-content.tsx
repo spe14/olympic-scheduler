@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MAX_GROUP_MEMBERS } from "@/lib/constants";
+import { MAX_GROUP_MEMBERS, avatarColors } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
 import type { GroupDetailMember } from "@/lib/types";
 import { useGroup } from "./group-context";
@@ -78,6 +78,7 @@ export default function OverviewContent() {
             groupId={group.id}
             groupPhase={group.phase}
             isOwner={isOwner}
+            isCurrentUser={m.id === group.myMemberId}
             isLast={
               i === activeMembers.length - 1 && pendingMembers.length === 0
             }
@@ -114,12 +115,14 @@ function ActiveMemberRow({
   groupId,
   groupPhase,
   isOwner,
+  isCurrentUser,
   isLast,
 }: {
   member: GroupDetailMember;
   groupId: string;
   groupPhase: string;
   isOwner: boolean;
+  isCurrentUser: boolean;
   isLast: boolean;
 }) {
   const [showConfirm, setShowConfirm] = useState(false);
@@ -145,6 +148,16 @@ function ActiveMemberRow({
       className={`grid grid-cols-[1fr_repeat(3,100px)] items-center px-5 py-3 ${
         !isLast ? "border-b border-slate-100" : ""
       }`}
+      style={
+        isCurrentUser
+          ? {
+              backgroundColor: avatarColors[m.avatarColor ?? "blue"].bg.replace(
+                /[\d.]+\)$/,
+                "0.07)"
+              ),
+            }
+          : undefined
+      }
     >
       <div className="flex items-center gap-3">
         <UserAvatar

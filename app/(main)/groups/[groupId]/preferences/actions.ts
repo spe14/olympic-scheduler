@@ -2,10 +2,32 @@
 
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { member, buddyConstraint, session } from "@/lib/db/schema";
-import { eq, and, notInArray } from "drizzle-orm";
+import {
+  member,
+  buddyConstraint,
+  session,
+  sessionPreference,
+} from "@/lib/db/schema";
+import { eq, and, notInArray, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "../actions";
+
+const PREFERENCE_STEP_ORDER = [
+  null,
+  "buddies_budget",
+  "sport_rankings",
+  "sessions",
+] as const;
+
+function shouldAdvanceStep(current: string | null, next: string): boolean {
+  const currentIndex = PREFERENCE_STEP_ORDER.indexOf(
+    current as (typeof PREFERENCE_STEP_ORDER)[number]
+  );
+  const nextIndex = PREFERENCE_STEP_ORDER.indexOf(
+    next as (typeof PREFERENCE_STEP_ORDER)[number]
+  );
+  return nextIndex > currentIndex;
+}
 
 async function getMembership(groupId: string) {
   const user = await getCurrentUser();
@@ -104,14 +126,14 @@ export async function saveBuddiesBudget(
   try {
     await db.transaction(async (tx) => {
       // Update member preferences
-      const wasComplete = membership.status === "preferences_set";
       await tx
         .update(member)
         .set({
           budget,
           minBuddies,
-          preferenceStep: "buddies_budget",
-          ...(wasComplete ? { status: "joined" } : {}),
+          ...(shouldAdvanceStep(membership.preferenceStep, "buddies_budget")
+            ? { preferenceStep: "buddies_budget" }
+            : {}),
         })
         .where(eq(member.id, membership.id));
 
@@ -135,7 +157,7 @@ export async function saveBuddiesBudget(
     return { error: "Failed to save preferences. Please try again." };
   }
 
-  revalidatePath(`/groups/${groupId}`);
+  revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };
 }
 
@@ -175,25 +197,72 @@ export async function saveSportRankings(
   }
 
   try {
-    const wasComplete = membership.status === "preferences_set";
-    await db
-      .update(member)
-      .set({
-        sportRankings,
-        preferenceStep: "sport_rankings",
-        ...(wasComplete ? { status: "joined" } : {}),
-      })
-      .where(eq(member.id, membership.id));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(member)
+        .set({
+          sportRankings,
+          ...(shouldAdvanceStep(membership.preferenceStep, "sport_rankings")
+            ? { preferenceStep: "sport_rankings" }
+            : {}),
+        })
+        .where(eq(member.id, membership.id));
+
+      // Delete session preferences for sports no longer ranked
+      const existingPrefs = await tx
+        .select({ sessionId: sessionPreference.sessionId })
+        .from(sessionPreference)
+        .where(eq(sessionPreference.memberId, membership.id));
+
+      if (existingPrefs.length > 0) {
+        const rankedSportSet = new Set(sportRankings);
+        const sessionCodes = existingPrefs.map((p) => p.sessionId);
+        const sessions = await tx
+          .select({ sessionCode: session.sessionCode, sport: session.sport })
+          .from(session)
+          .where(inArray(session.sessionCode, sessionCodes));
+
+        const sessionSportMap = new Map(
+          sessions.map((s) => [s.sessionCode, s.sport])
+        );
+        const staleSessionIds = existingPrefs
+          .filter((p) => {
+            const sport = sessionSportMap.get(p.sessionId);
+            return sport && !rankedSportSet.has(sport);
+          })
+          .map((p) => p.sessionId);
+
+        if (staleSessionIds.length > 0) {
+          await tx
+            .delete(sessionPreference)
+            .where(
+              and(
+                eq(sessionPreference.memberId, membership.id),
+                inArray(sessionPreference.sessionId, staleSessionIds)
+              )
+            );
+        }
+      }
+    });
   } catch {
     return { error: "Failed to save sport rankings. Please try again." };
   }
 
-  revalidatePath(`/groups/${groupId}`);
+  revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };
 }
 
-export async function saveSessionsPlaceholder(
-  groupId: string
+const VALID_WILLINGNESS_VALUES = [50, 100, 150, 200, 250, 300, 400, 500, 1000];
+
+export async function saveSessionPreferences(
+  groupId: string,
+  data: {
+    preferences: {
+      sessionId: string;
+      interest: "low" | "medium" | "high";
+      maxWillingness: number | null;
+    }[];
+  }
 ): Promise<ActionResult> {
   const membership = await getMembership(groupId);
   if (!membership) {
@@ -207,18 +276,94 @@ export async function saveSessionsPlaceholder(
     return { error: "You must complete previous steps first." };
   }
 
-  try {
-    await db
-      .update(member)
-      .set({
-        preferenceStep: "sessions",
-        status: "preferences_set",
-      })
-      .where(eq(member.id, membership.id));
-  } catch {
-    return { error: "Failed to save preferences. Please try again." };
+  const { preferences } = data;
+
+  if (!Array.isArray(preferences) || preferences.length < 1) {
+    return { error: "You must select at least one session." };
   }
 
-  revalidatePath(`/groups/${groupId}`);
+  // Validate no duplicate session IDs
+  const sessionIds = preferences.map((p) => p.sessionId);
+  if (new Set(sessionIds).size !== sessionIds.length) {
+    return { error: "Duplicate session selections." };
+  }
+
+  // Validate interest values
+  const validInterests = new Set(["low", "medium", "high"]);
+  for (const pref of preferences) {
+    if (!validInterests.has(pref.interest)) {
+      return { error: "Invalid interest level." };
+    }
+  }
+
+  // Validate willingness values
+  for (const pref of preferences) {
+    if (
+      pref.maxWillingness !== null &&
+      !VALID_WILLINGNESS_VALUES.includes(pref.maxWillingness)
+    ) {
+      return { error: "Invalid willingness value." };
+    }
+  }
+
+  // Fetch member's sport rankings to validate sessions are within ranked sports
+  const [memberData] = await db
+    .select({ sportRankings: member.sportRankings })
+    .from(member)
+    .where(eq(member.id, membership.id))
+    .limit(1);
+
+  const rankedSports = (memberData?.sportRankings as string[]) ?? [];
+  if (rankedSports.length === 0) {
+    return { error: "You must complete sport rankings first." };
+  }
+
+  // Validate all session IDs exist and belong to ranked sports
+  const validSessions = await db
+    .select({ sessionCode: session.sessionCode, sport: session.sport })
+    .from(session)
+    .where(inArray(session.sport, rankedSports));
+
+  const validSessionMap = new Map(
+    validSessions.map((s) => [s.sessionCode, s.sport])
+  );
+
+  for (const pref of preferences) {
+    if (!validSessionMap.has(pref.sessionId)) {
+      return { error: `Invalid session: ${pref.sessionId}` };
+    }
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      // Delete old session preferences
+      await tx
+        .delete(sessionPreference)
+        .where(eq(sessionPreference.memberId, membership.id));
+
+      // Insert new session preferences
+      await tx.insert(sessionPreference).values(
+        preferences.map((p) => ({
+          sessionId: p.sessionId,
+          memberId: membership.id,
+          interest: p.interest,
+          maxWillingness: p.maxWillingness,
+        }))
+      );
+
+      // Update member step and status
+      await tx
+        .update(member)
+        .set({
+          preferenceStep: "sessions",
+          status: "preferences_set",
+        })
+        .where(eq(member.id, membership.id));
+    });
+  } catch {
+    return { error: "Failed to save session preferences. Please try again." };
+  }
+
+  revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };
 }

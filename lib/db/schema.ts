@@ -184,7 +184,7 @@ export const sessionPreference = pgTable(
   {
     sessionId: text("session_id")
       .notNull()
-      .references(() => session.sessionCode),
+      .references(() => session.sessionCode, { onDelete: "cascade" }),
     memberId: uuid("member_id")
       .notNull()
       .references(() => member.id),
@@ -218,7 +218,7 @@ export const comboSession = pgTable(
       .references(() => combo.id),
     sessionId: text("session_id")
       .notNull()
-      .references(() => session.sessionCode),
+      .references(() => session.sessionCode, { onDelete: "cascade" }),
   },
   (table) => [primaryKey({ columns: [table.comboId, table.sessionId] })]
 );
@@ -230,7 +230,7 @@ export const viableConfig = pgTable("viable_config", {
     .references(() => group.id),
   sessionId: text("session_id")
     .notNull()
-    .references(() => session.sessionCode),
+    .references(() => session.sessionCode, { onDelete: "cascade" }),
   minPrice: integer("min_price").notNull(),
   maxPrice: integer("max_price"),
 });
@@ -255,7 +255,7 @@ export const conflict = pgTable("conflict", {
     .references(() => group.id),
   sessionId: text("session_id")
     .notNull()
-    .references(() => session.sessionCode),
+    .references(() => session.sessionCode, { onDelete: "cascade" }),
   affectedMemberId: uuid("affected_member_id")
     .notNull()
     .references(() => member.id),

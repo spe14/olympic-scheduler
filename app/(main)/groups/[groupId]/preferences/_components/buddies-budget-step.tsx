@@ -109,7 +109,7 @@ export default function BuddiesBudgetStep({
               inputClass +
               " pl-7 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             }
-            value={budget}
+            value={budget ? Number(budget).toLocaleString("en-US") : ""}
             onChange={(e) => {
               const raw = e.target.value.replace(/[^0-9]/g, "");
               setBudget(raw);
@@ -155,6 +155,9 @@ export default function BuddiesBudgetStep({
         </h3>
         <p className="mb-1 text-sm text-slate-500">
           Click a member to cycle: None → Required → Preferred → None.
+        </p>
+        <p className="mb-0 text-sm text-slate-500">
+          None - I have no preference about attending sessions with this member.
         </p>
         <p className="mb-0 text-sm text-slate-500">
           Required - I will only attend a session if this member is also

@@ -1,31 +1,825 @@
 "use client";
 
-export default function SessionsStep() {
-  return (
-    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 px-6 py-16 text-center">
-      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-        <svg
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className="text-slate-400"
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useSidePanel } from "../../_components/side-panel-context";
+import SessionInterestModal from "./session-interest-modal";
+import type { SessionData, SessionPreferenceData } from "./preference-wizard";
+
+const SPORT_COLORS = [
+  "#009de5",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
+  "#14b8a6",
+  "#f97316",
+  "#6366f1",
+  "#84cc16",
+];
+
+type Props = {
+  sessions: SessionData[];
+  sportRankings: string[];
+  initialPreferences: Map<string, SessionPreferenceData>;
+  initialHiddenSessions: Set<string>;
+  onChange: (prefs: Map<string, SessionPreferenceData>) => void;
+  onHiddenChange: (hidden: Set<string>) => void;
+};
+
+function formatDateHeader(dateStr: string): string {
+  const date = new Date(dateStr + "T00:00:00");
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatTime(timeStr: string): string {
+  const [hours, minutes] = timeStr.split(":");
+  const h = parseInt(hours, 10);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${minutes} ${ampm}`;
+}
+
+export default function SessionsStep({
+  sessions,
+  sportRankings,
+  initialPreferences,
+  initialHiddenSessions,
+  onChange,
+  onHiddenChange,
+}: Props) {
+  const [selectedSports, setSelectedSports] = useState<Set<string>>(new Set());
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [selectedZones, setSelectedZones] = useState<Set<string>>(new Set());
+  const [selectedInterests, setSelectedInterests] = useState<Set<string>>(
+    new Set()
+  );
+  const [preferences, setPreferences] = useState<
+    Map<string, SessionPreferenceData>
+  >(() => {
+    // Filter out preferences for sessions not in the current sessions list
+    // (e.g., sessions from sports that were unranked)
+    const validSessionCodes = new Set(sessions.map((s) => s.sessionCode));
+    const filtered = new Map<string, SessionPreferenceData>();
+    for (const [id, pref] of initialPreferences) {
+      if (validSessionCodes.has(id)) {
+        filtered.set(id, pref);
+      }
+    }
+    return filtered;
+  });
+  const [modalSession, setModalSession] = useState<SessionData | null>(null);
+  const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(
+    () => new Set(initialHiddenSessions)
+  );
+  const [showHidden, setShowHidden] = useState(false);
+
+  // Sync filtered preferences back to parent on mount
+  const didSyncRef = useRef(false);
+  useEffect(() => {
+    if (!didSyncRef.current) {
+      didSyncRef.current = true;
+      if (preferences.size !== initialPreferences.size) {
+        onChange(preferences);
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { setPanel } = useSidePanel();
+
+  const sportColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    sportRankings.forEach((sport, i) => {
+      map.set(sport, SPORT_COLORS[i % SPORT_COLORS.length]);
+    });
+    return map;
+  }, [sportRankings]);
+
+  const availableDates = useMemo(() => {
+    const dates = new Set<string>();
+    sessions.forEach((s) => dates.add(s.sessionDate));
+    return Array.from(dates).sort();
+  }, [sessions]);
+
+  const availableZones = useMemo(() => {
+    const zones = new Set<string>();
+    sessions.forEach((s) => zones.add(s.zone));
+    return Array.from(zones).sort();
+  }, [sessions]);
+
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    sessions.forEach((s) => types.add(s.sessionType));
+    return Array.from(types).sort();
+  }, [sessions]);
+
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((s) => {
+      if (selectedSports.size > 0 && !selectedSports.has(s.sport)) return false;
+      if (selectedTypes.size > 0 && !selectedTypes.has(s.sessionType))
+        return false;
+      if (selectedDates.size > 0 && !selectedDates.has(s.sessionDate))
+        return false;
+      if (selectedZones.size > 0 && !selectedZones.has(s.zone)) return false;
+      if (selectedInterests.size > 0) {
+        const pref = preferences.get(s.sessionCode);
+        const level = pref ? pref.interest : "not_set";
+        if (!selectedInterests.has(level)) return false;
+      }
+      return true;
+    });
+  }, [
+    sessions,
+    selectedSports,
+    selectedTypes,
+    selectedDates,
+    selectedZones,
+    selectedInterests,
+    preferences,
+  ]);
+
+  const visibleSessions = useMemo(() => {
+    if (showHidden) return filteredSessions;
+    return filteredSessions.filter((s) => !hiddenSessions.has(s.sessionCode));
+  }, [filteredSessions, hiddenSessions, showHidden]);
+
+  const groupedSessions = useMemo(() => {
+    const groups: { date: string; sessions: SessionData[] }[] = [];
+    let currentDate = "";
+    for (const s of visibleSessions) {
+      if (s.sessionDate !== currentDate) {
+        currentDate = s.sessionDate;
+        groups.push({ date: currentDate, sessions: [] });
+      }
+      groups[groups.length - 1].sessions.push(s);
+    }
+    return groups;
+  }, [visibleSessions]);
+
+  const hiddenCount = useMemo(() => {
+    return filteredSessions.filter((s) => hiddenSessions.has(s.sessionCode))
+      .length;
+  }, [filteredSessions, hiddenSessions]);
+
+  function updatePreferences(newPrefs: Map<string, SessionPreferenceData>) {
+    setPreferences(newPrefs);
+    onChange(newPrefs);
+  }
+
+  function handleSave(pref: SessionPreferenceData) {
+    const newPrefs = new Map(preferences);
+    newPrefs.set(pref.sessionId, pref);
+    updatePreferences(newPrefs);
+    setModalSession(null);
+  }
+
+  function handleClear(sessionId: string) {
+    const newPrefs = new Map(preferences);
+    newPrefs.delete(sessionId);
+    updatePreferences(newPrefs);
+    setModalSession(null);
+  }
+
+  const unhideAll = useCallback(() => {
+    const newHidden = new Set<string>();
+    setHiddenSessions(newHidden);
+    onHiddenChange(newHidden);
+    setShowHidden(false);
+  }, [onHiddenChange]);
+
+  function toggleHidden(sessionCode: string) {
+    const newHidden = new Set(hiddenSessions);
+    if (newHidden.has(sessionCode)) {
+      newHidden.delete(sessionCode);
+    } else {
+      newHidden.add(sessionCode);
+    }
+    setHiddenSessions(newHidden);
+    onHiddenChange(newHidden);
+  }
+
+  const interestStyles = {
+    low: { backgroundColor: "rgba(255, 0, 128, 0.15)", color: "#ff0080" },
+    medium: { backgroundColor: "rgba(250, 204, 21, 0.2)", color: "#d97706" },
+    high: { backgroundColor: "rgba(0, 157, 229, 0.2)", color: "#009de5" },
+  };
+
+  function getWillingnessLabel(value: number | null): string {
+    if (value === null) return "$1000+";
+    return `<$${value}`;
+  }
+
+  function getPreferenceBadges(pref: SessionPreferenceData) {
+    const style = interestStyles[pref.interest];
+    return (
+      <>
+        <span
+          className="rounded-full px-2 py-0.5 text-xs font-medium"
+          style={style}
         >
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-      </div>
-      <h3 className="mb-1 text-base font-semibold text-slate-900">
-        Session Selection Coming Soon
+          {pref.interest.charAt(0).toUpperCase() + pref.interest.slice(1)}
+        </span>
+        <span
+          className="rounded-full px-2 py-0.5 text-xs font-medium"
+          style={style}
+        >
+          {getWillingnessLabel(pref.maxWillingness)}
+        </span>
+      </>
+    );
+  }
+
+  function toggleSetItem<T>(set: Set<T>, item: T): Set<T> {
+    const next = new Set(set);
+    if (next.has(item)) {
+      next.delete(item);
+    } else {
+      next.add(item);
+    }
+    return next;
+  }
+
+  // Render filters into the side panel
+  useEffect(() => {
+    setPanel(
+      <SessionFilters
+        hasActiveFilters={
+          selectedSports.size > 0 ||
+          selectedTypes.size > 0 ||
+          selectedDates.size > 0 ||
+          selectedZones.size > 0 ||
+          selectedInterests.size > 0
+        }
+        onClearAll={() => {
+          setSelectedSports(new Set());
+          setSelectedTypes(new Set());
+          setSelectedDates(new Set());
+          setSelectedZones(new Set());
+          setSelectedInterests(new Set());
+        }}
+        sportRankings={sportRankings}
+        selectedSports={selectedSports}
+        onToggleSport={(sport) =>
+          setSelectedSports((prev) => toggleSetItem(prev, sport))
+        }
+        onClearSports={() => setSelectedSports(new Set())}
+        selectedTypes={selectedTypes}
+        onToggleType={(type) =>
+          setSelectedTypes((prev) => toggleSetItem(prev, type))
+        }
+        onClearTypes={() => setSelectedTypes(new Set())}
+        selectedDates={selectedDates}
+        onToggleDate={(date) =>
+          setSelectedDates((prev) => toggleSetItem(prev, date))
+        }
+        onClearDates={() => setSelectedDates(new Set())}
+        availableDates={availableDates}
+        selectedZones={selectedZones}
+        onToggleZone={(zone) =>
+          setSelectedZones((prev) => toggleSetItem(prev, zone))
+        }
+        onClearZones={() => setSelectedZones(new Set())}
+        availableZones={availableZones}
+        selectedInterests={selectedInterests}
+        onToggleInterest={(level) =>
+          setSelectedInterests((prev) => toggleSetItem(prev, level))
+        }
+        onClearInterests={() => setSelectedInterests(new Set())}
+        hiddenCount={hiddenCount}
+        showHidden={showHidden}
+        onToggleShowHidden={() => setShowHidden((v) => !v)}
+        onUnhideAll={unhideAll}
+        availableTypes={availableTypes}
+      />
+    );
+  }, [
+    setPanel,
+    sportRankings,
+    selectedSports,
+    selectedTypes,
+    selectedDates,
+    availableDates,
+    selectedZones,
+    availableZones,
+    availableTypes,
+    selectedInterests,
+    hiddenCount,
+    showHidden,
+    unhideAll,
+  ]);
+
+  // Clear side panel on unmount
+  useEffect(() => {
+    return () => setPanel(null);
+  }, [setPanel]);
+
+  return (
+    <div>
+      <h3 className="mb-1 text-lg font-semibold text-slate-900">
+        Session Interests
       </h3>
-      <p className="text-sm text-slate-500">
-        You&apos;ll be able to select and configure individual sessions in a
-        future update. Click Finish to complete your preferences for now.
+      <p className="mb-0 text-sm text-slate-500">
+        Browse sessions from your ranked sports below. Set your interest level
+        and price ceiling for <strong>all</strong> sessions you have interest in
+        attending.{" "}
+        <strong>
+          Any sessions that you don&apos;t select will default to &apos;No
+          Interest&apos; and be excluded from your final schedule.
+        </strong>
       </p>
+      <p className="mb-4 text-sm text-slate-500"></p>
+
+      {/* Hidden toggle + session cards */}
+      {hiddenCount > 0 && (
+        <div className="mb-3 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setShowHidden((v) => !v)}
+            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            {showHidden
+              ? "Hide hidden sessions"
+              : `Show ${hiddenCount} hidden session${hiddenCount > 1 ? "s" : ""}`}
+          </button>
+          <span className="text-slate-300">|</span>
+          <button
+            type="button"
+            onClick={unhideAll}
+            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            Unhide all sessions
+          </button>
+        </div>
+      )}
+
+      {groupedSessions.length === 0 ? (
+        <div className="rounded-lg border-2 border-dashed border-slate-200 py-10 text-center">
+          <p className="text-sm text-slate-500">
+            No sessions match the current filters.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {groupedSessions.map((group) => (
+            <div key={group.date}>
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                {formatDateHeader(group.date)}
+              </h4>
+              <div className="space-y-1.5">
+                {group.sessions.map((s) => {
+                  const isHidden = hiddenSessions.has(s.sessionCode);
+                  const pref = preferences.get(s.sessionCode);
+                  const sportColor = sportColorMap.get(s.sport) ?? "#94a3b8";
+
+                  return (
+                    <div
+                      key={s.sessionCode}
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                        isHidden
+                          ? "border-slate-100 bg-slate-50 opacity-50"
+                          : "cursor-pointer border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                      onClick={() => {
+                        if (!isHidden) setModalSession(s);
+                      }}
+                      role={isHidden ? undefined : "button"}
+                      tabIndex={isHidden ? undefined : 0}
+                      onKeyDown={(e) => {
+                        if (!isHidden && (e.key === "Enter" || e.key === " ")) {
+                          e.preventDefault();
+                          setModalSession(s);
+                        }
+                      }}
+                    >
+                      {/* Sport color indicator */}
+                      <div
+                        className="h-8 w-1 flex-shrink-0 rounded-full"
+                        style={{ backgroundColor: sportColor }}
+                      />
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {selectedSports.size !== 1 && (
+                            <span
+                              className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                              style={{ backgroundColor: sportColor }}
+                            >
+                              {s.sport}
+                            </span>
+                          )}
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                            {s.sessionType}
+                          </span>
+                        </div>
+                        {s.sessionDescription && (
+                          <p className="mt-0.5 truncate text-sm text-slate-700">
+                            {s.sessionDescription}
+                          </p>
+                        )}
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {s.sessionCode} &middot; {formatTime(s.startTime)}{" "}
+                          &ndash; {formatTime(s.endTime)} &middot; {s.venue}
+                        </p>
+                      </div>
+
+                      {/* Right side: interest badge + action icons */}
+                      <div className="flex flex-shrink-0 items-center gap-2">
+                        {pref ? (
+                          getPreferenceBadges(pref)
+                        ) : !isHidden ? (
+                          <span className="group/add relative text-2xl font-medium text-slate-400">
+                            +
+                            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max -translate-x-1/2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover/add:opacity-100">
+                              Add Interest for Session
+                            </span>
+                          </span>
+                        ) : null}
+                        {isHidden ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleHidden(s.sessionCode);
+                            }}
+                            className="group/show relative rounded p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                            aria-label="Show Session"
+                          >
+                            <svg
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max -translate-x-1/2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover/show:opacity-100">
+                              Show Session
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleHidden(s.sessionCode);
+                            }}
+                            className="group/hide relative rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                            aria-label="Hide Session"
+                          >
+                            <svg
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                              <line x1="1" y1="1" x2="23" y2="23" />
+                            </svg>
+                            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max -translate-x-1/2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover/hide:opacity-100">
+                              Hide Session
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal */}
+      {modalSession && (
+        <SessionInterestModal
+          session={modalSession}
+          existingPreference={preferences.get(modalSession.sessionCode) ?? null}
+          onSave={handleSave}
+          onClear={handleClear}
+          onClose={() => setModalSession(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Side panel filter component ────────────────────────────────────
+
+// FILTER_TYPES removed — now derived dynamically via availableTypes prop
+
+const INTEREST_FILTER_OPTIONS = [
+  {
+    value: "low",
+    label: "Low",
+    activeBg: "rgba(255, 0, 128, 0.15)",
+    activeText: "#ff0080",
+  },
+  {
+    value: "medium",
+    label: "Medium",
+    activeBg: "rgba(250, 204, 21, 0.2)",
+    activeText: "#d97706",
+  },
+  {
+    value: "high",
+    label: "High",
+    activeBg: "rgba(0, 157, 229, 0.2)",
+    activeText: "#009de5",
+  },
+  {
+    value: "not_set",
+    label: "Not Set/No Interest",
+    activeBg: "rgba(100, 116, 139, 0.15)",
+    activeText: "#475569",
+  },
+];
+
+function SessionFilters({
+  hasActiveFilters,
+  onClearAll,
+  sportRankings,
+  selectedSports,
+  onToggleSport,
+  onClearSports,
+  selectedTypes,
+  onToggleType,
+  onClearTypes,
+  selectedDates,
+  onToggleDate,
+  onClearDates,
+  availableDates,
+  selectedZones,
+  onToggleZone,
+  onClearZones,
+  availableZones,
+  selectedInterests,
+  onToggleInterest,
+  onClearInterests,
+  hiddenCount,
+  showHidden,
+  onToggleShowHidden,
+  onUnhideAll,
+  availableTypes,
+}: {
+  hasActiveFilters: boolean;
+  onClearAll: () => void;
+  sportRankings: string[];
+  selectedSports: Set<string>;
+  onToggleSport: (sport: string) => void;
+  onClearSports: () => void;
+  selectedTypes: Set<string>;
+  onToggleType: (type: string) => void;
+  onClearTypes: () => void;
+  selectedDates: Set<string>;
+  onToggleDate: (date: string) => void;
+  onClearDates: () => void;
+  availableDates: string[];
+  selectedZones: Set<string>;
+  onToggleZone: (zone: string) => void;
+  onClearZones: () => void;
+  availableZones: string[];
+  selectedInterests: Set<string>;
+  onToggleInterest: (level: string) => void;
+  onClearInterests: () => void;
+  hiddenCount: number;
+  showHidden: boolean;
+  onToggleShowHidden: () => void;
+  onUnhideAll: () => void;
+  availableTypes: string[];
+}) {
+  return (
+    <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-slate-900">Filters</h4>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
+      {/* Sport filter */}
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-slate-500">
+          Filter by Sport:
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={onClearSports}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+              selectedSports.size === 0
+                ? "bg-[#009de5] text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            All
+          </button>
+          {sportRankings.map((sport, i) => (
+            <button
+              key={sport}
+              type="button"
+              onClick={() => onToggleSport(sport)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                selectedSports.has(sport)
+                  ? "text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+              style={
+                selectedSports.has(sport)
+                  ? { backgroundColor: SPORT_COLORS[i % SPORT_COLORS.length] }
+                  : undefined
+              }
+            >
+              {sport}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Session type filter */}
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-slate-500">
+          Filter by Session Type:
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={onClearTypes}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+              selectedTypes.size === 0
+                ? "bg-[#009de5] text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            All Types
+          </button>
+          {availableTypes.map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => onToggleType(type)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                selectedTypes.has(type)
+                  ? "bg-[#009de5] text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Date filter */}
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-slate-500">
+          Filter by Date:
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={onClearDates}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+              selectedDates.size === 0
+                ? "bg-[#009de5] text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            All Dates
+          </button>
+          {availableDates.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onToggleDate(d)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                selectedDates.has(d)
+                  ? "bg-[#009de5] text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {formatDateHeader(d)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Zone filter */}
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-slate-500">
+          Filter by Zone:
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={onClearZones}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+              selectedZones.size === 0
+                ? "bg-[#009de5] text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            All Zones
+          </button>
+          {availableZones.map((zone) => (
+            <button
+              key={zone}
+              type="button"
+              onClick={() => onToggleZone(zone)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                selectedZones.has(zone)
+                  ? "bg-[#009de5] text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {zone.replace(" Zone", "")}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Interest level filter */}
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-slate-500">
+          Filter by Interest:
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={onClearInterests}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+              selectedInterests.size === 0
+                ? "bg-[#009de5] text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            All
+          </button>
+          {INTEREST_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onToggleInterest(opt.value)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                !selectedInterests.has(opt.value)
+                  ? "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  : ""
+              }`}
+              style={
+                selectedInterests.has(opt.value)
+                  ? { backgroundColor: opt.activeBg, color: opt.activeText }
+                  : undefined
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Hidden toggle */}
+      {hiddenCount > 0 && (
+        <div className="space-y-1.5 border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            onClick={onToggleShowHidden}
+            className="block text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            {showHidden
+              ? "Hide hidden sessions"
+              : `Show ${hiddenCount} hidden session${hiddenCount > 1 ? "s" : ""}`}
+          </button>
+          <button
+            type="button"
+            onClick={onUnhideAll}
+            className="block text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            Unhide all sessions
+          </button>
+        </div>
+      )}
     </div>
   );
 }

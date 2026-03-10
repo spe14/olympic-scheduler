@@ -29,6 +29,13 @@
       "when": 1772996113164,
       "tag": "0003_silly_gravity",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1773106198611,
+      "tag": "0004_session_cascade_delete",
+      "breakpoints": true
     }
   ]
 }

@@ -98,19 +98,18 @@ export function ConsecutiveDaysInput({
         Number of Days
       </label>
       <input
-        type="number"
+        type="text"
+        inputMode="numeric"
         name={name}
-        min={1}
-        max={19}
         value={value}
         onChange={(e) => {
           const val = e.target.value;
-          if (val === "" || /^\d+$/.test(val)) {
+          if (/^\d*$/.test(val)) {
             onChange(val);
           }
         }}
         placeholder="e.g. 5"
-        className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20"
+        className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 transition-colors [appearance:textfield] focus:border-[#009de5]/40 focus:outline-none focus:ring-2 focus:ring-[#009de5]/20 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
       />
       <p className="mt-2 text-sm text-slate-400">Olympic Period: 19 days</p>
       {hints.map((h) => (

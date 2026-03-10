@@ -47,3 +47,5 @@ dist/
 build/
 
 .claude/
+
+/docs/test-scenarios

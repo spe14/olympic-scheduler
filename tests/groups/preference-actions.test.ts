@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   saveBuddiesBudget,
   saveSportRankings,
-  saveSessionsPlaceholder,
+  saveSessionPreferences,
 } from "@/app/(main)/groups/[groupId]/preferences/actions";
 
 // Mock next/cache
@@ -89,7 +89,16 @@ vi.mock("@/lib/db/schema", () => ({
     buddyMemberId: "buddy_id",
     type: "type",
   },
-  session: { sport: "sport" },
+  session: { sport: "sport", sessionCode: "session_code" },
+  sessionPreference: {
+    sessionId: "session_id",
+    memberId: "member_id",
+    interest: "interest",
+    maxWillingness: "max_willingness",
+    hardBuddyOverride: "hard_buddy_override",
+    minBuddyOverride: "min_buddy_override",
+    excluded: "excluded",
+  },
 }));
 
 const mockUser = { id: "user-1", authId: "auth-123" };
@@ -424,33 +433,8 @@ describe("saveBuddiesBudget", () => {
     expect(txInsertMock).not.toHaveBeenCalled();
   });
 
-  it("resets status to joined when re-editing after preferences_set", async () => {
-    mockActiveMember({ status: "preferences_set" });
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
-
-    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: vi.fn(() => ({ set: txSetMock })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-      })
-    );
-
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 500,
-      minBuddies: 0,
-      buddies: [],
-    });
-
-    expect(result.success).toBe(true);
-    expect(txSetMock).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "joined" })
-    );
-  });
-
-  it("does not reset status when not preferences_set", async () => {
-    mockActiveMember({ status: "joined" });
+  it("does not reset status when re-editing after preferences_set", async () => {
+    mockActiveMember({ status: "preferences_set", preferenceStep: "sessions" });
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
@@ -473,6 +457,31 @@ describe("saveBuddiesBudget", () => {
     expect(setCall.status).toBeUndefined();
   });
 
+  it("does not overwrite preferenceStep when already at a higher step", async () => {
+    // preferenceStep is "sessions" — saving buddies_budget should NOT set preferenceStep: "buddies_budget"
+    mockActiveMember({ preferenceStep: "sessions" });
+    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        update: vi.fn(() => ({ set: txSetMock })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+      })
+    );
+
+    const result = await saveBuddiesBudget("group-1", {
+      budget: 500,
+      minBuddies: 0,
+      buddies: [],
+    });
+
+    expect(result.success).toBe(true);
+    const setCall = txSetMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(setCall.preferenceStep).toBeUndefined();
+  });
+
   it("returns error when transaction fails", async () => {
     mockActiveMember();
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
@@ -491,13 +500,44 @@ describe("saveBuddiesBudget", () => {
 // ─── saveSportRankings ──────────────────────────────────────────────
 
 describe("saveSportRankings", () => {
+  let txSetMock: ReturnType<typeof vi.fn>;
+  let txDeleteWhere: ReturnType<typeof vi.fn>;
+
+  function setupSportRankingsTransaction(
+    existingPrefs: { sessionId: string }[] = [],
+    matchedSessions: { sessionCode: string; sport: string }[] = []
+  ) {
+    txDeleteWhere = vi.fn(() => Promise.resolve());
+    const txUpdateWhere = vi.fn(() => Promise.resolve());
+    txSetMock = vi.fn(() => ({ where: txUpdateWhere }));
+
+    // tx.select() for existing preferences and matched sessions
+    const selectResults = [existingPrefs, matchedSessions];
+    const txSelectWhere = vi.fn(() =>
+      Promise.resolve(selectResults.shift() ?? [])
+    );
+    const txSelectFrom = vi.fn(() => ({ where: txSelectWhere }));
+    const txSelect = vi.fn(() => ({ from: txSelectFrom }));
+
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        update: vi.fn(() => ({ set: txSetMock })),
+        delete: vi.fn(() => ({ where: txDeleteWhere })),
+        select: txSelect,
+      })
+    );
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockLimit.mockReset();
     mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
     directWhereResults = [];
     selectDistinctResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
+    // Default transaction mock for simple cases (no existing prefs)
+    setupSportRankingsTransaction();
   });
 
   // Mock the selectDistinct sports query
@@ -560,13 +600,15 @@ describe("saveSportRankings", () => {
   it("saves valid sport rankings successfully", async () => {
     mockActiveMember();
     mockValidSports(["Tennis", "Swimming", "Basketball"]);
+    setupSportRankingsTransaction();
 
     const result = await saveSportRankings("group-1", {
       sportRankings: ["Swimming", "Tennis"],
     });
 
     expect(result.success).toBe(true);
-    expect(mockSet).toHaveBeenCalledWith(
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(txSetMock).toHaveBeenCalledWith(
       expect.objectContaining({
         sportRankings: ["Swimming", "Tennis"],
         preferenceStep: "sport_rankings",
@@ -577,6 +619,7 @@ describe("saveSportRankings", () => {
   it("saves single sport ranking", async () => {
     mockActiveMember();
     mockValidSports(["Tennis"]);
+    setupSportRankingsTransaction();
 
     const result = await saveSportRankings("group-1", {
       sportRankings: ["Tennis"],
@@ -589,6 +632,7 @@ describe("saveSportRankings", () => {
     const sports = Array.from({ length: 10 }, (_, i) => `Sport${i}`);
     mockActiveMember();
     mockValidSports(sports);
+    setupSportRankingsTransaction();
 
     const result = await saveSportRankings("group-1", {
       sportRankings: sports,
@@ -597,37 +641,39 @@ describe("saveSportRankings", () => {
     expect(result.success).toBe(true);
   });
 
-  it("resets status to joined when re-editing after preferences_set", async () => {
-    mockActiveMember({ status: "preferences_set" });
+  it("does not reset status when re-editing after preferences_set", async () => {
+    mockActiveMember({ status: "preferences_set", preferenceStep: "sessions" });
     mockValidSports(["Tennis", "Swimming"]);
+    setupSportRankingsTransaction();
 
     const result = await saveSportRankings("group-1", {
       sportRankings: ["Tennis"],
     });
 
     expect(result.success).toBe(true);
-    expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "joined" })
-    );
-  });
-
-  it("does not reset status when not preferences_set", async () => {
-    mockActiveMember({ status: "joined" });
-    mockValidSports(["Tennis"]);
-
-    const result = await saveSportRankings("group-1", {
-      sportRankings: ["Tennis"],
-    });
-
-    expect(result.success).toBe(true);
-    const setCall = mockSet.mock.calls[0][0] as Record<string, unknown>;
+    const setCall = txSetMock.mock.calls[0][0] as Record<string, unknown>;
     expect(setCall.status).toBeUndefined();
   });
 
-  it("returns error when db update fails", async () => {
+  it("does not overwrite preferenceStep when already at a higher step", async () => {
+    // preferenceStep is "sessions" — saving sport_rankings should NOT set preferenceStep: "sport_rankings"
+    mockActiveMember({ preferenceStep: "sessions" });
+    mockValidSports(["Tennis"]);
+    setupSportRankingsTransaction();
+
+    const result = await saveSportRankings("group-1", {
+      sportRankings: ["Tennis"],
+    });
+
+    expect(result.success).toBe(true);
+    const setCall = txSetMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(setCall.preferenceStep).toBeUndefined();
+  });
+
+  it("returns error when transaction fails", async () => {
     mockActiveMember();
     mockValidSports(["Tennis"]);
-    mockUpdateWhere.mockRejectedValue(new Error("DB error"));
+    mockTransaction.mockRejectedValue(new Error("TX error"));
 
     const result = await saveSportRankings("group-1", {
       sportRankings: ["Tennis"],
@@ -637,23 +683,104 @@ describe("saveSportRankings", () => {
       "Failed to save sport rankings. Please try again."
     );
   });
+
+  // ── Session preference cleanup on sport unranking ────────────
+
+  it("deletes session preferences for unranked sports via transaction", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockValidSports(["Tennis", "Swimming", "Basketball"]);
+    setupSportRankingsTransaction(
+      [{ sessionId: "TEN-001" }, { sessionId: "SWM-001" }],
+      [
+        { sessionCode: "TEN-001", sport: "Tennis" },
+        { sessionCode: "SWM-001", sport: "Swimming" },
+      ]
+    );
+
+    // User removes Swimming, keeps only Tennis
+    const result = await saveSportRankings("group-1", {
+      sportRankings: ["Tennis"],
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    // Should delete SWM-001 since Swimming is no longer ranked
+    expect(txDeleteWhere).toHaveBeenCalled();
+  });
+
+  it("does not delete preferences when no stale sessions exist", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockValidSports(["Tennis", "Swimming"]);
+    setupSportRankingsTransaction();
+
+    const result = await saveSportRankings("group-1", {
+      sportRankings: ["Tennis", "Swimming"],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("keeps preferences for sessions in still-ranked sports", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockValidSports(["Tennis", "Swimming", "Basketball"]);
+    setupSportRankingsTransaction(
+      [{ sessionId: "TEN-001" }],
+      [{ sessionCode: "TEN-001", sport: "Tennis" }]
+    );
+
+    // User keeps Tennis, removes Swimming — TEN-001 should survive
+    const result = await saveSportRankings("group-1", {
+      sportRankings: ["Tennis"],
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
 });
 
-// ─── saveSessionsPlaceholder ────────────────────────────────────────
+// ─── saveSessionPreferences ─────────────────────────────────────────
 
-describe("saveSessionsPlaceholder", () => {
+describe("saveSessionPreferences", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLimit.mockReset();
     mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
     directWhereResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txUpdateWhere = vi.fn(() => Promise.resolve());
+      const txDeleteWhere = vi.fn(() => Promise.resolve());
+      const txInsertValues = vi.fn(() => Promise.resolve());
+      const tx = {
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: txUpdateWhere })),
+        })),
+        delete: vi.fn(() => ({ where: txDeleteWhere })),
+        insert: vi.fn(() => ({ values: txInsertValues })),
+      };
+      return cb(tx);
+    });
   });
+
+  // Helper: mock sport rankings query (the second select call)
+  function mockSportRankings(sports: string[]) {
+    mockLimit.mockResolvedValueOnce([{ sportRankings: sports }]);
+  }
+
+  // Helper: mock valid sessions query
+  function mockValidSessions(
+    sessions: { sessionCode: string; sport: string }[]
+  ) {
+    directWhereResults.push(sessions);
+  }
 
   it("returns error when not authenticated", async () => {
     mockNoMembership();
 
-    const result = await saveSessionsPlaceholder("group-1");
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+    });
 
     expect(result.error).toBe("You are not an active member of this group.");
   });
@@ -661,7 +788,9 @@ describe("saveSessionsPlaceholder", () => {
   it("returns error when previous steps not completed", async () => {
     mockActiveMember({ preferenceStep: "buddies_budget" });
 
-    const result = await saveSessionsPlaceholder("group-1");
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+    });
 
     expect(result.error).toBe("You must complete previous steps first.");
   });
@@ -669,50 +798,210 @@ describe("saveSessionsPlaceholder", () => {
   it("returns error when preferenceStep is null", async () => {
     mockActiveMember({ preferenceStep: null });
 
-    const result = await saveSessionsPlaceholder("group-1");
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+    });
 
     expect(result.error).toBe("You must complete previous steps first.");
   });
 
-  it("succeeds when preferenceStep is sport_rankings", async () => {
+  it("returns error for empty preferences array", async () => {
     mockActiveMember({ preferenceStep: "sport_rankings" });
 
-    const result = await saveSessionsPlaceholder("group-1");
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [],
+    });
+
+    expect(result.error).toBe("You must select at least one session.");
+  });
+
+  it("returns error for duplicate session IDs", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [
+        { sessionId: "s1", interest: "high", maxWillingness: 200 },
+        { sessionId: "s1", interest: "low", maxWillingness: 100 },
+      ],
+    });
+
+    expect(result.error).toBe("Duplicate session selections.");
+  });
+
+  it("returns error for invalid interest level", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [
+        {
+          sessionId: "s1",
+          interest: "extreme" as "high",
+          maxWillingness: 200,
+        },
+      ],
+    });
+
+    expect(result.error).toBe("Invalid interest level.");
+  });
+
+  it("returns error for invalid willingness value", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 75 }],
+    });
+
+    expect(result.error).toBe("Invalid willingness value.");
+  });
+
+  it("allows null maxWillingness (means $1000+)", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockSportRankings(["Tennis"]);
+    mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [
+        { sessionId: "s1", interest: "high", maxWillingness: null },
+      ],
+    });
 
     expect(result.success).toBe(true);
-    expect(mockSet).toHaveBeenCalledWith({
+  });
+
+  it("returns error when sport rankings are empty", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockLimit.mockResolvedValueOnce([{ sportRankings: [] }]);
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+    });
+
+    expect(result.error).toBe("You must complete sport rankings first.");
+  });
+
+  it("returns error for session not in ranked sports", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockSportRankings(["Tennis"]);
+    // No valid sessions returned (session doesn't match ranked sports)
+    mockValidSessions([]);
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+    });
+
+    expect(result.error).toBe("Invalid session: s1");
+  });
+
+  it("saves valid session preferences in a transaction", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockSportRankings(["Tennis", "Swimming"]);
+    mockValidSessions([
+      { sessionCode: "s1", sport: "Tennis" },
+      { sessionCode: "s2", sport: "Swimming" },
+    ]);
+
+    const txDeleteWhere = vi.fn(() => Promise.resolve());
+    const txInsertValues = vi.fn(() => Promise.resolve());
+    const txUpdateWhere = vi.fn(() => Promise.resolve());
+    const txSetMock = vi.fn(() => ({ where: txUpdateWhere }));
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        delete: vi.fn(() => ({ where: txDeleteWhere })),
+        insert: vi.fn(() => ({ values: txInsertValues })),
+        update: vi.fn(() => ({ set: txSetMock })),
+      })
+    );
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [
+        { sessionId: "s1", interest: "high", maxWillingness: 200 },
+        { sessionId: "s2", interest: "medium", maxWillingness: null },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(txDeleteWhere).toHaveBeenCalled();
+    expect(txInsertValues).toHaveBeenCalledWith([
+      {
+        sessionId: "s1",
+        memberId: "member-1",
+        interest: "high",
+        maxWillingness: 200,
+      },
+      {
+        sessionId: "s2",
+        memberId: "member-1",
+        interest: "medium",
+        maxWillingness: null,
+      },
+    ]);
+    expect(txSetMock).toHaveBeenCalledWith({
       preferenceStep: "sessions",
       status: "preferences_set",
     });
   });
 
-  it("succeeds when preferenceStep is already sessions (re-finishing)", async () => {
+  it("succeeds when preferenceStep is already sessions (re-saving)", async () => {
     mockActiveMember({
       preferenceStep: "sessions",
       status: "preferences_set",
     });
+    mockSportRankings(["Tennis"]);
+    mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
 
-    const result = await saveSessionsPlaceholder("group-1");
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "low", maxWillingness: 100 }],
+    });
 
     expect(result.success).toBe(true);
   });
 
-  it("sets status to preferences_set on success", async () => {
-    mockActiveMember({ preferenceStep: "sport_rankings" });
+  it("accepts all valid willingness bucket values", async () => {
+    const validValues = [50, 100, 150, 200, 250, 300, 400, 500, 1000];
+    for (const val of validValues) {
+      vi.clearAllMocks();
+      mockLimit.mockReset();
+      directWhereResults = [];
+      mockTransaction.mockImplementation(
+        (cb: (tx: unknown) => Promise<void>) => {
+          const tx = {
+            update: vi.fn(() => ({
+              set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+            })),
+            delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+            insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          };
+          return cb(tx);
+        }
+      );
 
-    await saveSessionsPlaceholder("group-1");
+      mockActiveMember({ preferenceStep: "sport_rankings" });
+      mockSportRankings(["Tennis"]);
+      mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
 
-    expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "preferences_set" })
-    );
+      const result = await saveSessionPreferences("group-1", {
+        preferences: [
+          { sessionId: "s1", interest: "high", maxWillingness: val },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+    }
   });
 
-  it("returns error when db update fails", async () => {
+  it("returns error when transaction fails", async () => {
     mockActiveMember({ preferenceStep: "sport_rankings" });
-    mockUpdateWhere.mockRejectedValue(new Error("DB error"));
+    mockSportRankings(["Tennis"]);
+    mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
+    mockTransaction.mockRejectedValue(new Error("TX error"));
 
-    const result = await saveSessionsPlaceholder("group-1");
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+    });
 
-    expect(result.error).toBe("Failed to save preferences. Please try again.");
+    expect(result.error).toBe(
+      "Failed to save session preferences. Please try again."
+    );
   });
 });
