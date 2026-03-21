@@ -137,13 +137,24 @@ export default function NavBar({
               <Link
                 href="/profile"
                 className="block px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50"
-                onClick={() => setIsDropdownOpen(false)}
+                onClick={(e) => {
+                  if (!globalGuardNavigation("/profile")) {
+                    e.preventDefault();
+                  }
+                  setIsDropdownOpen(false);
+                }}
               >
                 Profile
               </Link>
               <form action={logout}>
                 <button
                   type="submit"
+                  onClick={(e) => {
+                    if (!globalGuardNavigation("/login", () => logout())) {
+                      e.preventDefault();
+                      setIsDropdownOpen(false);
+                    }
+                  }}
                   className="w-full px-4 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
                 >
                   Log Out

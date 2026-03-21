@@ -406,7 +406,12 @@ describe("NavigationGuardProvider & useNavigationGuard", () => {
     fireEvent.click(screen.getByTestId("set-checker"));
 
     // After mount with dirty checker: global guard should block navigation
-    expect(globalGuardNavigation("/")).toBe(false);
+    // globalGuardNavigation triggers React state updates (setPendingHref, setDirtyStepNames)
+    let result: boolean;
+    act(() => {
+      result = globalGuardNavigation("/");
+    });
+    expect(result!).toBe(false);
   });
 
   it("clears globalGuardNavigation when provider unmounts", () => {
@@ -416,9 +421,17 @@ describe("NavigationGuardProvider & useNavigationGuard", () => {
     fireEvent.click(screen.getByTestId("set-checker"));
 
     // Guard is active while mounted
-    expect(globalGuardNavigation("/")).toBe(false);
+    // globalGuardNavigation triggers React state updates (setPendingHref, setDirtyStepNames)
+    let result: boolean;
+    act(() => {
+      result = globalGuardNavigation("/");
+    });
+    expect(result!).toBe(false);
 
-    unmount();
+    // unmount triggers cleanup effect that calls setGlobalGuard(null)
+    act(() => {
+      unmount();
+    });
 
     // After unmount: global guard cleared — navigation proceeds freely
     expect(globalGuardNavigation("/")).toBe(true);
@@ -434,6 +447,105 @@ describe("NavigationGuardProvider & useNavigationGuard", () => {
     fireEvent.click(screen.getByTestId("set-checker"));
 
     expect(globalGuardNavigation("/")).toBe(true);
+  });
+
+  // ── onDiscard callback ──────────────────────────────────────
+
+  it("calls onDiscard callback instead of router.push when provided", () => {
+    const onDiscard = vi.fn();
+
+    renderWithProvider(
+      <TestConsumer dirtyChecker={() => ["Buddies & Budget"]} />
+    );
+    fireEvent.click(screen.getByTestId("set-checker"));
+
+    // Trigger guard with an onDiscard callback via the global store
+    let result: boolean;
+    act(() => {
+      result = globalGuardNavigation("/login", onDiscard);
+    });
+    expect(result!).toBe(false);
+    expect(screen.getByText("Unsaved Changes")).toBeTruthy();
+
+    // Click "Discard & Leave"
+    fireEvent.click(screen.getByText("Discard & Leave"));
+
+    expect(onDiscard).toHaveBeenCalledOnce();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unsaved Changes")).toBeNull();
+  });
+
+  it("clears onDiscard after Stay so traverse does not invoke stale callback", () => {
+    const historyBackSpy = vi
+      .spyOn(window.history, "back")
+      .mockImplementation(() => {});
+    const listeners: Record<string, Function[]> = {};
+    const mockNav = {
+      addEventListener: (type: string, handler: Function) => {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(handler);
+      },
+      removeEventListener: (type: string, handler: Function) => {
+        listeners[type] = (listeners[type] || []).filter((h) => h !== handler);
+      },
+    };
+    (window as any).navigation = mockNav;
+
+    const onDiscard = vi.fn();
+
+    renderWithProvider(
+      <TestConsumer dirtyChecker={() => ["Buddies & Budget"]} />
+    );
+    fireEvent.click(screen.getByTestId("set-checker"));
+
+    // 1. Trigger guard with onDiscard (simulating logout click)
+    act(() => {
+      globalGuardNavigation("/login", onDiscard);
+    });
+    expect(screen.getByText("Unsaved Changes")).toBeTruthy();
+
+    // 2. Click "Stay" — should clear the onDiscard callback
+    fireEvent.click(screen.getByText("Stay"));
+    expect(screen.queryByText("Unsaved Changes")).toBeNull();
+
+    // Re-register dirty checker (Stay cleared it via handleCancel path,
+    // but the original checker ref was nulled by Discard flow — here we
+    // need to re-set it so the traverse handler sees dirty steps)
+    fireEvent.click(screen.getByTestId("set-checker"));
+
+    // 3. Simulate browser back (traverse)
+    const preventDefault = vi.fn();
+    act(() => {
+      listeners["navigate"]?.forEach((h) =>
+        h({ navigationType: "traverse", canIntercept: true, preventDefault })
+      );
+    });
+    expect(screen.getByText("Unsaved Changes")).toBeTruthy();
+
+    // 4. Click "Discard & Leave" — should call history.back(), NOT the stale onDiscard
+    fireEvent.click(screen.getByText("Discard & Leave"));
+
+    expect(onDiscard).not.toHaveBeenCalled();
+    expect(historyBackSpy).toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+
+    historyBackSpy.mockRestore();
+  });
+
+  it("falls back to router.push when no onDiscard callback is provided", () => {
+    renderWithProvider(
+      <TestConsumer dirtyChecker={() => ["Buddies & Budget"]} />
+    );
+    fireEvent.click(screen.getByTestId("set-checker"));
+
+    act(() => {
+      globalGuardNavigation("/some/route");
+    });
+    expect(screen.getByText("Unsaved Changes")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Discard & Leave"));
+
+    expect(mockPush).toHaveBeenCalledWith("/some/route");
   });
 
   // Cleanup of Navigation API listener on unmount

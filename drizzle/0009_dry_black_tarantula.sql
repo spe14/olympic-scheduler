@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "members_with_no_combos" jsonb DEFAULT '[]'::jsonb;

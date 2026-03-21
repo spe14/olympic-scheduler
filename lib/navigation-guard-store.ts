@@ -8,7 +8,7 @@
  * it shows the dialog and returns false (navigation intercepted).
  */
 
-type GuardFn = ((href: string) => boolean) | null;
+type GuardFn = ((href: string, onDiscard?: () => void) => boolean) | null;
 
 let _guard: GuardFn = null;
 
@@ -16,7 +16,10 @@ export function setGlobalGuard(fn: GuardFn) {
   _guard = fn;
 }
 
-export function globalGuardNavigation(href: string): boolean {
-  if (_guard) return _guard(href);
+export function globalGuardNavigation(
+  href: string,
+  onDiscard?: () => void
+): boolean {
+  if (_guard) return _guard(href, onDiscard);
   return true; // no guard registered — allow navigation
 }

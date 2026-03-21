@@ -10,15 +10,13 @@ These are the high-level principles that guide the algorithm design:
 
 - **Budget is shown, not filtered.** Phase 1 generates the optimal schedule regardless of budget constraints. Budget impact is displayed so users can see what they might need to skip, but sessions are not automatically removed. This keeps Phase 1 focused on "what's best" while Phase 2 handles "what's feasible."
 
-- **Willingness is a soft filter with conflict resolution.** Users specify their max willingness per session via price buckets, but this doesn't automatically exclude them. Instead, we flag conflicts where willingness thresholds create buddy constraint issues, allowing users to discuss and adjust before finalizing.
-
 - **Date config is set at group creation or deferred, required before generation.** The owner sets the date configuration (N consecutive days or a specific date range) at group creation or defers it to discuss with the group. Date config must be set before the owner triggers schedule generation. It can be changed at any point — including after schedules are finalized — without re-running the algorithm, since it only affects window ranking.
 
 - **Fairness weight is fixed.** The algorithm uses a fixed fairness weight of 0.25 to balance total group satisfaction with equal distribution. This prevents scenarios where one user has a significantly worse experience than others.
 
-- **Satisfaction check before conflict resolution.** After schedules are generated, users review and confirm they're satisfied before entering the conflict resolution phase. If unsatisfied, they can adjust preferences and re-run.
+- **Implicit schedule acceptance.** After schedules are generated, users review the output. There is no explicit confirmation step — members implicitly accept by proceeding. If unsatisfied, they can re-enter preferences and the owner can re-generate.
 
-- **Consolidated from 4-5 phases to 2 phases.** The algorithm was originally designed as multiple discrete phases (filtering, combo generation, config calculation, window ranking, buying). We consolidated all preference selection and optimization into Phase 1, with Phase 2 focused solely on buy-time execution. This creates a cleaner mental model: Phase 1 = what's optimal, Phase 2 = how to buy it.
+- **Consolidated phases.** The algorithm was originally designed as multiple discrete phases (filtering, combo generation, window ranking, buying). We consolidated all preference selection and optimization into Phase 1, with Phase 2 focused solely on buy-time execution. This creates a cleaner mental model: Phase 1 = what's optimal, Phase 2 = how to buy it.
 
 - **No separate setup phase.** The group starts in the `preferences` phase on creation. Members can join and immediately begin entering preferences. The owner gates schedule generation, which is the real checkpoint where all preconditions are validated.
 
@@ -34,7 +32,7 @@ These are the high-level principles that guide the algorithm design:
 
 **Why:**
 
-- Willingness prices are maximums, not actual prices. Actual prices might be lower.
+- Session prices aren't known until purchase time. Actual prices might be lower than expected.
 - Budget is a "soft" constraint - users might flex it for important events.
 - Separates concerns: Phase 1 = what's optimal, Phase 2 = what's feasible.
 - Users see what they're missing and can make informed tradeoffs.
@@ -75,24 +73,6 @@ These are the high-level principles that guide the algorithm design:
 - Reduces noise in the algorithm - only considers sessions users actively chose
 
 ---
-
-## Decision 4: Willingness Set at Session Level Only
-
-**The Question:** How should users express willingness to pay?
-
-**Alternatives Considered:**
-
-1. Sport-level willingness with session overrides
-2. Session-level willingness only
-
-**We Chose:** Session-level willingness only
-
-**Why:**
-
-- There can be significant variety within a sport (e.g., Track has running events and field events)
-- Users may have very different willingness for different sessions within the same sport
-- Simpler model - no inheritance or override logic needed
-- More accurate representation of user preferences
 
 ---
 
@@ -205,7 +185,7 @@ These are the high-level principles that guide the algorithm design:
 
 **Alternatives Considered:**
 
-1. After conflict resolution, right before window ranking
+1. After schedule review, right before window ranking
 2. At group creation with a separate `setup` phase that blocks preferences until date config is set
 3. At group creation with defer option, required before generation
 
@@ -223,36 +203,22 @@ These are the high-level principles that guide the algorithm design:
 
 ---
 
-## Decision 11: Satisfaction Check Before Conflict Resolution
+## Decision 11: Remove Explicit Schedule Confirmation Step
 
-**The Question:** Should users go directly into conflict resolution after schedules are generated?
+**The Question:** Should users explicitly confirm they're satisfied with their generated schedule before the group can proceed?
 
-**We Chose:** Add a satisfaction check step first
-
-**Why:**
-
-- If a user is fundamentally unhappy (e.g., barely got sessions from their top sport), better to address before detailed conflict work
-- Adjusting preferences and re-running is cleaner than trying to fix a bad schedule through conflict resolution
-- Prevents wasted effort on conflicts that become irrelevant after a re-run
-
----
-
-## Decision 12: Conflict Resolution Options as Guidance, Not Actions
-
-**The Question:** Should conflict resolution options be clickable actions or informational guidance?
-
-**We Chose:** Informational guidance
+**We Chose:** Remove the confirmation step — members implicitly accept the schedule
 
 **Why:**
 
-- Multiple users might need to coordinate (e.g., both adjust to meet in the middle)
-- The suggested resolution amount might not be exactly what users want
-- Users already have UI controls for adjusting willingness, removing sessions, etc.
-- Guidance encourages discussion; clickable actions might lead to uncoordinated changes
+- The confirmation step added unnecessary friction without meaningful benefit. Users who are unhappy can still re-enter preferences and trigger a re-generation — the same escape hatch exists without requiring explicit confirmation from every member.
+- Waiting for all members to confirm before computing window rankings blocked progress unnecessarily. Window rankings are now computed during generation itself, so owners can immediately review and select a window.
+- The `schedule_review_pending` and `schedule_review_confirmed` statuses, and the `completed` phase, are removed entirely. Members stay at `preferences_set` through the schedule review phase.
+- Preferences edits during `schedule_review` are detected by comparing `statusChangedAt > scheduleGeneratedAt`, not by resetting member status.
 
 ---
 
-## Decision 13: Session-Level Buddy Constraint Override
+## Decision 12: Session-Level Buddy Constraint Override
 
 **The Question:** Can users override their buddy constraints for specific sessions?
 
@@ -289,49 +255,7 @@ These are the high-level principles that guide the algorithm design:
 
 ---
 
-## Decision 15: Viable Configs Computed Only for Combo Sessions
-
-**The Question:** Should viable configurations be computed for ALL sessions a user is interested in, or only sessions that appear in a user's combos (primary, backup1, backup2)?
-
-**Alternatives Considered:**
-
-1. Compute for all sessions any user has interest in (broader Phase 2 coverage)
-2. Compute only for sessions in combos (tighter scope, cleaner conflict resolution)
-
-**We Chose:** Compute only for sessions in combos
-
-**Why:**
-
-- Avoids computing configs for sessions that never appear on anyone's calendar
-- Conflicts are only flagged for sessions in combos, so viable configs for non-combo sessions would never surface in conflict resolution
-- Keeps the conflict resolution UI clean — users only see conflicts for sessions they can actually see on their calendar
-- For Phase 2, viable configs can be recomputed on-demand for any session if a buyer pivots to a session outside the pre-computed set
-- Computational cost is trivial either way, but the tighter scope reduces noise
-
----
-
-## Decision 16: Budget Input at Member Level During Buddy Preferences Step
-
-**The Question:** When and how should users specify their overall budget?
-
-**Alternatives Considered:**
-
-1. Collect budget at group join time
-2. Collect budget as its own preference wizard step
-3. Collect budget alongside buddy preferences (first wizard step)
-
-**We Chose:** Collect budget alongside buddy preferences
-
-**Why:**
-
-- Budget is a per-group setting (a user might have different budgets for different friend groups)
-- Buddy preferences are the lightest wizard step — adding budget here keeps it simple without adding a separate step
-- Budget needs to be set before session selection so users have it in mind when setting willingness
-- Budget is shown (not filtered) so it doesn't need to be collected with high precision — it's a reference point
-
----
-
-## Decision 17: Preference Viewing vs. Editing Access
+## Decision 15: Preference Viewing vs. Editing Access
 
 **The Question:** Should users be able to view their preferences at any phase, or only during preference input?
 
@@ -339,72 +263,13 @@ These are the high-level principles that guide the algorithm design:
 
 **Why:**
 
-- Users may want to reference their sport rankings, buddy constraints, or session selections during schedule review or conflict resolution
+- Users may want to reference their sport rankings, buddy constraints, or session selections during schedule review
 - Read-only access during later phases prevents accidental edits that would trigger a full re-run
 - If a user needs to change preferences after generation, they must explicitly re-enter the preference wizard (which resets the group)
 
 ---
 
-## Decision 18: Soft Buddy Score Recalculation on Session Removal
-
-**The Question:** When a user removes a session during conflict resolution, should we recalculate combo scores for other users whose soft buddy bonuses are affected?
-
-**We Chose:** Yes, recalculate scores for all affected users
-
-**Why:**
-
-- Keeps combo scores accurate — stale scores could lead to incorrect window rankings
-- The recalculation is computationally trivial (re-run scoring formula for affected sessions)
-- Even though combo composition doesn't change (same sessions, different scores), accurate scores matter for window ranking in the `completed` phase
-- Score changes during conflict resolution don't trigger combo re-generation — they only update the numeric scores on existing combos
-
----
-
-## Decision 19: Soft-Exclude on Session Removal (Preserve Preferences for Re-Generation)
-
-**The Question:** When a user removes a session during conflict resolution, should we delete their preference data or preserve it?
-
-**Alternatives Considered:**
-
-1. Delete the `session_preference` row (hard delete) — session is permanently gone until user re-enters the preference wizard
-2. Set an `excluded` flag (soft delete) — session is excluded from current schedule but preference data is preserved for re-generation
-
-**We Chose:** Soft-exclude with `excluded = true`
-
-**Why:**
-
-- Session removal during conflict resolution is a schedule-scoped decision ("I don't want this in my current schedule"), not a permanent preference change ("I'm no longer interested in this session at all")
-- If the algorithm is re-run (e.g., because another member changed preferences), group dynamics may have changed — more people might be interested now, buddy constraints might be different, and the previously-removed session might be a good fit in the new schedule
-- Willingness adjustments already survive re-generation naturally (they modify the `session_preference` row). Soft-exclude brings session removals to the same level — all conflict resolution actions are preserved and reconsidered on re-run
-- Permanent removal still happens through the preference wizard (Step 3), where deselecting a session deletes the row entirely
-- The `excluded` flag is reset to `false` during re-generation alongside override flags, so all sessions get a fresh evaluation
-
-**Implementation:**
-
-- `excluded` boolean on `session_preference` (DEFAULT false)
-- Conflict resolution "remove session" sets `excluded = true`
-- Algorithm Step 4 filters out sessions where `excluded = true`
-- Excluded sessions do not count toward soft buddy bonuses or min_buddies checks
-- Re-generation resets `excluded = false` for all members
-
----
-
-## Decision 20: Conflicts Shown to Both Affected and Causing Members
-
-**The Question:** Should conflicts be visible only to the affected member, or to both the affected and causing member?
-
-**We Chose:** Show to both parties
-
-**Why:**
-
-- Conflict resolution is collaborative — the causing member often needs to act (e.g., raise their willingness) to resolve the conflict
-- Without visibility, the causing member only knows about the conflict if the affected member tells them outside the app
-- Showing all resolution options to both parties enables them to coordinate: "I'll raise my willingness to $150 if you lower yours to $200"
-- For `min_buddies_failure` conflicts (no single causing member), the conflict is shown to the affected member and all members whose willingness affects the constraint
-
----
-
-## Decision 21: Owner-Gated Date Config and Window Operations
+## Decision 16: Owner-Gated Date Config and Window Operations
 
 **The Question:** Who should be able to change date configuration and manage window selection?
 
@@ -415,7 +280,7 @@ These are the high-level principles that guide the algorithm design:
 - Date config affects the entire group's window rankings — uncoordinated changes could be confusing
 - Consistent with the pattern of owner-gating group-wide decisions (generation, join approval, deletion)
 - The owner acts as the group's coordinator — they discuss with the group, then execute the agreed-upon change
-- Window computation and selection happen at the `completed` phase where the group is finalizing — these should be deliberate, coordinated actions
+- Window computation happens at schedule generation; window selection happens in `schedule_review` — these should be deliberate, coordinated actions
 
 ---
 
@@ -434,12 +299,10 @@ These are the high-level principles that guide the algorithm design:
 | ---------- | ------------------------------- | -------------------------------- |
 | **Goal**   | What's OPTIMAL                  | What's FEASIBLE                  |
 | **Budget** | Shown, not filtered             | Actively constrains purchases    |
-| **Prices** | Uses willingness as estimate    | Uses actual prices               |
 | **Output** | Aspirational schedule           | Executable purchase instructions |
 
 Phase 1 output feeds into Phase 2:
 
-- Viable configurations enable quick lookup at buy time
 - Backup combos provide fallback options
 - Ranked windows allow pivoting if primary window fails
 - Budget impact warnings help users prepare

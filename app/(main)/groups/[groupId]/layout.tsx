@@ -1,10 +1,8 @@
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { group, member, user } from "@/lib/db/schema";
-import { eq, and, notInArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import GroupShell from "./_components/group-shell";
-import type { GroupDetail } from "@/lib/types";
+import { getGroupDetail } from "@/lib/queries/get-group-detail";
 
 export default async function GroupLayout({
   children,
@@ -19,64 +17,28 @@ export default async function GroupLayout({
   }
 
   const { groupId } = await params;
+  const group = await getGroupDetail(groupId, currentUser.id);
 
-  const [myMembership] = await db
-    .select({ id: member.id, role: member.role, status: member.status })
-    .from(member)
-    .where(and(eq(member.groupId, groupId), eq(member.userId, currentUser.id)))
-    .limit(1);
-
-  if (!myMembership || myMembership.status === "denied") {
-    notFound();
+  if (!group) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-black">
+            This group was deleted.
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            The group you&apos;re looking for no longer exists.
+          </p>
+          <Link
+            href="/"
+            className="mt-6 inline-flex items-center gap-1.5 rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0080be]"
+          >
+            Back to Groups
+          </Link>
+        </div>
+      </div>
+    );
   }
 
-  const [groupData] = await db
-    .select({
-      id: group.id,
-      name: group.name,
-      phase: group.phase,
-      inviteCode: group.inviteCode,
-      dateMode: group.dateMode,
-      consecutiveDays: group.consecutiveDays,
-      startDate: group.startDate,
-      endDate: group.endDate,
-      createdAt: group.createdAt,
-    })
-    .from(group)
-    .where(eq(group.id, groupId));
-
-  if (!groupData) {
-    notFound();
-  }
-
-  const members = await db
-    .select({
-      id: member.id,
-      userId: member.userId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      username: user.username,
-      avatarColor: user.avatarColor,
-      role: member.role,
-      status: member.status,
-      budget: member.budget,
-      joinedAt: member.joinedAt,
-      createdAt: member.createdAt,
-    })
-    .from(member)
-    .innerJoin(user, eq(member.userId, user.id))
-    .where(
-      and(eq(member.groupId, groupId), notInArray(member.status, ["denied"]))
-    )
-    .orderBy(member.createdAt);
-
-  const groupDetail: GroupDetail = {
-    ...groupData,
-    myRole: myMembership.role,
-    myStatus: myMembership.status,
-    myMemberId: myMembership.id,
-    members,
-  };
-
-  return <GroupShell group={groupDetail}>{children}</GroupShell>;
+  return <GroupShell group={group}>{children}</GroupShell>;
 }

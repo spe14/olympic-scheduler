@@ -3,20 +3,10 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSidePanel } from "../../_components/side-panel-context";
 import SessionInterestModal from "./session-interest-modal";
+import SessionCard from "./session-card";
+import ConfirmModal from "@/components/confirm-modal";
 import type { SessionData, SessionPreferenceData } from "./preference-wizard";
-
-const SPORT_COLORS = [
-  "#009de5",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#6366f1",
-  "#84cc16",
-];
+import { SPORT_COLORS } from "@/lib/constants";
 
 type Props = {
   sessions: SessionData[];
@@ -25,6 +15,7 @@ type Props = {
   initialHiddenSessions: Set<string>;
   onChange: (prefs: Map<string, SessionPreferenceData>) => void;
   onHiddenChange: (hidden: Set<string>) => void;
+  loading?: boolean;
 };
 
 function formatDateHeader(dateStr: string): string {
@@ -36,14 +27,6 @@ function formatDateHeader(dateStr: string): string {
   });
 }
 
-function formatTime(timeStr: string): string {
-  const [hours, minutes] = timeStr.split(":");
-  const h = parseInt(hours, 10);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${h12}:${minutes} ${ampm}`;
-}
-
 export default function SessionsStep({
   sessions,
   sportRankings,
@@ -51,6 +34,7 @@ export default function SessionsStep({
   initialHiddenSessions,
   onChange,
   onHiddenChange,
+  loading,
 }: Props) {
   const [selectedSports, setSelectedSports] = useState<Set<string>>(new Set());
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
@@ -78,6 +62,8 @@ export default function SessionsStep({
     () => new Set(initialHiddenSessions)
   );
   const [showHidden, setShowHidden] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
 
   // Sync filtered preferences back to parent on mount
   const didSyncRef = useRef(false);
@@ -94,6 +80,14 @@ export default function SessionsStep({
 
   const sportColorMap = useMemo(() => {
     const map = new Map<string, string>();
+    sportRankings.forEach((sport, i) => {
+      map.set(sport, SPORT_COLORS[i % SPORT_COLORS.length].accent);
+    });
+    return map;
+  }, [sportRankings]);
+
+  const sportColorFullMap = useMemo(() => {
+    const map = new Map<string, (typeof SPORT_COLORS)[0]>();
     sportRankings.forEach((sport, i) => {
       map.set(sport, SPORT_COLORS[i % SPORT_COLORS.length]);
     });
@@ -119,6 +113,7 @@ export default function SessionsStep({
   }, [sessions]);
 
   const filteredSessions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     return sessions.filter((s) => {
       if (selectedSports.size > 0 && !selectedSports.has(s.sport)) return false;
       if (selectedTypes.size > 0 && !selectedTypes.has(s.sessionType))
@@ -131,6 +126,11 @@ export default function SessionsStep({
         const level = pref ? pref.interest : "not_set";
         if (!selectedInterests.has(level)) return false;
       }
+      if (query) {
+        const haystack =
+          `${s.sport} ${s.sessionCode} ${s.sessionType} ${s.sessionDescription ?? ""} ${s.venue} ${s.zone}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
       return true;
     });
   }, [
@@ -141,6 +141,7 @@ export default function SessionsStep({
     selectedZones,
     selectedInterests,
     preferences,
+    searchQuery,
   ]);
 
   const visibleSessions = useMemo(() => {
@@ -185,6 +186,11 @@ export default function SessionsStep({
     setModalSession(null);
   }
 
+  function handleClearAllInterests() {
+    updatePreferences(new Map());
+    setShowClearAllConfirm(false);
+  }
+
   const unhideAll = useCallback(() => {
     const newHidden = new Set<string>();
     setHiddenSessions(newHidden);
@@ -209,28 +215,15 @@ export default function SessionsStep({
     high: { backgroundColor: "rgba(0, 157, 229, 0.2)", color: "#009de5" },
   };
 
-  function getWillingnessLabel(value: number | null): string {
-    if (value === null) return "$1000+";
-    return `<$${value}`;
-  }
-
-  function getPreferenceBadges(pref: SessionPreferenceData) {
+  function getPreferenceBadge(pref: SessionPreferenceData) {
     const style = interestStyles[pref.interest];
     return (
-      <>
-        <span
-          className="rounded-full px-2 py-0.5 text-xs font-medium"
-          style={style}
-        >
-          {pref.interest.charAt(0).toUpperCase() + pref.interest.slice(1)}
-        </span>
-        <span
-          className="rounded-full px-2 py-0.5 text-xs font-medium"
-          style={style}
-        >
-          {getWillingnessLabel(pref.maxWillingness)}
-        </span>
-      </>
+      <span
+        className="rounded-full px-2 py-0.5 text-xs font-medium"
+        style={style}
+      >
+        {pref.interest.charAt(0).toUpperCase() + pref.interest.slice(1)}
+      </span>
     );
   }
 
@@ -246,6 +239,15 @@ export default function SessionsStep({
 
   // Render filters into the side panel
   useEffect(() => {
+    if (loading) {
+      setPanel(
+        <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-4">
+          <h4 className="text-sm font-semibold text-slate-900">Filters</h4>
+          <p className="text-sm text-slate-400">Loading filters...</p>
+        </div>
+      );
+      return;
+    }
     setPanel(
       <SessionFilters
         hasActiveFilters={
@@ -298,6 +300,7 @@ export default function SessionsStep({
       />
     );
   }, [
+    loading,
     setPanel,
     sportRankings,
     selectedSports,
@@ -325,8 +328,7 @@ export default function SessionsStep({
       </h3>
       <p className="mb-0 text-sm text-slate-500">
         Browse sessions from your ranked sports below. Set your interest level
-        and price ceiling for <strong>all</strong> sessions you have interest in
-        attending.{" "}
+        for <strong>all</strong> sessions you have interest in attending.{" "}
         <strong>
           Any sessions that you don&apos;t select will default to &apos;No
           Interest&apos; and be excluded from your final schedule.
@@ -334,30 +336,95 @@ export default function SessionsStep({
       </p>
       <p className="mb-4 text-sm text-slate-500"></p>
 
-      {/* Hidden toggle + session cards */}
-      {hiddenCount > 0 && (
+      {/* Search */}
+      <div className="relative mb-3">
+        <svg
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search sessions..."
+          className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-8 text-sm text-slate-700 placeholder-slate-400 transition-colors focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-300"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-600"
+            aria-label="Clear search"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* Clear all + Hidden toggle */}
+      {(preferences.size > 0 || hiddenCount > 0) && (
         <div className="mb-3 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => setShowHidden((v) => !v)}
-            className="text-xs font-medium text-slate-500 hover:text-slate-700"
-          >
-            {showHidden
-              ? "Hide hidden sessions"
-              : `Show ${hiddenCount} hidden session${hiddenCount > 1 ? "s" : ""}`}
-          </button>
-          <span className="text-slate-300">|</span>
-          <button
-            type="button"
-            onClick={unhideAll}
-            className="text-xs font-medium text-slate-500 hover:text-slate-700"
-          >
-            Unhide all sessions
-          </button>
+          {preferences.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowClearAllConfirm(true)}
+              className="text-xs font-medium text-red-500 hover:text-red-700"
+            >
+              Clear All Interests
+            </button>
+          )}
+          {preferences.size > 0 && hiddenCount > 0 && (
+            <span className="text-slate-300">|</span>
+          )}
+          {hiddenCount > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowHidden((v) => !v)}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700"
+              >
+                {showHidden
+                  ? "Hide hidden sessions"
+                  : `Show ${hiddenCount} hidden session${hiddenCount > 1 ? "s" : ""}`}
+              </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                onClick={unhideAll}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700"
+              >
+                Unhide all sessions
+              </button>
+            </>
+          )}
         </div>
       )}
 
-      {groupedSessions.length === 0 ? (
+      {loading ? (
+        <div className="py-10 text-center">
+          <p className="text-sm text-slate-400">Loading sessions...</p>
+        </div>
+      ) : groupedSessions.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-slate-200 py-10 text-center">
           <p className="text-sm text-slate-500">
             No sessions match the current filters.
@@ -377,61 +444,16 @@ export default function SessionsStep({
                   const sportColor = sportColorMap.get(s.sport) ?? "#94a3b8";
 
                   return (
-                    <div
+                    <SessionCard
                       key={s.sessionCode}
-                      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
-                        isHidden
-                          ? "border-slate-100 bg-slate-50 opacity-50"
-                          : "cursor-pointer border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                      }`}
-                      onClick={() => {
-                        if (!isHidden) setModalSession(s);
-                      }}
-                      role={isHidden ? undefined : "button"}
-                      tabIndex={isHidden ? undefined : 0}
-                      onKeyDown={(e) => {
-                        if (!isHidden && (e.key === "Enter" || e.key === " ")) {
-                          e.preventDefault();
-                          setModalSession(s);
-                        }
-                      }}
-                    >
-                      {/* Sport color indicator */}
-                      <div
-                        className="h-8 w-1 flex-shrink-0 rounded-full"
-                        style={{ backgroundColor: sportColor }}
-                      />
-
-                      {/* Content */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          {selectedSports.size !== 1 && (
-                            <span
-                              className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white"
-                              style={{ backgroundColor: sportColor }}
-                            >
-                              {s.sport}
-                            </span>
-                          )}
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                            {s.sessionType}
-                          </span>
-                        </div>
-                        {s.sessionDescription && (
-                          <p className="mt-0.5 truncate text-sm text-slate-700">
-                            {s.sessionDescription}
-                          </p>
-                        )}
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {s.sessionCode} &middot; {formatTime(s.startTime)}{" "}
-                          &ndash; {formatTime(s.endTime)} &middot; {s.venue}
-                        </p>
-                      </div>
-
-                      {/* Right side: interest badge + action icons */}
-                      <div className="flex flex-shrink-0 items-center gap-2">
-                        {pref ? (
-                          getPreferenceBadges(pref)
+                      session={s}
+                      sportColor={sportColor}
+                      showSport
+                      onClick={() => setModalSession(s)}
+                      disabled={isHidden}
+                      interestBadge={
+                        pref ? (
+                          getPreferenceBadge(pref)
                         ) : !isHidden ? (
                           <span className="group/add relative text-2xl font-medium text-slate-400">
                             +
@@ -439,8 +461,10 @@ export default function SessionsStep({
                               Add Interest for Session
                             </span>
                           </span>
-                        ) : null}
-                        {isHidden ? (
+                        ) : null
+                      }
+                      rightContent={
+                        isHidden ? (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -495,9 +519,9 @@ export default function SessionsStep({
                               Hide Session
                             </span>
                           </button>
-                        )}
-                      </div>
-                    </div>
+                        )
+                      }
+                    />
                   );
                 })}
               </div>
@@ -510,10 +534,27 @@ export default function SessionsStep({
       {modalSession && (
         <SessionInterestModal
           session={modalSession}
+          sportColor={
+            sportColorFullMap.get(modalSession.sport) ?? {
+              accent: "#94a3b8",
+              bg: "#f1f5f9",
+              text: "#475569",
+              title: "#64748b",
+            }
+          }
           existingPreference={preferences.get(modalSession.sessionCode) ?? null}
           onSave={handleSave}
           onClear={handleClear}
           onClose={() => setModalSession(null)}
+        />
+      )}
+
+      {/* Clear all interests confirmation */}
+      {showClearAllConfirm && (
+        <ConfirmModal
+          message="Are you sure you want to clear all session interests?"
+          onConfirm={handleClearAllInterests}
+          onCancel={() => setShowClearAllConfirm(false)}
         />
       )}
     </div>
@@ -630,7 +671,7 @@ function SessionFilters({
             onClick={onClearSports}
             className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
               selectedSports.size === 0
-                ? "bg-[#009de5] text-white"
+                ? "bg-slate-600 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}
           >
@@ -648,7 +689,10 @@ function SessionFilters({
               }`}
               style={
                 selectedSports.has(sport)
-                  ? { backgroundColor: SPORT_COLORS[i % SPORT_COLORS.length] }
+                  ? {
+                      backgroundColor:
+                        SPORT_COLORS[i % SPORT_COLORS.length].accent,
+                    }
                   : undefined
               }
             >
@@ -669,7 +713,7 @@ function SessionFilters({
             onClick={onClearTypes}
             className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
               selectedTypes.size === 0
-                ? "bg-[#009de5] text-white"
+                ? "bg-slate-600 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}
           >
@@ -682,7 +726,7 @@ function SessionFilters({
               onClick={() => onToggleType(type)}
               className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                 selectedTypes.has(type)
-                  ? "bg-[#009de5] text-white"
+                  ? "bg-slate-600 text-white"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
@@ -703,7 +747,7 @@ function SessionFilters({
             onClick={onClearDates}
             className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
               selectedDates.size === 0
-                ? "bg-[#009de5] text-white"
+                ? "bg-slate-600 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}
           >
@@ -716,7 +760,7 @@ function SessionFilters({
               onClick={() => onToggleDate(d)}
               className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                 selectedDates.has(d)
-                  ? "bg-[#009de5] text-white"
+                  ? "bg-slate-600 text-white"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
@@ -737,7 +781,7 @@ function SessionFilters({
             onClick={onClearZones}
             className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
               selectedZones.size === 0
-                ? "bg-[#009de5] text-white"
+                ? "bg-slate-600 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}
           >
@@ -750,7 +794,7 @@ function SessionFilters({
               onClick={() => onToggleZone(zone)}
               className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                 selectedZones.has(zone)
-                  ? "bg-[#009de5] text-white"
+                  ? "bg-slate-600 text-white"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
@@ -771,7 +815,7 @@ function SessionFilters({
             onClick={onClearInterests}
             className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
               selectedInterests.size === 0
-                ? "bg-[#009de5] text-white"
+                ? "bg-slate-600 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             }`}
           >

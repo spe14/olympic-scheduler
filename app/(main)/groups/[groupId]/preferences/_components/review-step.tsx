@@ -1,33 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import { useGroup } from "../../_components/group-context";
 import UserAvatar from "@/components/user-avatar";
-import type { AvatarColor } from "@/lib/constants";
+import Modal from "@/components/modal";
+import { type AvatarColor, SPORT_COLORS } from "@/lib/constants";
+import SessionCard, { formatTime } from "./session-card";
 import type { SessionData, SessionPreferenceData } from "./preference-wizard";
 
 type BuddySelection = { memberId: string; type: "hard" | "soft" };
 
 type Props = {
-  budget: number | null;
   minBuddies: number;
   buddies: BuddySelection[];
   sportRankings: string[];
   sessionPreferences: Map<string, SessionPreferenceData>;
   sessions: SessionData[];
+  affectedBuddyNames?: string[];
+  onConfirmReview?: () => Promise<void>;
+  isNoCombos?: boolean;
+  loading?: boolean;
 };
-
-const SPORT_COLORS = [
-  "#009de5",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#6366f1",
-  "#84cc16",
-];
 
 const INTEREST_COLORS: Record<string, { bg: string; text: string }> = {
   low: { bg: "rgba(255, 0, 128, 0.15)", text: "#ff0080" },
@@ -44,28 +37,19 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function formatTime(timeStr: string): string {
-  const [hours, minutes] = timeStr.split(":");
-  const h = parseInt(hours, 10);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${h12}:${minutes} ${ampm}`;
-}
-
-function formatWillingness(value: number | null): string {
-  if (value === null) return "$1000+";
-  return `<$${value}`;
-}
-
 export default function ReviewStep({
-  budget,
   minBuddies,
   buddies,
   sportRankings,
   sessionPreferences,
   sessions,
+  affectedBuddyNames,
+  onConfirmReview,
+  isNoCombos,
+  loading,
 }: Props) {
   const group = useGroup();
+  const [confirming, setConfirming] = useState(false);
 
   const memberMap = new Map(group.members.map((m) => [m.id, m]));
 
@@ -85,6 +69,8 @@ export default function ReviewStep({
     existing.push(session);
     sessionsByDate.set(session.sessionDate, existing);
   }
+
+  const [modalSession, setModalSession] = useState<SessionData | null>(null);
 
   const sportColorMap = new Map(
     sportRankings.map((sport, i) => [
@@ -108,16 +94,35 @@ export default function ReviewStep({
       {/* Budget & Buddies + Sport Rankings side by side */}
       <div className="mb-6 grid grid-cols-2 gap-4">
         <div className="rounded-lg border border-slate-200 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">
-            Buddies & Budget
+          <h3 className="mb-3 text-base font-semibold text-slate-900">
+            Buddies
           </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-600">Budget</span>
-              <span className="text-sm font-medium text-slate-900">
-                {budget !== null ? `$${budget.toLocaleString()}` : "Not set"}
-              </span>
+          {affectedBuddyNames && affectedBuddyNames.length > 0 && (
+            <div className="mb-3 rounded-lg border border-[#009de5]/20 bg-[#009de5]/5 px-4 py-3 text-sm text-[#009de5]">
+              {affectedBuddyNames.map((name) => (
+                <p key={name}>
+                  {name} was automatically removed from your required buddies
+                  list because they recently left or were removed from the
+                  group. Update your buddy preferences as needed.
+                </p>
+              ))}
+              {onConfirmReview && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setConfirming(true);
+                    await onConfirmReview();
+                    setConfirming(false);
+                  }}
+                  disabled={confirming}
+                  className="mt-2 rounded-lg bg-[#009de5] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
+                >
+                  {confirming ? "Confirming..." : "Confirm"}
+                </button>
+              )}
             </div>
+          )}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-600">
                 Minimum Buddies Required Per Session
@@ -189,7 +194,7 @@ export default function ReviewStep({
         </div>
 
         <div className="rounded-lg border border-slate-200 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">
+          <h3 className="mb-3 text-base font-semibold text-slate-900">
             Sport Rankings
           </h3>
           {sportRankings.length > 0 ? (
@@ -212,7 +217,7 @@ export default function ReviewStep({
       {/* Session Interests */}
       <div className="rounded-lg border border-slate-200 p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900">
+          <h3 className="text-base font-semibold text-slate-900">
             Session Interests
           </h3>
           <div className="flex items-center gap-3">
@@ -240,18 +245,19 @@ export default function ReviewStep({
             </span>
           </div>
         </div>
-        <p className="mb-3 text-xs text-slate-500">
-          <strong>
-            Only the sessions listed below may appear on your schedule. You can
-            add/remove sessions on the Session Interests page.
-          </strong>
+        <p className="mb-3 text-sm text-[#d97706]">
+          Only the sessions listed below may appear on your schedule.
         </p>
-        {selectedSessions.length > 0 ? (
+        {loading ? (
+          <p className="py-4 text-center text-sm text-slate-400">
+            Loading sessions...
+          </p>
+        ) : selectedSessions.length > 0 ? (
           <div className="space-y-4">
             {Array.from(sessionsByDate.entries()).map(
               ([date, dateSessions]) => (
                 <div key={date}>
-                  <p className="mb-2 text-xs font-medium text-slate-500">
+                  <p className="mb-2 text-sm font-medium text-slate-500">
                     {formatDate(date)}
                   </p>
                   <div className="space-y-1.5">
@@ -262,41 +268,16 @@ export default function ReviewStep({
                         bg: "rgba(100, 116, 139, 0.15)",
                         text: "#475569",
                       };
+                      const sportColor = sportColorMap.get(session.sport);
                       return (
-                        <div
+                        <SessionCard
                           key={session.sessionCode}
-                          className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white"
-                                style={{
-                                  backgroundColor:
-                                    sportColorMap.get(session.sport) ??
-                                    "#94a3b8",
-                                }}
-                              >
-                                {session.sport}
-                              </span>
-                              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-600">
-                                {session.sessionType}
-                              </span>
-                            </div>
-                            {session.sessionDescription && (
-                              <p className="mt-0.5 truncate text-xs text-slate-500">
-                                {session.sessionDescription}
-                              </p>
-                            )}
-                            <p className="mt-0.5 text-[10px] text-slate-400">
-                              {formatTime(session.startTime)} &ndash;{" "}
-                              {formatTime(session.endTime)} &middot;{" "}
-                              {session.venue}
-                            </p>
-                          </div>
-                          <div className="ml-3 flex shrink-0 items-center gap-2">
+                          session={session}
+                          sportColor={sportColor?.accent ?? "#94a3b8"}
+                          onClick={() => setModalSession(session)}
+                          interestBadge={
                             <span
-                              className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                              className="rounded-full px-2 py-0.5 text-xs font-semibold"
                               style={{
                                 backgroundColor: colors.bg,
                                 color: colors.text,
@@ -305,17 +286,8 @@ export default function ReviewStep({
                               {pref.interest.charAt(0).toUpperCase() +
                                 pref.interest.slice(1)}
                             </span>
-                            <span
-                              className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                              style={{
-                                backgroundColor: colors.bg,
-                                color: colors.text,
-                              }}
-                            >
-                              {formatWillingness(pref.maxWillingness)}
-                            </span>
-                          </div>
-                        </div>
+                          }
+                        />
                       );
                     })}
                   </div>
@@ -327,6 +299,84 @@ export default function ReviewStep({
           <p className="text-sm text-slate-400">No sessions selected</p>
         )}
       </div>
+
+      {isNoCombos && (
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <p className="font-semibold">
+            No schedule combos were generated for you.
+          </p>
+          <p className="mt-1">
+            This may occur if there isn&apos;t enough session interest overlap
+            to fulfill your buddy requirements. Go back and update at least one
+            preference step so the owner can regenerate schedules.
+          </p>
+        </div>
+      )}
+
+      {/* Session detail modal */}
+      {modalSession &&
+        (() => {
+          const sc = sportColorMap.get(modalSession.sport);
+          const accent = sc?.accent ?? "#94a3b8";
+          const bg = sc?.bg ?? "#f1f5f9";
+          return (
+            <Modal
+              title="Session Details"
+              onClose={() => setModalSession(null)}
+            >
+              <div
+                className="space-y-0.5 rounded-lg p-3.5"
+                style={{ backgroundColor: `${bg}99` }}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-base font-bold"
+                    style={{ color: accent }}
+                  >
+                    {modalSession.sessionCode}
+                  </span>
+                  <span
+                    className="rounded px-1.5 py-0.5 text-xs font-semibold text-white"
+                    style={{ backgroundColor: accent }}
+                  >
+                    {modalSession.sport}
+                  </span>
+                  <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+                    {modalSession.sessionType}
+                  </span>
+                </div>
+                <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
+                  <span>{formatDate(modalSession.sessionDate)}</span>
+                  <span style={{ color: accent }}>|</span>
+                  <span>
+                    {formatTime(modalSession.startTime)} &ndash;{" "}
+                    {formatTime(modalSession.endTime)} PT
+                  </span>
+                </p>
+                <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
+                  <span>{modalSession.venue}</span>
+                  <span style={{ color: accent }}>|</span>
+                  <span>{modalSession.zone}</span>
+                </p>
+                {modalSession.sessionDescription && (
+                  <ul className="space-y-0.5 text-sm text-slate-600">
+                    {modalSession.sessionDescription
+                      .split(";")
+                      .map((event, i) => (
+                        <li key={i} className="flex items-start gap-1.5">
+                          <span
+                            className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: accent }}
+                          />
+                          {event.trim()}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            </Modal>
+          );
+        })()}
     </div>
   );
 }

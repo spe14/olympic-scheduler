@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  fireEvent,
+  act,
+} from "@testing-library/react";
 import ReviewStep from "@/app/(main)/groups/[groupId]/preferences/_components/review-step";
 import type {
   SessionData,
@@ -62,6 +68,7 @@ function makeSessions(overrides: Partial<SessionData>[] = []): SessionData[] {
       startTime: "10:00",
       endTime: "12:00",
       venue: "Aquatics Centre",
+      zone: "Olympic Park",
     },
     {
       sessionCode: "S2",
@@ -72,6 +79,7 @@ function makeSessions(overrides: Partial<SessionData>[] = []): SessionData[] {
       startTime: "14:00",
       endTime: "16:00",
       venue: "Olympic Stadium",
+      zone: "Olympic Park",
     },
     {
       sessionCode: "S3",
@@ -82,6 +90,7 @@ function makeSessions(overrides: Partial<SessionData>[] = []): SessionData[] {
       startTime: "09:00",
       endTime: "11:00",
       venue: "Gymnastics Arena",
+      zone: "Olympic Park",
     },
   ];
   return overrides.length > 0
@@ -97,7 +106,6 @@ function makePreferences(
     map.set(key, {
       sessionId: partial.sessionId ?? key,
       interest: partial.interest ?? "medium",
-      maxWillingness: partial.maxWillingness ?? 200,
       ...partial,
     } as SessionPreferenceData);
   }
@@ -105,7 +113,6 @@ function makePreferences(
 }
 
 const defaultProps = {
-  budget: 5000,
   minBuddies: 2,
   buddies: [] as { memberId: string; type: "hard" | "soft" }[],
   sportRankings: ["Swimming", "Athletics", "Gymnastics"],
@@ -127,19 +134,7 @@ describe("ReviewStep", () => {
     ).toBeDefined();
   });
 
-  // 2. Shows budget when set (formatted with $ and comma separator)
-  it("shows budget formatted with $ and comma separator", () => {
-    render(<ReviewStep {...defaultProps} budget={5000} />);
-    expect(screen.getByText("$5,000")).toBeDefined();
-  });
-
-  // 3. Shows "Not set" when budget is null
-  it('shows "Not set" when budget is null', () => {
-    render(<ReviewStep {...defaultProps} budget={null} />);
-    expect(screen.getByText("Not set")).toBeDefined();
-  });
-
-  // 4. Shows minimum buddies count
+  // 2. Shows minimum buddies count
   it("shows minimum buddies count", () => {
     render(<ReviewStep {...defaultProps} minBuddies={3} sportRankings={[]} />);
     expect(
@@ -217,11 +212,9 @@ describe("ReviewStep", () => {
     expect(screen.getByText("No sports ranked")).toBeDefined();
   });
 
-  // 10. Shows selected session details (sport, type, description, interest, willingness)
+  // 10. Shows selected session details (sport, type, description, interest)
   it("shows selected session details", () => {
-    const prefs = makePreferences([
-      ["S1", { interest: "high", maxWillingness: 200 }],
-    ]);
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
     render(
       <ReviewStep
         {...defaultProps}
@@ -234,7 +227,6 @@ describe("ReviewStep", () => {
     expect(screen.getByText("Final")).toBeDefined();
     expect(screen.getByText("100m Freestyle Final")).toBeDefined();
     expect(screen.getByText("High")).toBeDefined();
-    expect(screen.getByText("<$200")).toBeDefined();
   });
 
   // 11. Shows "No sessions selected" when empty
@@ -252,9 +244,9 @@ describe("ReviewStep", () => {
   // 12. Groups sessions by date
   it("groups sessions by date with formatted date headers", () => {
     const prefs = makePreferences([
-      ["S1", { interest: "high", maxWillingness: 200 }],
-      ["S2", { interest: "medium", maxWillingness: 300 }],
-      ["S3", { interest: "low", maxWillingness: null }],
+      ["S1", { interest: "high" }],
+      ["S2", { interest: "medium" }],
+      ["S3", { interest: "low" }],
     ]);
     render(
       <ReviewStep
@@ -271,9 +263,9 @@ describe("ReviewStep", () => {
   // 13. Shows interest level breakdown badges
   it("shows interest level breakdown badges", () => {
     const prefs = makePreferences([
-      ["S1", { interest: "high", maxWillingness: 200 }],
-      ["S2", { interest: "high", maxWillingness: 300 }],
-      ["S3", { interest: "medium", maxWillingness: 100 }],
+      ["S1", { interest: "high" }],
+      ["S2", { interest: "high" }],
+      ["S3", { interest: "medium" }],
     ]);
     render(
       <ReviewStep
@@ -290,8 +282,8 @@ describe("ReviewStep", () => {
   it("shows total selected sessions count with correct pluralization", () => {
     // Plural case
     const prefsMultiple = makePreferences([
-      ["S1", { interest: "high", maxWillingness: 200 }],
-      ["S2", { interest: "medium", maxWillingness: 300 }],
+      ["S1", { interest: "high" }],
+      ["S2", { interest: "medium" }],
     ]);
     const { unmount } = render(
       <ReviewStep
@@ -304,9 +296,7 @@ describe("ReviewStep", () => {
     unmount();
 
     // Singular case
-    const prefsSingle = makePreferences([
-      ["S1", { interest: "high", maxWillingness: 200 }],
-    ]);
+    const prefsSingle = makePreferences([["S1", { interest: "high" }]]);
     render(
       <ReviewStep
         {...defaultProps}
@@ -317,24 +307,7 @@ describe("ReviewStep", () => {
     expect(screen.getByText("1 session selected")).toBeDefined();
   });
 
-  // 15. Formats willingness as "$1000+" for null, "<$200" for number
-  it("formats willingness correctly for null and number values", () => {
-    const prefs = makePreferences([
-      ["S1", { interest: "high", maxWillingness: null }],
-      ["S2", { interest: "medium", maxWillingness: 200 }],
-    ]);
-    render(
-      <ReviewStep
-        {...defaultProps}
-        sessionPreferences={prefs}
-        sessions={makeSessions()}
-      />
-    );
-    expect(screen.getByText("$1000+")).toBeDefined();
-    expect(screen.getByText("<$200")).toBeDefined();
-  });
-
-  // 16. Session sorting: sessions ordered by date then time
+  // 15. Session sorting: sessions ordered by date then time
   it("sorts sessions by date then by time", () => {
     const sessions: SessionData[] = [
       {
@@ -346,6 +319,7 @@ describe("ReviewStep", () => {
         startTime: "18:00",
         endTime: "20:00",
         venue: "Venue A",
+        zone: "Zone A",
       },
       {
         sessionCode: "EARLY",
@@ -356,6 +330,7 @@ describe("ReviewStep", () => {
         startTime: "08:00",
         endTime: "10:00",
         venue: "Venue B",
+        zone: "Zone B",
       },
       {
         sessionCode: "MID",
@@ -366,12 +341,13 @@ describe("ReviewStep", () => {
         startTime: "14:00",
         endTime: "16:00",
         venue: "Venue C",
+        zone: "Zone C",
       },
     ];
     const prefs = makePreferences([
-      ["LATE", { interest: "low", maxWillingness: 100 }],
-      ["EARLY", { interest: "high", maxWillingness: 200 }],
-      ["MID", { interest: "medium", maxWillingness: 300 }],
+      ["LATE", { interest: "low" }],
+      ["EARLY", { interest: "high" }],
+      ["MID", { interest: "medium" }],
     ]);
     const { container } = render(
       <ReviewStep
@@ -427,9 +403,7 @@ describe("ReviewStep", () => {
   });
 
   it("does not show interest breakdown badges for levels with zero count", () => {
-    const prefs = makePreferences([
-      ["S1", { interest: "high", maxWillingness: 200 }],
-    ]);
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
     render(
       <ReviewStep
         {...defaultProps}
@@ -444,9 +418,7 @@ describe("ReviewStep", () => {
 
   it("does not render session description when it is empty", () => {
     // S2 has empty sessionDescription
-    const prefs = makePreferences([
-      ["S2", { interest: "medium", maxWillingness: 300 }],
-    ]);
+    const prefs = makePreferences([["S2", { interest: "medium" }]]);
     render(
       <ReviewStep
         {...defaultProps}
@@ -461,9 +433,301 @@ describe("ReviewStep", () => {
     expect(screen.queryByText("100m Freestyle Final")).toBeNull();
   });
 
-  it("shows section headings for Buddies & Budget and Session Interests", () => {
+  it("shows section headings for Buddies and Session Interests", () => {
     render(<ReviewStep {...defaultProps} />);
-    expect(screen.getByText("Buddies & Budget")).toBeDefined();
+    expect(screen.getByText("Buddies")).toBeDefined();
     expect(screen.getByText("Session Interests")).toBeDefined();
+  });
+
+  // ── Session code and zone display ──────────────────────────────
+
+  it("displays session code in session cards", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    const { container } = render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+    expect(container.textContent).toContain("S1");
+  });
+
+  it("displays zone in session cards", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    const { container } = render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+    expect(container.textContent).toContain("Olympic Park");
+  });
+
+  // ── Clickable sessions / modal ─────────────────────────────────
+
+  it("opens modal when clicking a session card", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("100m Freestyle Final"));
+
+    expect(screen.getByText("Session Details")).toBeDefined();
+  });
+
+  it("modal displays session sport, code, type, venue, zone, and description", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sportRankings={["Swimming"]}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("100m Freestyle Final"));
+
+    const modal = screen.getByText("Session Details").closest("div.fixed");
+    expect(modal).toBeDefined();
+    const modalText = modal!.textContent ?? "";
+    expect(modalText).toContain("Swimming");
+    expect(modalText).toContain("S1");
+    expect(modalText).toContain("Final");
+    expect(modalText).toContain("Aquatics Centre");
+    expect(modalText).toContain("Olympic Park");
+    expect(modalText).toContain("100m Freestyle Final");
+  });
+
+  it("modal displays formatted date and time", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("100m Freestyle Final"));
+
+    const modal = screen.getByText("Session Details").closest("div.fixed");
+    const modalText = modal!.textContent ?? "";
+    expect(modalText).toContain("Sun, Jul 28");
+    expect(modalText).toContain("10:00 AM");
+    expect(modalText).toContain("12:00 PM");
+  });
+
+  it("closes modal when close button is clicked", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("100m Freestyle Final"));
+    expect(screen.getByText("Session Details")).toBeDefined();
+
+    // The Modal component renders a close button (the X svg button)
+    const modal = screen.getByText("Session Details").closest("div.fixed");
+    const closeButton = modal!.querySelector("button");
+    fireEvent.click(closeButton!);
+
+    expect(screen.queryByText("Session Details")).toBeNull();
+  });
+
+  it("opens modal via keyboard Enter on session card", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    const card = screen
+      .getByText("100m Freestyle Final")
+      .closest("[role='button']");
+    fireEvent.keyDown(card!, { key: "Enter" });
+
+    expect(screen.getByText("Session Details")).toBeDefined();
+  });
+
+  it("opens modal via keyboard Space on session card", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    const card = screen
+      .getByText("100m Freestyle Final")
+      .closest("[role='button']");
+    fireEvent.keyDown(card!, { key: " " });
+
+    expect(screen.getByText("Session Details")).toBeDefined();
+  });
+
+  it("modal does not show description section when description is empty", () => {
+    const prefs = makePreferences([["S2", { interest: "medium" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    // S2 has empty description — click on the session card via role=button
+    const card = screen.getByRole("button", { name: /Athletics/ });
+    fireEvent.click(card);
+
+    expect(screen.getByText("Session Details")).toBeDefined();
+    // Should not render any list items for description
+    const modal = screen.getByText("Session Details").closest("div.fixed");
+    const listItems = modal!.querySelectorAll("li");
+    expect(listItems.length).toBe(0);
+  });
+
+  it("session cards have role=button for accessibility", () => {
+    const prefs = makePreferences([["S1", { interest: "high" }]]);
+    render(
+      <ReviewStep
+        {...defaultProps}
+        sessionPreferences={prefs}
+        sessions={makeSessions()}
+      />
+    );
+
+    const card = screen
+      .getByText("100m Freestyle Final")
+      .closest("[role='button']");
+    expect(card).toBeDefined();
+    expect(card!.getAttribute("tabindex")).toBe("0");
+  });
+
+  // ── Affected Buddy Review-Only Flow ─────────────────────────────
+
+  it("shows affected buddy warning when affectedBuddyNames has entries", () => {
+    render(
+      <ReviewStep
+        {...defaultProps}
+        affectedBuddyNames={["Charlie Brown"]}
+        onConfirmReview={vi.fn()}
+      />
+    );
+    expect(
+      screen.getByText(
+        /Charlie Brown was automatically removed from your required buddies list/
+      )
+    ).toBeDefined();
+  });
+
+  it("shows one message per departed buddy name", () => {
+    render(
+      <ReviewStep
+        {...defaultProps}
+        affectedBuddyNames={["Charlie Brown", "Diana Prince"]}
+        onConfirmReview={vi.fn()}
+      />
+    );
+    expect(
+      screen.getByText(
+        /Charlie Brown was automatically removed from your required buddies list/
+      )
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        /Diana Prince was automatically removed from your required buddies list/
+      )
+    ).toBeDefined();
+  });
+
+  it("shows Confirm button when affectedBuddyNames has entries", () => {
+    render(
+      <ReviewStep
+        {...defaultProps}
+        affectedBuddyNames={["Charlie Brown"]}
+        onConfirmReview={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDefined();
+  });
+
+  it("does not show affected buddy warning when affectedBuddyNames is empty", () => {
+    render(
+      <ReviewStep
+        {...defaultProps}
+        affectedBuddyNames={[]}
+        onConfirmReview={vi.fn()}
+      />
+    );
+    expect(
+      screen.queryByText(/was removed from your required buddies list/)
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  });
+
+  it("does not show affected buddy warning when prop is undefined", () => {
+    render(<ReviewStep {...defaultProps} />);
+    expect(
+      screen.queryByText(/was removed from your required buddies list/)
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  });
+
+  it("calls onConfirmReview when Confirm button is clicked", async () => {
+    const mockConfirm = vi.fn(() => Promise.resolve());
+    render(
+      <ReviewStep
+        {...defaultProps}
+        affectedBuddyNames={["Charlie Brown"]}
+        onConfirmReview={mockConfirm}
+      />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    });
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  // ── No-Combo Banner ──────────────────────────────────────────────
+
+  it("shows no-combo banner when isNoCombos is true", () => {
+    render(<ReviewStep {...defaultProps} isNoCombos={true} />);
+    expect(
+      screen.getByText("No schedule combos were generated for you.")
+    ).toBeDefined();
+    expect(
+      screen.getByText(/Go back and update at least one preference step/)
+    ).toBeDefined();
+  });
+
+  it("does not show no-combo banner when isNoCombos is false", () => {
+    render(<ReviewStep {...defaultProps} isNoCombos={false} />);
+    expect(
+      screen.queryByText("No schedule combos were generated for you.")
+    ).toBeNull();
+  });
+
+  it("does not show no-combo banner when isNoCombos is undefined", () => {
+    render(<ReviewStep {...defaultProps} />);
+    expect(
+      screen.queryByText("No schedule combos were generated for you.")
+    ).toBeNull();
   });
 });

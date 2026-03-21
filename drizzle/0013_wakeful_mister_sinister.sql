@@ -1,0 +1,1 @@
+ALTER TABLE "member" ADD COLUMN "schedule_warning_acked_at" timestamp;

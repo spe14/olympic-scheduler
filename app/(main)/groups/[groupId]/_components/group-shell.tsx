@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { GroupDetail } from "@/lib/types";
 import GroupHeader from "./group-header";
 import GroupSettingsModal from "./group-settings-modal";
-import { GroupProvider } from "./group-context";
+import { GroupSyncProvider } from "./group-context";
 import { SidePanelProvider, useSidePanel } from "./side-panel-context";
 import {
   NavigationGuardProvider,
@@ -27,12 +27,18 @@ type NavItem = {
 };
 
 export default function GroupShell({
-  group,
+  group: layoutGroup,
   children,
 }: {
   group: GroupDetail;
   children: React.ReactNode;
 }) {
+  // Pages push fresh data via GroupSyncProvider so the sidebar stays current
+  // even when the layout serves stale props (Next.js layout caching).
+  const [syncedGroup, setSyncedGroup] = useState<GroupDetail | null>(null);
+  const handleSync = useCallback((g: GroupDetail) => setSyncedGroup(g), []);
+  const group = syncedGroup ?? layoutGroup;
+
   const pathname = usePathname();
   const router = useRouter();
   const isOwner = group.myRole === "owner";
@@ -43,24 +49,54 @@ export default function GroupShell({
 
   const prefsComplete =
     myStatus !== "joined" && myStatus !== "pending_approval";
-  const scheduleConfirmed = [
-    "schedule_review_confirmed",
-    "conflict_resolution_pending",
-    "conflict_resolution_confirmed",
-  ].includes(myStatus);
-  const conflictsResolved = myStatus === "conflict_resolution_confirmed";
-  const scheduleComplete = scheduleConfirmed && conflictsResolved;
+  const hasAffectedBuddyReview = group.myMemberId in group.affectedBuddyMembers;
+  const inScheduleReview = group.phase === "schedule_review";
+  const myHasNoCombos = group.membersWithNoCombos.includes(group.myMemberId);
+  const anyMemberHasNoCombos = group.membersWithNoCombos.length > 0;
+  const hasDateConfig = !!group.dateMode;
 
   function getScheduleWarning(): string | undefined {
-    if (
-      myStatus === "schedule_review_pending" ||
-      myStatus === "schedule_review_confirmed"
-    )
-      return "You haven't confirmed your schedule yet.";
-    if (myStatus === "conflict_resolution_pending")
-      return "You haven't resolved all conflicts yet.";
+    if (anyMemberHasNoCombos)
+      return "Schedules unavailable — some members didn't receive any sessions.";
     return undefined;
   }
+
+  const activeMembers = group.members.filter(
+    (m) => m.status !== "pending_approval" && m.status !== "denied"
+  );
+  const hasUpdatedPrefs =
+    !!group.scheduleGeneratedAt &&
+    activeMembers.some(
+      (m) =>
+        m.status === "preferences_set" &&
+        m.statusChangedAt &&
+        new Date(m.statusChangedAt) > new Date(group.scheduleGeneratedAt!) &&
+        !(
+          m.joinedAt &&
+          new Date(m.joinedAt) > new Date(group.scheduleGeneratedAt!)
+        )
+    );
+  const hasDepartedMembers = group.departedMembers.length > 0;
+  const hasAffectedBuddyMembers =
+    Object.keys(group.affectedBuddyMembers).length > 0;
+  const hasNewlyJoinedMembers =
+    !!group.scheduleGeneratedAt &&
+    activeMembers.some((m) => m.status === "joined");
+  const hasNoCombosNotUpdated = group.membersWithNoCombos.some((id) => {
+    const m = activeMembers.find((am) => am.id === id);
+    if (!m) return false;
+    return !(
+      m.statusChangedAt &&
+      group.scheduleGeneratedAt &&
+      new Date(m.statusChangedAt) > new Date(group.scheduleGeneratedAt)
+    );
+  });
+  const schedulesNeedAttention =
+    hasUpdatedPrefs ||
+    hasDepartedMembers ||
+    hasAffectedBuddyMembers ||
+    hasNewlyJoinedMembers ||
+    hasNoCombosNotUpdated;
 
   const navItems: NavItem[] = [
     {
@@ -68,37 +104,67 @@ export default function GroupShell({
       label: "Overview",
       href: basePath,
       visible: true,
-      status: { type: "none" },
+      status: schedulesNeedAttention
+        ? { type: "warning", tooltip: "Schedules may need to be regenerated." }
+        : { type: "none" },
     },
     {
       key: "preferences",
       label: "Preferences",
       href: `${basePath}/preferences`,
       visible: true,
-      status: prefsComplete
-        ? { type: "complete" }
-        : {
+      status: hasAffectedBuddyReview
+        ? {
             type: "warning",
-            tooltip: "You haven't entered your preferences yet.",
-          },
+            tooltip: "You need to review your preferences.",
+          }
+        : prefsComplete && myHasNoCombos && !!group.scheduleGeneratedAt
+          ? {
+              type: "warning",
+              tooltip:
+                "You didn't receive any sessions on your schedule. Review and update your preferences.",
+            }
+          : !prefsComplete
+            ? {
+                type: "warning",
+                tooltip: "You haven't entered your preferences yet.",
+              }
+            : { type: "complete" },
     },
     {
       key: "schedule",
       label: "My Schedule",
       href: `${basePath}/schedule`,
       visible: true,
-      status: scheduleComplete
-        ? { type: "complete" }
-        : getScheduleWarning()
-          ? { type: "warning", tooltip: getScheduleWarning() }
-          : { type: "none" },
+      status:
+        inScheduleReview && !anyMemberHasNoCombos
+          ? { type: "complete" }
+          : getScheduleWarning()
+            ? { type: "warning", tooltip: getScheduleWarning() }
+            : { type: "none" },
     },
     {
       key: "group-schedule",
       label: "Group Schedule",
       href: `${basePath}/group-schedule`,
       visible: true,
-      status: { type: "none" },
+      status: !group.scheduleGeneratedAt
+        ? { type: "none" }
+        : !hasDateConfig
+          ? {
+              type: "warning",
+              tooltip:
+                "Owner needs to configure dates before the group schedule can be viewed.",
+            }
+          : anyMemberHasNoCombos
+            ? {
+                type: "warning",
+                tooltip:
+                  "Schedules unavailable — some members didn't receive any sessions.",
+              }
+            : inScheduleReview && group.windowRankings.length > 0
+              ? { type: "complete" }
+              : { type: "none" },
     },
   ];
 
@@ -110,46 +176,48 @@ export default function GroupShell({
   return (
     <NavigationGuardProvider>
       <SidePanelProvider>
-        <div className="px-6 py-8">
-          <GuardedLink
-            href="/"
-            className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+        <GroupSyncProvider onSync={handleSync}>
+          <div className="px-6 py-8">
+            <GuardedLink
+              href="/"
+              className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15.75 19.5L8.25 12l7.5-7.5"
-              />
-            </svg>
-            Back to Groups
-          </GuardedLink>
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 19.5L8.25 12l7.5-7.5"
+                />
+              </svg>
+              Back to Groups
+            </GuardedLink>
 
-          <GroupHeader
-            group={group}
-            isOwner={isOwner}
-            onOpenSettings={() => setShowSettings(true)}
-            onNameSaved={() => router.refresh()}
-          />
-
-          <GroupContentArea navItems={navItems} activeKey={activeKey}>
-            <GroupProvider group={group}>{children}</GroupProvider>
-          </GroupContentArea>
-
-          {showSettings && (
-            <GroupSettingsModal
+            <GroupHeader
               group={group}
               isOwner={isOwner}
-              onClose={() => setShowSettings(false)}
+              onOpenSettings={() => setShowSettings(true)}
+              onNameSaved={() => router.refresh()}
             />
-          )}
-        </div>
+
+            <GroupContentArea navItems={navItems} activeKey={activeKey}>
+              {children}
+            </GroupContentArea>
+
+            {showSettings && (
+              <GroupSettingsModal
+                group={group}
+                isOwner={isOwner}
+                onClose={() => setShowSettings(false)}
+              />
+            )}
+          </div>
+        </GroupSyncProvider>
       </SidePanelProvider>
     </NavigationGuardProvider>
   );

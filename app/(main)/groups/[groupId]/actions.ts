@@ -5,13 +5,13 @@ import { db } from "@/lib/db";
 import {
   group,
   member,
+  user,
   buddyConstraint,
   sessionPreference,
+  session,
+  travelTime,
   combo,
   comboSession,
-  viableConfig,
-  viableConfigMember,
-  conflict,
   windowRanking,
 } from "@/lib/db/schema";
 import { eq, and, or, notInArray, inArray, sql } from "drizzle-orm";
@@ -23,6 +23,9 @@ import {
 } from "@/lib/validations";
 import { MAX_GROUP_MEMBERS } from "@/lib/constants";
 import type { ActionResult } from "@/lib/types";
+import { runScheduleGeneration } from "@/lib/algorithm/runner";
+import { computeWindowRankings } from "@/lib/algorithm/window-ranking";
+import type { MemberData, TravelEntry } from "@/lib/algorithm/types";
 
 export async function updateGroupName(
   groupId: string,
@@ -90,6 +93,42 @@ export async function approveMember(
       .update(member)
       .set({ status: "joined", joinedAt: new Date() })
       .where(eq(member.id, memberId));
+
+    const [approvedUser] = await db
+      .select({ firstName: user.firstName, lastName: user.lastName })
+      .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
+      .where(eq(member.id, memberId))
+      .limit(1);
+
+    if (approvedUser) {
+      const name = `${approvedUser.firstName} ${approvedUser.lastName}`;
+      const [grpData] = await db
+        .select({
+          departedMembers: group.departedMembers,
+        })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .limit(1);
+
+      const departed =
+        (grpData?.departedMembers as {
+          name: string;
+          departedAt: string;
+          rejoinedAt?: string;
+        }[]) ?? [];
+      const departedIdx = departed.findIndex((d) => d.name === name);
+
+      if (departedIdx !== -1) {
+        const updated = departed.map((d, i) =>
+          i === departedIdx ? { ...d, rejoinedAt: new Date().toISOString() } : d
+        );
+        await db
+          .update(group)
+          .set({ departedMembers: updated })
+          .where(eq(group.id, groupId));
+      }
+    }
   } catch {
     return {
       error: "Failed to approve member's join request. Please try again.",
@@ -135,8 +174,7 @@ export async function denyMember(
 async function removeMemberTransaction(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   groupId: string,
-  departingMemberId: string,
-  groupPhase: string
+  departingMemberId: string
 ) {
   // 1. Find members who had the departing member as a buddy
   const affectedBuddies = await tx
@@ -160,80 +198,114 @@ async function removeMemberTransaction(
     .delete(sessionPreference)
     .where(eq(sessionPreference.memberId, departingMemberId));
 
-  // 4. Reset affected members (had buddy connection) to buddies_budget step
-  if (affectedMemberIds.length > 0) {
-    await tx
-      .update(member)
-      .set({ status: "joined", preferenceStep: "buddies_budget" })
-      .where(inArray(member.id, affectedMemberIds));
+  // Departure tracking: record departed member name, delete algorithm outputs, and reset group.
+  // Use scheduleGeneratedAt (not phase) to determine if schedules were previously generated,
+  // since the phase may have already been reset by a prior departure.
+  const [grpData] = await tx
+    .select({
+      departedMembers: group.departedMembers,
+      affectedBuddyMembers: group.affectedBuddyMembers,
+      scheduleGeneratedAt: group.scheduleGeneratedAt,
+    })
+    .from(group)
+    .where(eq(group.id, groupId))
+    .limit(1);
+
+  // Always fetch departing user data and build affected buddy map,
+  // regardless of whether schedules have been generated.
+  const [departingUser] = await tx
+    .select({
+      firstName: user.firstName,
+      lastName: user.lastName,
+      joinedAt: member.joinedAt,
+    })
+    .from(member)
+    .innerJoin(user, eq(member.userId, user.id))
+    .where(eq(member.id, departingMemberId))
+    .limit(1);
+
+  // Record affected buddy members (regardless of whether departing member was part of schedule).
+  // Each affected member maps to an array of departed buddy names (supports multiple departures).
+  const existingAffected =
+    (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
+  // Clean up entries for the departing member themselves (they can't be "affected" if they're leaving)
+  const { [departingMemberId]: _removed, ...cleanedAffected } =
+    existingAffected;
+  const updatedAffected = { ...cleanedAffected };
+
+  if (departingUser && affectedMemberIds.length > 0) {
+    const name = `${departingUser.firstName} ${departingUser.lastName}`;
+    for (const memberId of affectedMemberIds) {
+      const existing = updatedAffected[memberId] ?? [];
+      updatedAffected[memberId] = [...existing, name];
+    }
   }
 
-  // Post-preferences phase: delete algorithm outputs and reset group
-  if (groupPhase !== "preferences") {
-    // 7. Delete algorithm outputs in dependency order
-    const comboIds = tx
-      .select({ id: combo.id })
-      .from(combo)
-      .where(eq(combo.groupId, groupId));
-    await tx
-      .delete(comboSession)
-      .where(inArray(comboSession.comboId, comboIds));
-    await tx.delete(combo).where(eq(combo.groupId, groupId));
+  if (grpData?.scheduleGeneratedAt) {
+    // Check if the departing member was part of the last schedule generation
+    const wasPartOfSchedule =
+      departingUser &&
+      departingUser.joinedAt &&
+      new Date(departingUser.joinedAt) <= new Date(grpData.scheduleGeneratedAt);
 
-    const vcIds = tx
-      .select({ id: viableConfig.id })
-      .from(viableConfig)
-      .where(eq(viableConfig.groupId, groupId));
-    await tx
-      .delete(viableConfigMember)
-      .where(inArray(viableConfigMember.viableConfigId, vcIds));
-    await tx.delete(viableConfig).where(eq(viableConfig.groupId, groupId));
+    if (wasPartOfSchedule) {
+      // Record departed member with timestamp
+      const existingDeparted =
+        (grpData?.departedMembers as {
+          name: string;
+          departedAt: string;
+          rejoinedAt?: string;
+        }[]) ?? [];
+      const name = `${departingUser.firstName} ${departingUser.lastName}`;
+      const departedAt = new Date().toISOString();
 
-    await tx.delete(conflict).where(eq(conflict.groupId, groupId));
-    await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
+      // 7. Delete algorithm outputs in dependency order
+      const comboIds = tx
+        .select({ id: combo.id })
+        .from(combo)
+        .where(eq(combo.groupId, groupId));
+      await tx
+        .delete(comboSession)
+        .where(inArray(comboSession.comboId, comboIds));
+      await tx.delete(combo).where(eq(combo.groupId, groupId));
 
-    // 8. Reset override/excluded flags on session preferences for remaining members
-    await tx
-      .update(sessionPreference)
-      .set({
-        hardBuddyOverride: false,
-        minBuddyOverride: false,
-        excluded: false,
-      })
-      .where(
-        inArray(
-          sessionPreference.memberId,
-          tx
-            .select({ id: member.id })
-            .from(member)
-            .where(
-              and(
-                eq(member.groupId, groupId),
-                notInArray(member.status, ["pending_approval", "denied"])
-              )
-            )
-        )
-      );
+      await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
 
-    // 9. Set unaffected active members to preferences_set
-    await tx
-      .update(member)
-      .set({ status: "preferences_set" })
-      .where(
-        and(
-          eq(member.groupId, groupId),
-          notInArray(member.status, ["pending_approval", "denied"]),
-          notInArray(member.id, [
-            departingMemberId,
-            ...(affectedMemberIds.length > 0 ? affectedMemberIds : []),
-          ])
-        )
-      );
+      // 8. Reset all remaining active members to preferences_set
+      await tx
+        .update(member)
+        .set({ status: "preferences_set", statusChangedAt: new Date() })
+        .where(
+          and(
+            eq(member.groupId, groupId),
+            notInArray(member.status, ["pending_approval", "denied"]),
+            notInArray(member.id, [departingMemberId])
+          )
+        );
 
-    // 10. Reset group phase
+      // Update group: record departed name, regress phase to preferences,
+      // and persist affected buddy map.
+      await tx
+        .update(group)
+        .set({
+          phase: "preferences",
+          departedMembers: [...existingDeparted, { name, departedAt }],
+          affectedBuddyMembers: updatedAffected,
+          membersWithNoCombos: [],
+        })
+        .where(eq(group.id, groupId));
+    } else {
+      // Not part of schedule — still persist affected buddy changes
+      await tx
+        .update(group)
+        .set({ affectedBuddyMembers: updatedAffected })
+        .where(eq(group.id, groupId));
+    }
+  } else if (affectedMemberIds.length > 0) {
+    // No schedule generated — persist affectedBuddyMembers for buddy departures
     await tx
       .update(group)
-      .set({ phase: "preferences" })
+      .set({ affectedBuddyMembers: updatedAffected })
       .where(eq(group.id, groupId));
   }
 
@@ -256,7 +328,7 @@ export async function leaveGroup(groupId: string): Promise<ActionResult> {
 
   try {
     const [grp] = await db
-      .select({ phase: group.phase })
+      .select({ id: group.id })
       .from(group)
       .where(eq(group.id, groupId))
       .limit(1);
@@ -264,7 +336,7 @@ export async function leaveGroup(groupId: string): Promise<ActionResult> {
     if (!grp) return { error: "Group not found." };
 
     await db.transaction(async (tx) => {
-      await removeMemberTransaction(tx, groupId, membership.id, grp.phase);
+      await removeMemberTransaction(tx, groupId, membership.id);
     });
   } catch {
     return { error: "Failed to leave group. Please try again." };
@@ -309,7 +381,7 @@ export async function removeMember(
 
   try {
     const [grp] = await db
-      .select({ phase: group.phase })
+      .select({ id: group.id })
       .from(group)
       .where(eq(group.id, groupId))
       .limit(1);
@@ -317,7 +389,7 @@ export async function removeMember(
     if (!grp) return { error: "Group not found." };
 
     await db.transaction(async (tx) => {
-      await removeMemberTransaction(tx, groupId, targetMemberId, grp.phase);
+      await removeMemberTransaction(tx, groupId, targetMemberId);
     });
   } catch {
     return { error: "Failed to remove member. Please try again." };
@@ -338,27 +410,19 @@ export async function updateDateConfig(
 
   const dateMode = formData.get("dateMode") as string;
 
+  let newDateMode: "consecutive" | "specific";
+  let newConsecutiveDays: number | null = null;
+  let newStartDate: string | null = null;
+  let newEndDate: string | null = null;
+
   if (dateMode === "consecutive") {
     const days = formData.get("consecutiveDays") as string;
     const daysResult = consecutiveDaysSchema.safeParse(days);
     if (!daysResult.success) {
       return { error: daysResult.error.issues[0].message };
     }
-    try {
-      await db
-        .update(group)
-        .set({
-          dateMode: "consecutive",
-          consecutiveDays: daysResult.data,
-          startDate: null,
-          endDate: null,
-        })
-        .where(eq(group.id, groupId));
-    } catch {
-      return {
-        error: "Failed to update date configuration. Please try again.",
-      };
-    }
+    newDateMode = "consecutive";
+    newConsecutiveDays = daysResult.data;
   } else if (dateMode === "specific") {
     const startDate = formData.get("startDate") as string;
     const endDate = formData.get("endDate") as string;
@@ -366,23 +430,111 @@ export async function updateDateConfig(
     if (!rangeResult.success) {
       return { error: rangeResult.error.issues[0].message };
     }
-    try {
-      await db
-        .update(group)
-        .set({
-          dateMode: "specific",
-          startDate: rangeResult.data.startDate,
-          endDate: rangeResult.data.endDate,
-          consecutiveDays: null,
-        })
-        .where(eq(group.id, groupId));
-    } catch {
-      return {
-        error: "Failed to update date configuration. Please try again.",
-      };
-    }
+    newDateMode = "specific";
+    newStartDate = rangeResult.data.startDate;
+    newEndDate = rangeResult.data.endDate;
   } else {
     return { error: "Invalid date mode." };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(group)
+        .set({
+          dateMode: newDateMode,
+          consecutiveDays:
+            newDateMode === "consecutive" ? newConsecutiveDays : null,
+          startDate: newDateMode === "specific" ? newStartDate : null,
+          endDate: newDateMode === "specific" ? newEndDate : null,
+        })
+        .where(eq(group.id, groupId));
+
+      // Recompute window rankings if combos exist
+      const [grpData] = await tx
+        .select({ scheduleGeneratedAt: group.scheduleGeneratedAt })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .limit(1);
+
+      if (grpData?.scheduleGeneratedAt) {
+        // Delete old window rankings
+        await tx
+          .delete(windowRanking)
+          .where(eq(windowRanking.groupId, groupId));
+
+        // Query all ranked combos for the group
+        const allCombos = await tx
+          .select({
+            memberId: combo.memberId,
+            day: combo.day,
+            score: combo.score,
+            rank: combo.rank,
+          })
+          .from(combo)
+          .where(eq(combo.groupId, groupId));
+
+        if (allCombos.length > 0) {
+          // Build member scores with primary and backup scores
+          const memberScoreMap = new Map<string, Map<string, number>>();
+          const memberBackupMap = new Map<
+            string,
+            Map<string, { b1: number; b2: number }>
+          >();
+          for (const c of allCombos) {
+            if (c.rank === "primary") {
+              if (!memberScoreMap.has(c.memberId)) {
+                memberScoreMap.set(c.memberId, new Map());
+              }
+              memberScoreMap.get(c.memberId)!.set(c.day, c.score);
+            } else if (c.rank === "backup1" || c.rank === "backup2") {
+              if (!memberBackupMap.has(c.memberId)) {
+                memberBackupMap.set(c.memberId, new Map());
+              }
+              const existing = memberBackupMap.get(c.memberId)!.get(c.day) ?? {
+                b1: 0,
+                b2: 0,
+              };
+              if (c.rank === "backup1") existing.b1 = c.score;
+              else existing.b2 = c.score;
+              memberBackupMap.get(c.memberId)!.set(c.day, existing);
+            }
+          }
+
+          const memberScores = [...memberScoreMap.entries()].map(
+            ([memberId, dailyScores]) => ({
+              memberId,
+              dailyScores,
+              dailyBackupScores: memberBackupMap.get(memberId),
+            })
+          );
+
+          const rankings = computeWindowRankings({
+            memberScores,
+            dateMode: newDateMode,
+            consecutiveDays: newConsecutiveDays ?? undefined,
+            startDate: newStartDate ?? undefined,
+            endDate: newEndDate ?? undefined,
+          });
+
+          if (rankings.length > 0) {
+            await tx.insert(windowRanking).values(
+              rankings.map((r, i) => ({
+                groupId,
+                startDate: r.startDate,
+                endDate: r.endDate,
+                score: r.score,
+                selected: i === 0,
+              }))
+            );
+          }
+        }
+      }
+    });
+  } catch {
+    return {
+      error: "Failed to update date configuration. Please try again.",
+    };
   }
 
   revalidatePath(`/groups/${groupId}`);
@@ -409,22 +561,7 @@ export async function deleteGroup(groupId: string): Promise<ActionResult> {
       // 2. Delete combos
       await tx.delete(combo).where(eq(combo.groupId, groupId));
 
-      // 3. Delete viable config members
-      const vcIds = tx
-        .select({ id: viableConfig.id })
-        .from(viableConfig)
-        .where(eq(viableConfig.groupId, groupId));
-      await tx
-        .delete(viableConfigMember)
-        .where(inArray(viableConfigMember.viableConfigId, vcIds));
-
-      // 4. Delete viable configs
-      await tx.delete(viableConfig).where(eq(viableConfig.groupId, groupId));
-
-      // 5. Delete conflicts
-      await tx.delete(conflict).where(eq(conflict.groupId, groupId));
-
-      // 6. Delete window rankings
+      // 3. Delete window rankings
       await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
 
       // 7. Get all member IDs for the group
@@ -513,4 +650,291 @@ export async function transferOwnership(
 
   revalidatePath(`/groups/${groupId}`);
   return { success: true };
+}
+
+export async function generateSchedules(
+  groupId: string
+): Promise<ActionResult & { membersWithNoCombos?: string[] }> {
+  const ownership = await getOwnerMembership(groupId);
+  if (!ownership) {
+    return { error: "Only the group owner can generate schedules." };
+  }
+
+  // Check group phase
+  const [grp] = await db
+    .select({
+      phase: group.phase,
+      affectedBuddyMembers: group.affectedBuddyMembers,
+    })
+    .from(group)
+    .where(eq(group.id, groupId))
+    .limit(1);
+
+  if (!grp) return { error: "Group not found." };
+  if (grp.phase !== "preferences" && grp.phase !== "schedule_review") {
+    return {
+      error:
+        "Schedules can only be generated during the preferences or schedule review phase.",
+    };
+  }
+
+  if (
+    Object.keys((grp.affectedBuddyMembers as Record<string, string[]>) ?? {})
+      .length > 0
+  ) {
+    return {
+      error:
+        "All affected members must review their preferences before generating schedules.",
+    };
+  }
+
+  // Check all active members have preferences_set
+  const activeMembers = await db
+    .select({
+      id: member.id,
+      status: member.status,
+      minBuddies: member.minBuddies,
+      sportRankings: member.sportRankings,
+    })
+    .from(member)
+    .where(
+      and(
+        eq(member.groupId, groupId),
+        notInArray(member.status, ["pending_approval", "denied"])
+      )
+    );
+
+  const readyStatuses = ["preferences_set"];
+  const notReady = activeMembers.filter(
+    (m) => !readyStatuses.includes(m.status)
+  );
+  if (notReady.length > 0) {
+    return {
+      error:
+        "All members must have their preferences set before generating schedules.",
+    };
+  }
+
+  try {
+    // Fetch buddy constraints for all members
+    const memberIds = activeMembers.map((m) => m.id);
+    const buddies = await db
+      .select({
+        memberId: buddyConstraint.memberId,
+        buddyMemberId: buddyConstraint.buddyMemberId,
+        type: buddyConstraint.type,
+      })
+      .from(buddyConstraint)
+      .where(inArray(buddyConstraint.memberId, memberIds));
+
+    // Fetch session preferences joined with session table
+    const sessionPrefs = await db
+      .select({
+        memberId: sessionPreference.memberId,
+        sessionCode: session.sessionCode,
+        sport: session.sport,
+        zone: session.zone,
+        sessionDate: session.sessionDate,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        interest: sessionPreference.interest,
+      })
+      .from(sessionPreference)
+      .innerJoin(session, eq(sessionPreference.sessionId, session.sessionCode))
+      .where(inArray(sessionPreference.memberId, memberIds));
+
+    // Fetch travel times
+    const travelEntries = await db
+      .select({
+        originZone: travelTime.originZone,
+        destinationZone: travelTime.destinationZone,
+        drivingMinutes: travelTime.drivingMinutes,
+        transitMinutes: travelTime.transitMinutes,
+      })
+      .from(travelTime);
+
+    // Assemble MemberData
+    const membersData: MemberData[] = activeMembers.map((m) => {
+      const memberBuddies = buddies.filter((b) => b.memberId === m.id);
+      const hardBuddies = memberBuddies
+        .filter((b) => b.type === "hard")
+        .map((b) => b.buddyMemberId);
+      const softBuddies = memberBuddies
+        .filter((b) => b.type === "soft")
+        .map((b) => b.buddyMemberId);
+      const candidateSessions = sessionPrefs
+        .filter((sp) => sp.memberId === m.id)
+        .map((sp) => ({
+          sessionCode: sp.sessionCode,
+          sport: sp.sport,
+          zone: sp.zone,
+          sessionDate: sp.sessionDate,
+          startTime: sp.startTime,
+          endTime: sp.endTime,
+          interest: sp.interest,
+        }));
+
+      return {
+        memberId: m.id,
+        sportRankings: (m.sportRankings as string[]) ?? [],
+        minBuddies: m.minBuddies,
+        hardBuddies,
+        softBuddies,
+        candidateSessions,
+      };
+    });
+
+    // All 19 Olympic days: Jul 12 - Jul 30, 2028
+    const days: string[] = [];
+    const start = new Date("2028-07-12");
+    for (let i = 0; i < 19; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      days.push(d.toISOString().split("T")[0]);
+    }
+
+    const travelData: TravelEntry[] = travelEntries.map((t) => ({
+      originZone: t.originZone,
+      destinationZone: t.destinationZone,
+      drivingMinutes: t.drivingMinutes,
+      transitMinutes: t.transitMinutes,
+    }));
+
+    // Run algorithm
+    const result = runScheduleGeneration(membersData, travelData, days);
+
+    // Write results in transaction
+    await db.transaction(async (tx) => {
+      // Cleanup existing data
+      const existingComboIds = tx
+        .select({ id: combo.id })
+        .from(combo)
+        .where(eq(combo.groupId, groupId));
+      await tx
+        .delete(comboSession)
+        .where(inArray(comboSession.comboId, existingComboIds));
+      await tx.delete(combo).where(eq(combo.groupId, groupId));
+
+      await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
+
+      // Insert combos
+      for (const c of result.combos) {
+        const [inserted] = await tx
+          .insert(combo)
+          .values({
+            groupId,
+            memberId: c.memberId,
+            day: c.day,
+            rank: c.rank,
+            score: c.score,
+          })
+          .returning({ id: combo.id });
+
+        if (c.sessionCodes.length > 0) {
+          await tx.insert(comboSession).values(
+            c.sessionCodes.map((sessionId) => ({
+              comboId: inserted.id,
+              sessionId,
+            }))
+          );
+        }
+      }
+
+      // Members stay at preferences_set — no status update needed.
+
+      const newPhase =
+        result.membersWithNoCombos.length > 0
+          ? "preferences"
+          : "schedule_review";
+
+      await tx
+        .update(group)
+        .set({
+          phase: newPhase,
+          scheduleGeneratedAt: new Date(),
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          membersWithNoCombos: result.membersWithNoCombos,
+        })
+        .where(eq(group.id, groupId));
+
+      // Compute window rankings if date config is set and schedule was successful
+      if (newPhase === "schedule_review") {
+        const [dateConfig] = await tx
+          .select({
+            dateMode: group.dateMode,
+            consecutiveDays: group.consecutiveDays,
+            startDate: group.startDate,
+            endDate: group.endDate,
+          })
+          .from(group)
+          .where(eq(group.id, groupId))
+          .limit(1);
+
+        if (dateConfig?.dateMode) {
+          // Extract combo scores per member per day (primary + backups)
+          const memberScores = activeMembers.map((m) => {
+            const dailyScores = new Map<string, number>();
+            const dailyBackupScores = new Map<
+              string,
+              { b1: number; b2: number }
+            >();
+            for (const c of result.combos) {
+              if (c.memberId === m.id) {
+                if (c.rank === "primary") {
+                  dailyScores.set(c.day, c.score);
+                } else if (c.rank === "backup1") {
+                  const existing = dailyBackupScores.get(c.day) ?? {
+                    b1: 0,
+                    b2: 0,
+                  };
+                  existing.b1 = c.score;
+                  dailyBackupScores.set(c.day, existing);
+                } else if (c.rank === "backup2") {
+                  const existing = dailyBackupScores.get(c.day) ?? {
+                    b1: 0,
+                    b2: 0,
+                  };
+                  existing.b2 = c.score;
+                  dailyBackupScores.set(c.day, existing);
+                }
+              }
+            }
+            return { memberId: m.id, dailyScores, dailyBackupScores };
+          });
+
+          const rankings = computeWindowRankings({
+            memberScores,
+            dateMode: dateConfig.dateMode,
+            consecutiveDays: dateConfig.consecutiveDays ?? undefined,
+            startDate: dateConfig.startDate ?? undefined,
+            endDate: dateConfig.endDate ?? undefined,
+          });
+
+          if (rankings.length > 0) {
+            await tx.insert(windowRanking).values(
+              rankings.map((r, i) => ({
+                groupId,
+                startDate: r.startDate,
+                endDate: r.endDate,
+                score: r.score,
+                selected: i === 0, // auto-select top window
+              }))
+            );
+          }
+        }
+      }
+    });
+
+    revalidatePath(`/groups/${groupId}`);
+    return {
+      success: true,
+      membersWithNoCombos:
+        result.membersWithNoCombos.length > 0
+          ? result.membersWithNoCombos
+          : undefined,
+    };
+  } catch {
+    return { error: "Failed to generate schedules. Please try again." };
+  }
 }

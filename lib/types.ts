@@ -34,9 +34,17 @@ export type GroupDetailMember = {
   avatarColor: AvatarColor;
   role: string;
   status: string;
-  budget: number | null;
   joinedAt: Date | string | null;
+  statusChangedAt: Date | string | null;
   createdAt: Date | string;
+};
+
+export type WindowRanking = {
+  id: string;
+  startDate: string;
+  endDate: string;
+  score: number;
+  selected: boolean;
 };
 
 export type GroupDetail = {
@@ -48,9 +56,15 @@ export type GroupDetail = {
   consecutiveDays: number | null;
   startDate: string | null;
   endDate: string | null;
+  scheduleGeneratedAt: Date | string | null;
+  myScheduleWarningAckedAt: Date | string | null;
   createdAt: Date | string;
   myRole: string;
   myStatus: string;
   myMemberId: string;
   members: GroupDetailMember[];
+  membersWithNoCombos: string[];
+  departedMembers: { name: string; departedAt: string; rejoinedAt?: string }[];
+  affectedBuddyMembers: Record<string, string[]>;
+  windowRankings: WindowRanking[];
 };

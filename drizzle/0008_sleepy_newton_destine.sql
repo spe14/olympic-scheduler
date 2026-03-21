@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN IF NOT EXISTS "affected_buddy_members" jsonb DEFAULT '{}'::jsonb;

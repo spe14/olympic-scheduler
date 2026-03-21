@@ -42,7 +42,6 @@ vi.mock(
             onSave({
               sessionId: session.sessionCode,
               interest: "high",
-              maxWillingness: 200,
             })
           }
         >
@@ -217,10 +216,7 @@ describe("SessionsStep", () => {
 
   it("clears preference via modal and removes badge from card", () => {
     const initialPrefs = new Map<string, SessionPreferenceData>([
-      [
-        "TEN-001",
-        { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-      ],
+      ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
     ]);
     render(
       <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -239,14 +235,8 @@ describe("SessionsStep", () => {
 
   it("renders existing preference badges on session cards on mount", () => {
     const initialPrefs = new Map<string, SessionPreferenceData>([
-      [
-        "TEN-001",
-        { sessionId: "TEN-001", interest: "medium", maxWillingness: 300 },
-      ],
-      [
-        "SWM-001",
-        { sessionId: "SWM-001", interest: "low", maxWillingness: 100 },
-      ],
+      ["TEN-001", { sessionId: "TEN-001", interest: "medium" }],
+      ["SWM-001", { sessionId: "SWM-001", interest: "low" }],
     ]);
     render(
       <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -376,22 +366,10 @@ describe("SessionsStep", () => {
 
   it("shows interest badges on all session cards with preferences", () => {
     const initialPrefs = new Map<string, SessionPreferenceData>([
-      [
-        "TEN-001",
-        { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-      ],
-      [
-        "TEN-002",
-        { sessionId: "TEN-002", interest: "high", maxWillingness: 300 },
-      ],
-      [
-        "SWM-001",
-        { sessionId: "SWM-001", interest: "medium", maxWillingness: 100 },
-      ],
-      [
-        "SWM-002",
-        { sessionId: "SWM-002", interest: "low", maxWillingness: 50 },
-      ],
+      ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
+      ["TEN-002", { sessionId: "TEN-002", interest: "high" }],
+      ["SWM-001", { sessionId: "SWM-001", interest: "medium" }],
+      ["SWM-002", { sessionId: "SWM-002", interest: "low" }],
     ]);
     render(
       <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -409,10 +387,7 @@ describe("SessionsStep", () => {
 
   it("does not show interest badges for sessions without preferences", () => {
     const initialPrefs = new Map<string, SessionPreferenceData>([
-      [
-        "TEN-001",
-        { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-      ],
+      ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
     ]);
     render(
       <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -422,36 +397,6 @@ describe("SessionsStep", () => {
     // Other sessions have no badge — Medium and Low should not appear
     expect(screen.queryByText("Medium")).toBeNull();
     expect(screen.queryByText("Low")).toBeNull();
-  });
-
-  // ── Willingness badge display ───────────────────────────────
-
-  it("shows willingness badge with price ceiling on cards", () => {
-    const initialPrefs = new Map<string, SessionPreferenceData>([
-      [
-        "TEN-001",
-        { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-      ],
-    ]);
-    render(
-      <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
-    );
-
-    expect(screen.getByText("<$200")).toBeDefined();
-  });
-
-  it("shows $1000+ willingness badge for null maxWillingness", () => {
-    const initialPrefs = new Map<string, SessionPreferenceData>([
-      [
-        "TEN-001",
-        { sessionId: "TEN-001", interest: "low", maxWillingness: null },
-      ],
-    ]);
-    render(
-      <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
-    );
-
-    expect(screen.getByText("$1000+")).toBeDefined();
   });
 
   // ── Hidden sessions don't open modal ────────────────────────
@@ -479,14 +424,8 @@ describe("SessionsStep", () => {
 
   it("filters out preferences for sessions not in the session list on mount", () => {
     const initialPrefs = new Map<string, SessionPreferenceData>([
-      [
-        "TEN-001",
-        { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-      ],
-      [
-        "DELETED-001",
-        { sessionId: "DELETED-001", interest: "low", maxWillingness: 100 },
-      ],
+      ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
+      ["DELETED-001", { sessionId: "DELETED-001", interest: "low" }],
     ]);
     render(
       <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -1040,7 +979,7 @@ describe("SessionsStep", () => {
         (b) => b.textContent === "Final"
       );
       expect(finalBtn).toBeDefined();
-      expect(finalBtn!.className).toContain("bg-[#009de5]");
+      expect(finalBtn!.className).toContain("bg-slate-600");
 
       unmount();
       document.body.removeChild(container);
@@ -1060,7 +999,7 @@ describe("SessionsStep", () => {
         (b) => b.textContent === "Sat, Jul 26"
       );
       expect(dateBtn).toBeDefined();
-      expect(dateBtn!.className).toContain("bg-[#009de5]");
+      expect(dateBtn!.className).toContain("bg-slate-600");
 
       unmount();
       document.body.removeChild(container);
@@ -1080,7 +1019,7 @@ describe("SessionsStep", () => {
         (b) => b.textContent === "Valley"
       );
       expect(zoneBtn).toBeDefined();
-      expect(zoneBtn!.className).toContain("bg-[#009de5]");
+      expect(zoneBtn!.className).toContain("bg-slate-600");
 
       unmount();
       document.body.removeChild(container);
@@ -1194,14 +1133,8 @@ describe("SessionsStep", () => {
 
     it("interest filter shows only sessions with matching interest level", () => {
       const initialPrefs = new Map<string, SessionPreferenceData>([
-        [
-          "TEN-001",
-          { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-        ],
-        [
-          "SWM-001",
-          { sessionId: "SWM-001", interest: "low", maxWillingness: 100 },
-        ],
+        ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
+        ["SWM-001", { sessionId: "SWM-001", interest: "low" }],
       ]);
       render(
         <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -1221,10 +1154,7 @@ describe("SessionsStep", () => {
 
     it("interest filter 'not_set' shows only sessions without preferences", () => {
       const initialPrefs = new Map<string, SessionPreferenceData>([
-        [
-          "TEN-001",
-          { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-        ],
+        ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
       ]);
       render(
         <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -1317,10 +1247,7 @@ describe("SessionsStep", () => {
 
     it("clearing interest filter shows all sessions again", () => {
       const initialPrefs = new Map<string, SessionPreferenceData>([
-        [
-          "TEN-001",
-          { sessionId: "TEN-001", interest: "high", maxWillingness: 200 },
-        ],
+        ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
       ]);
       render(
         <SessionsStep {...defaultProps} initialPreferences={initialPrefs} />
@@ -1385,6 +1312,248 @@ describe("SessionsStep", () => {
       });
 
       expect(screen.getByText("Men's Singles Final")).toBeDefined();
+    });
+  });
+
+  // ── Search ────────────────────────────────────────────────────────
+
+  describe("search", () => {
+    function getSearchInput() {
+      return screen.getByPlaceholderText("Search sessions...");
+    }
+
+    it("renders the search input", () => {
+      render(<SessionsStep {...defaultProps} />);
+      expect(getSearchInput()).toBeDefined();
+    });
+
+    it("filters sessions by sport name", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "Tennis" } });
+
+      expect(screen.getByText("Men's Singles Final")).toBeDefined();
+      expect(screen.getByText("Women's Singles Semifinal")).toBeDefined();
+      expect(screen.queryByText("100m Freestyle Final")).toBeNull();
+      expect(screen.queryByText("200m Butterfly Heats")).toBeNull();
+    });
+
+    it("filters sessions by session code", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "SWM-001" } });
+
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+      expect(screen.queryByText("Men's Singles Final")).toBeNull();
+      expect(screen.queryByText("200m Butterfly Heats")).toBeNull();
+    });
+
+    it("filters sessions by description", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "Butterfly" } });
+
+      expect(screen.getByText("200m Butterfly Heats")).toBeDefined();
+      expect(screen.queryByText("Men's Singles Final")).toBeNull();
+      expect(screen.queryByText("100m Freestyle Final")).toBeNull();
+    });
+
+    it("filters sessions by venue", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "Aquatics" } });
+
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+      expect(screen.getByText("200m Butterfly Heats")).toBeDefined();
+      expect(screen.queryByText("Men's Singles Final")).toBeNull();
+    });
+
+    it("filters sessions by session type", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "Preliminary" } });
+
+      expect(screen.getByText("200m Butterfly Heats")).toBeDefined();
+      expect(screen.queryByText("Men's Singles Final")).toBeNull();
+      expect(screen.queryByText("100m Freestyle Final")).toBeNull();
+    });
+
+    it("filters sessions by zone", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "Carson" } });
+
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+      expect(screen.getByText("200m Butterfly Heats")).toBeDefined();
+      expect(screen.queryByText("Men's Singles Final")).toBeNull();
+    });
+
+    it("search is case-insensitive", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "swimming" } });
+
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+      expect(screen.getByText("200m Butterfly Heats")).toBeDefined();
+      expect(screen.queryByText("Men's Singles Final")).toBeNull();
+    });
+
+    it("shows empty state when search matches nothing", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), {
+        target: { value: "nonexistent sport" },
+      });
+
+      expect(
+        screen.getByText("No sessions match the current filters.")
+      ).toBeDefined();
+    });
+
+    it("shows all sessions when search is cleared", () => {
+      render(<SessionsStep {...defaultProps} />);
+
+      fireEvent.change(getSearchInput(), { target: { value: "Tennis" } });
+      expect(screen.queryByText("100m Freestyle Final")).toBeNull();
+
+      fireEvent.change(getSearchInput(), { target: { value: "" } });
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+      expect(screen.getByText("Men's Singles Final")).toBeDefined();
+    });
+
+    it("shows clear button when search has text and clears on click", () => {
+      render(<SessionsStep {...defaultProps} />);
+
+      // No clear button initially
+      expect(screen.queryByLabelText("Clear search")).toBeNull();
+
+      fireEvent.change(getSearchInput(), { target: { value: "Tennis" } });
+      expect(screen.getByLabelText("Clear search")).toBeDefined();
+
+      fireEvent.click(screen.getByLabelText("Clear search"));
+      expect(getSearchInput()).toHaveProperty("value", "");
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+    });
+
+    it("search works together with side panel filters", () => {
+      render(<SessionsStep {...defaultProps} />);
+
+      // Apply sport filter for Swimming via side panel
+      const getLastFilterProps = () =>
+        mockSetPanel.mock.calls[mockSetPanel.mock.calls.length - 1][0].props;
+
+      act(() => {
+        getLastFilterProps().onToggleSport("Swimming");
+      });
+
+      // Now search within Swimming sessions
+      fireEvent.change(getSearchInput(), { target: { value: "Freestyle" } });
+
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+      expect(screen.queryByText("200m Butterfly Heats")).toBeNull();
+      expect(screen.queryByText("Men's Singles Final")).toBeNull();
+    });
+
+    it("whitespace-only search shows all sessions", () => {
+      render(<SessionsStep {...defaultProps} />);
+      fireEvent.change(getSearchInput(), { target: { value: "   " } });
+
+      expect(screen.getByText("Men's Singles Final")).toBeDefined();
+      expect(screen.getByText("100m Freestyle Final")).toBeDefined();
+    });
+  });
+
+  // ── Clear All Interests ─────────────────────────────────────────
+
+  describe("clear all interests", () => {
+    const prefsWithInterests = new Map<string, SessionPreferenceData>([
+      ["TEN-001", { sessionId: "TEN-001", interest: "high" }],
+      ["SWM-001", { sessionId: "SWM-001", interest: "low" }],
+    ]);
+
+    it("does not show Clear All Interests button when no preferences set", () => {
+      render(<SessionsStep {...defaultProps} />);
+      expect(screen.queryByText("Clear All Interests")).toBeNull();
+    });
+
+    it("shows Clear All Interests button when preferences exist", () => {
+      render(
+        <SessionsStep
+          {...defaultProps}
+          initialPreferences={prefsWithInterests}
+        />
+      );
+      expect(screen.getByText("Clear All Interests")).toBeDefined();
+    });
+
+    it("shows confirmation modal when Clear All Interests is clicked", () => {
+      render(
+        <SessionsStep
+          {...defaultProps}
+          initialPreferences={prefsWithInterests}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Clear All Interests"));
+
+      expect(
+        screen.getByText(
+          "Are you sure you want to clear all session interests?"
+        )
+      ).toBeDefined();
+      expect(screen.getByText("Cancel")).toBeDefined();
+      expect(screen.getByText("Proceed")).toBeDefined();
+    });
+
+    it("dismisses confirmation modal when Cancel is clicked", () => {
+      render(
+        <SessionsStep
+          {...defaultProps}
+          initialPreferences={prefsWithInterests}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Clear All Interests"));
+      fireEvent.click(screen.getByText("Cancel"));
+
+      expect(
+        screen.queryByText(
+          "Are you sure you want to clear all session interests?"
+        )
+      ).toBeNull();
+      // Preferences should still exist
+      expect(screen.getByText("High")).toBeDefined();
+      expect(screen.getByText("Low")).toBeDefined();
+    });
+
+    it("clears all preferences when Proceed is clicked", () => {
+      render(
+        <SessionsStep
+          {...defaultProps}
+          initialPreferences={prefsWithInterests}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Clear All Interests"));
+      fireEvent.click(screen.getByText("Proceed"));
+
+      // Modal should be dismissed
+      expect(
+        screen.queryByText(
+          "Are you sure you want to clear all session interests?"
+        )
+      ).toBeNull();
+      // Interest badges should be gone
+      expect(screen.queryByText("High")).toBeNull();
+      expect(screen.queryByText("Low")).toBeNull();
+      // onChange should have been called with empty map
+      expect(defaultProps.onChange).toHaveBeenCalledWith(new Map());
+    });
+
+    it("hides Clear All Interests button after clearing", () => {
+      render(
+        <SessionsStep
+          {...defaultProps}
+          initialPreferences={prefsWithInterests}
+        />
+      );
+
+      fireEvent.click(screen.getByText("Clear All Interests"));
+      fireEvent.click(screen.getByText("Proceed"));
+
+      expect(screen.queryByText("Clear All Interests")).toBeNull();
     });
   });
 });

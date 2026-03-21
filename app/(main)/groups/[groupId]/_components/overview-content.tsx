@@ -8,30 +8,8 @@ import type { GroupDetailMember } from "@/lib/types";
 import { useGroup } from "./group-context";
 import { approveMember, denyMember, removeMember } from "../actions";
 import ConfirmMemberRemovalModal from "./confirm-member-removal-modal";
-
-const progressSteps = [
-  {
-    key: "preferences",
-    label: "Entered Preferences",
-    check: (m: GroupDetailMember) => m.status !== "joined",
-  },
-  {
-    key: "schedule_review",
-    label: "Confirmed Schedule",
-    check: (m: GroupDetailMember) =>
-      [
-        "schedule_review_confirmed",
-        "conflict_resolution_pending",
-        "conflict_resolution_confirmed",
-      ].includes(m.status),
-  },
-  {
-    key: "conflict_resolution",
-    label: "Resolved Conflicts",
-    check: (m: GroupDetailMember) =>
-      m.status === "conflict_resolution_confirmed",
-  },
-];
+import NotificationsSection from "./notifications-section";
+import GenerateScheduleSection from "./generate-schedule-section";
 
 export default function OverviewContent() {
   const group = useGroup();
@@ -50,6 +28,19 @@ export default function OverviewContent() {
   );
   const isFull = activeMembers.length >= MAX_GROUP_MEMBERS;
 
+  const affectedBuddyIds = new Set(Object.keys(group.affectedBuddyMembers));
+  const noCombosNotUpdatedIds = new Set(
+    group.membersWithNoCombos.filter((id) => {
+      const m = activeMembers.find((am) => am.id === id);
+      if (!m) return false;
+      return !(
+        m.statusChangedAt &&
+        group.scheduleGeneratedAt &&
+        new Date(m.statusChangedAt) > new Date(group.scheduleGeneratedAt)
+      );
+    })
+  );
+
   return (
     <section>
       <h2 className="mb-4 text-lg font-semibold text-slate-900">
@@ -58,16 +49,11 @@ export default function OverviewContent() {
 
       <div className="rounded-xl border border-slate-200 bg-white">
         {/* Header */}
-        <div className="grid grid-cols-[1fr_repeat(3,100px)] items-center border-b border-slate-100 px-5 py-3">
+        <div className="grid grid-cols-[1fr_100px] items-center border-b border-slate-100 px-5 py-3">
           <span className="text-sm font-medium text-slate-500">Member</span>
-          {progressSteps.map((s) => (
-            <span
-              key={s.key}
-              className="text-center text-sm font-medium text-slate-500"
-            >
-              {s.label}
-            </span>
-          ))}
+          <span className="text-center text-sm font-medium text-slate-500">
+            Entered Preferences
+          </span>
         </div>
 
         {/* Active members */}
@@ -82,6 +68,8 @@ export default function OverviewContent() {
             isLast={
               i === activeMembers.length - 1 && pendingMembers.length === 0
             }
+            isAffectedBuddy={affectedBuddyIds.has(m.id)}
+            isNoCombosNotUpdated={noCombosNotUpdatedIds.has(m.id)}
           />
         ))}
 
@@ -106,6 +94,9 @@ export default function OverviewContent() {
           </>
         )}
       </div>
+
+      <NotificationsSection />
+      <GenerateScheduleSection />
     </section>
   );
 }
@@ -117,6 +108,8 @@ function ActiveMemberRow({
   isOwner,
   isCurrentUser,
   isLast,
+  isAffectedBuddy,
+  isNoCombosNotUpdated,
 }: {
   member: GroupDetailMember;
   groupId: string;
@@ -124,6 +117,8 @@ function ActiveMemberRow({
   isOwner: boolean;
   isCurrentUser: boolean;
   isLast: boolean;
+  isAffectedBuddy: boolean;
+  isNoCombosNotUpdated: boolean;
 }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -145,7 +140,7 @@ function ActiveMemberRow({
 
   return (
     <div
-      className={`grid grid-cols-[1fr_repeat(3,100px)] items-center px-5 py-3 ${
+      className={`grid grid-cols-[1fr_100px] items-center px-5 py-3 ${
         !isLast ? "border-b border-slate-100" : ""
       }`}
       style={
@@ -190,32 +185,53 @@ function ActiveMemberRow({
           )}
         </div>
       </div>
-      {progressSteps.map((s) => (
-        <div key={s.key} className="flex justify-center">
-          {s.check(m) ? (
-            <span
-              className="flex h-5 w-5 items-center justify-center rounded-full"
-              style={{ backgroundColor: "rgba(16, 185, 129, 0.2)" }}
+      {/* Entered Preferences column */}
+      <div className="flex justify-center">
+        {m.status !== "joined" && !isAffectedBuddy && !isNoCombosNotUpdated ? (
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded-full"
+            style={{ backgroundColor: "rgba(16, 185, 129, 0.2)" }}
+          >
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="#059669"
+              strokeWidth={3}
             >
-              <svg
-                className="h-3 w-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="#059669"
-                strokeWidth={3}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4.5 12.75l6 6 9-13.5"
-                />
-              </svg>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M4.5 12.75l6 6 9-13.5"
+              />
+            </svg>
+          </span>
+        ) : m.status !== "joined" &&
+          (isAffectedBuddy || isNoCombosNotUpdated) ? (
+          <span className="group/prefwarn relative">
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="#d97706"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+              />
+            </svg>
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 w-48 -translate-x-1/2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover/prefwarn:opacity-100">
+              {isAffectedBuddy
+                ? "Needs to review buddy preferences"
+                : "This user didn't receive any sessions on their schedule. They will need to update their preferences."}
             </span>
-          ) : (
-            <span className="h-5 w-5 rounded-full border-2 border-slate-200" />
-          )}
-        </div>
-      ))}
+          </span>
+        ) : (
+          <span className="h-5 w-5 rounded-full border-2 border-slate-200" />
+        )}
+      </div>
       {showConfirm && (
         <ConfirmMemberRemovalModal
           type="remove"

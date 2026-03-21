@@ -50,6 +50,21 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  if (!user) {
+    const allCookies = request.cookies.getAll();
+    const staleAuthCookies = allCookies.filter((c) => c.name.startsWith("sb-"));
+
+    if (staleAuthCookies.length > 0) {
+      for (const cookie of staleAuthCookies) {
+        supabaseResponse.cookies.delete(cookie.name);
+      }
+      supabaseResponse.cookies.delete(SESSION_START_COOKIE);
+      supabaseResponse.cookies.delete(LAST_ACTIVE_COOKIE);
+    }
+
+    return supabaseResponse;
+  }
+
   if (user) {
     const now = Math.floor(Date.now() / 1000);
     const sessionStart = Number(

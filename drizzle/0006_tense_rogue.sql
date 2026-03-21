@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "schedule_generated_at" timestamp;

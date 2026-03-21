@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  saveBuddiesBudget,
+  saveBuddies,
   saveSportRankings,
   saveSessionPreferences,
+  ackScheduleWarning,
+  confirmAffectedBuddyReview,
 } from "@/app/(main)/groups/[groupId]/preferences/actions";
 
 // Mock next/cache
@@ -60,6 +62,13 @@ const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
     })),
     delete: vi.fn(() => ({ where: txDeleteWhere })),
     insert: vi.fn(() => ({ values: txInsertValues })),
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+        })),
+      })),
+    })),
   };
   return cb(tx);
 });
@@ -76,6 +85,11 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/db/schema", () => ({
+  group: {
+    id: "id",
+    affectedBuddyMembers: "affected_buddy_members",
+    scheduleGeneratedAt: "schedule_generated_at",
+  },
   member: {
     id: "id",
     userId: "user_id",
@@ -83,9 +97,9 @@ vi.mock("@/lib/db/schema", () => ({
     role: "role",
     status: "status",
     preferenceStep: "preference_step",
-    budget: "budget",
     minBuddies: "min_buddies",
     sportRankings: "sport_rankings",
+    scheduleWarningAckedAt: "schedule_warning_acked_at",
   },
   buddyConstraint: {
     memberId: "member_id",
@@ -97,9 +111,6 @@ vi.mock("@/lib/db/schema", () => ({
     sessionId: "session_id",
     memberId: "member_id",
     interest: "interest",
-    maxWillingness: "max_willingness",
-    hardBuddyOverride: "hard_buddy_override",
-    minBuddyOverride: "min_buddy_override",
     excluded: "excluded",
   },
 }));
@@ -124,9 +135,9 @@ function mockNoMembership() {
   mockGetMembership.mockResolvedValue(null);
 }
 
-// ─── saveBuddiesBudget ──────────────────────────────────────────────
+// ─── saveBuddies ──────────────────────────────────────────────
 
-describe("saveBuddiesBudget", () => {
+describe("saveBuddies", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLimit.mockReset();
@@ -144,6 +155,13 @@ describe("saveBuddiesBudget", () => {
         })),
         delete: vi.fn(() => ({ where: txDeleteWhere })),
         insert: vi.fn(() => ({ values: txInsertValues })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
       };
       return cb(tx);
     });
@@ -151,8 +169,7 @@ describe("saveBuddiesBudget", () => {
 
   it("returns error when not authenticated", async () => {
     mockNoMembership();
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 500,
+    const result = await saveBuddies("group-1", {
       minBuddies: 0,
       buddies: [],
     });
@@ -164,8 +181,7 @@ describe("saveBuddiesBudget", () => {
     mockGetCurrentUser.mockResolvedValue(mockUser);
     mockLimit.mockResolvedValueOnce([]); // no membership
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 500,
+    const result = await saveBuddies("group-1", {
       minBuddies: 0,
       buddies: [],
     });
@@ -173,77 +189,12 @@ describe("saveBuddiesBudget", () => {
     expect(result.error).toBe("You are not an active member of this group.");
   });
 
-  // Budget validation
-  it("allows null budget (optional field)", async () => {
-    mockActiveMember();
-    // valid members query for minBuddies check
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
-
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
-      minBuddies: 0,
-      buddies: [],
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("returns error for budget of 0", async () => {
-    mockActiveMember();
-
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 0,
-      minBuddies: 0,
-      buddies: [],
-    });
-
-    expect(result.error).toBe("Budget must be a positive whole number.");
-  });
-
-  it("returns error for negative budget", async () => {
-    mockActiveMember();
-
-    const result = await saveBuddiesBudget("group-1", {
-      budget: -100,
-      minBuddies: 0,
-      buddies: [],
-    });
-
-    expect(result.error).toBe("Budget must be a positive whole number.");
-  });
-
-  it("returns error for decimal budget", async () => {
-    mockActiveMember();
-
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 99.5,
-      minBuddies: 0,
-      buddies: [],
-    });
-
-    expect(result.error).toBe("Budget must be a positive whole number.");
-  });
-
-  it("accepts valid positive integer budget", async () => {
-    mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
-
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 1000,
-      minBuddies: 0,
-      buddies: [],
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   // minBuddies validation
   it("returns error for negative minBuddies", async () => {
     mockActiveMember();
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
+    const result = await saveBuddies("group-1", {
       minBuddies: -1,
       buddies: [],
     });
@@ -257,8 +208,7 @@ describe("saveBuddiesBudget", () => {
     mockActiveMember();
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
+    const result = await saveBuddies("group-1", {
       minBuddies: 1.5,
       buddies: [],
     });
@@ -273,8 +223,7 @@ describe("saveBuddiesBudget", () => {
     // 2 members total, self is member-1, so 1 other member
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
+    const result = await saveBuddies("group-1", {
       minBuddies: 2,
       buddies: [],
     });
@@ -290,8 +239,7 @@ describe("saveBuddiesBudget", () => {
       { id: "member-3" },
     ]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
+    const result = await saveBuddies("group-1", {
       minBuddies: 2,
       buddies: [],
     });
@@ -303,8 +251,7 @@ describe("saveBuddiesBudget", () => {
     mockActiveMember();
     directWhereResults.push([{ id: "member-1" }]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
+    const result = await saveBuddies("group-1", {
       minBuddies: 0,
       buddies: [],
     });
@@ -317,9 +264,8 @@ describe("saveBuddiesBudget", () => {
     mockActiveMember();
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
-      minBuddies: 0,
+    const result = await saveBuddies("group-1", {
+      minBuddies: 1,
       buddies: [
         { memberId: "member-2", type: "hard" },
         { memberId: "member-2", type: "soft" },
@@ -333,22 +279,58 @@ describe("saveBuddiesBudget", () => {
     mockActiveMember();
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
-      minBuddies: 0,
+    const result = await saveBuddies("group-1", {
+      minBuddies: 1,
       buddies: [{ memberId: "member-1", type: "hard" }],
     });
 
     expect(result.error).toBe("You cannot select yourself as a buddy.");
   });
 
+  it("returns error when minBuddies is less than hard buddy count", async () => {
+    mockActiveMember();
+    directWhereResults.push([
+      { id: "member-1" },
+      { id: "member-2" },
+      { id: "member-3" },
+    ]);
+
+    const result = await saveBuddies("group-1", {
+      minBuddies: 1,
+      buddies: [
+        { memberId: "member-2", type: "hard" },
+        { memberId: "member-3", type: "hard" },
+      ],
+    });
+
+    expect(result.error).toContain("at least 2");
+  });
+
+  it("accepts minBuddies equal to hard buddy count", async () => {
+    mockActiveMember();
+    directWhereResults.push([
+      { id: "member-1" },
+      { id: "member-2" },
+      { id: "member-3" },
+    ]);
+
+    const result = await saveBuddies("group-1", {
+      minBuddies: 2,
+      buddies: [
+        { memberId: "member-2", type: "hard" },
+        { memberId: "member-3", type: "hard" },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("returns error for invalid buddy member ID", async () => {
     mockActiveMember();
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: null,
-      minBuddies: 0,
+    const result = await saveBuddies("group-1", {
+      minBuddies: 1,
       buddies: [{ memberId: "nonexistent", type: "hard" }],
     });
 
@@ -375,11 +357,17 @@ describe("saveBuddiesBudget", () => {
         update: txUpdateMock,
         delete: txDeleteMock,
         insert: txInsertMock,
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
       })
     );
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 500,
+    const result = await saveBuddies("group-1", {
       minBuddies: 1,
       buddies: [
         { memberId: "member-2", type: "hard" },
@@ -393,9 +381,8 @@ describe("saveBuddiesBudget", () => {
     expect(txUpdateMock).toHaveBeenCalled();
     expect(txSetMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        budget: 500,
         minBuddies: 1,
-        preferenceStep: "buddies_budget",
+        preferenceStep: "buddies",
       })
     );
     // Verify old buddy constraints deleted
@@ -420,11 +407,17 @@ describe("saveBuddiesBudget", () => {
         })),
         delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
         insert: txInsertMock,
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
       })
     );
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 200,
+    const result = await saveBuddies("group-1", {
       minBuddies: 0,
       buddies: [],
     });
@@ -445,11 +438,77 @@ describe("saveBuddiesBudget", () => {
         update: vi.fn(() => ({ set: txSetMock })),
         delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
         insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
       })
     );
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 500,
+    const result = await saveBuddies("group-1", {
+      minBuddies: 0,
+      buddies: [],
+    });
+
+    expect(result.success).toBe(true);
+    const setCall = txSetMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(setCall.status).toBeUndefined();
+  });
+
+  it("does not reset status when member is in preferences_set (shouldResetStatus always false)", async () => {
+    mockActiveMember({ status: "preferences_set", preferenceStep: "sessions" });
+    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        update: vi.fn(() => ({ set: txSetMock })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
+      })
+    );
+
+    const result = await saveBuddies("group-1", {
+      minBuddies: 0,
+      buddies: [],
+    });
+
+    expect(result.success).toBe(true);
+    const setCall = txSetMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(setCall.status).toBeUndefined();
+  });
+
+  it("does not reset status when member is in joined status", async () => {
+    mockActiveMember({ status: "joined", preferenceStep: null });
+    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        update: vi.fn(() => ({ set: txSetMock })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
+      })
+    );
+
+    const result = await saveBuddies("group-1", {
       minBuddies: 0,
       buddies: [],
     });
@@ -460,7 +519,7 @@ describe("saveBuddiesBudget", () => {
   });
 
   it("does not overwrite preferenceStep when already at a higher step", async () => {
-    // preferenceStep is "sessions" — saving buddies_budget should NOT set preferenceStep: "buddies_budget"
+    // preferenceStep is "sessions" — saving buddies should NOT set preferenceStep: "buddies"
     mockActiveMember({ preferenceStep: "sessions" });
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
@@ -470,11 +529,17 @@ describe("saveBuddiesBudget", () => {
         update: vi.fn(() => ({ set: txSetMock })),
         delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
         insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
       })
     );
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 500,
+    const result = await saveBuddies("group-1", {
       minBuddies: 0,
       buddies: [],
     });
@@ -489,13 +554,53 @@ describe("saveBuddiesBudget", () => {
     directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
     mockTransaction.mockRejectedValue(new Error("TX error"));
 
-    const result = await saveBuddiesBudget("group-1", {
-      budget: 500,
+    const result = await saveBuddies("group-1", {
       minBuddies: 0,
       buddies: [],
     });
 
     expect(result.error).toBe("Failed to save preferences. Please try again.");
+  });
+
+  it("clears member affectedBuddyMembers entry on save", async () => {
+    mockActiveMember();
+    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
+    const txSelectLimit = vi.fn(() => [
+      {
+        affectedBuddyMembers: {
+          "member-1": ["Bob Jones"],
+          "member-2": ["Charlie Brown"],
+        },
+      },
+    ]);
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        update: txUpdateMock,
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: txSelectLimit,
+            })),
+          })),
+        })),
+      })
+    );
+
+    const result = await saveBuddies("group-1", {
+      minBuddies: 0,
+      buddies: [],
+    });
+
+    expect(result.success).toBe(true);
+    // Should clear member-1's entry, preserve member-2's
+    expect(txSetMock).toHaveBeenCalledWith({
+      affectedBuddyMembers: { "member-2": ["Charlie Brown"] },
+    });
   });
 });
 
@@ -657,6 +762,20 @@ describe("saveSportRankings", () => {
     expect(setCall.status).toBeUndefined();
   });
 
+  it("does not reset status during schedule_review (shouldResetStatus always false)", async () => {
+    mockActiveMember({ status: "preferences_set", preferenceStep: "sessions" });
+    mockValidSports(["Tennis"]);
+    setupSportRankingsTransaction();
+
+    const result = await saveSportRankings("group-1", {
+      sportRankings: ["Tennis"],
+    });
+
+    expect(result.success).toBe(true);
+    const setCall = txSetMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(setCall.status).toBeUndefined();
+  });
+
   it("does not overwrite preferenceStep when already at a higher step", async () => {
     // preferenceStep is "sessions" — saving sport_rankings should NOT set preferenceStep: "sport_rankings"
     mockActiveMember({ preferenceStep: "sessions" });
@@ -760,6 +879,13 @@ describe("saveSessionPreferences", () => {
         })),
         delete: vi.fn(() => ({ where: txDeleteWhere })),
         insert: vi.fn(() => ({ values: txInsertValues })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
       };
       return cb(tx);
     });
@@ -781,17 +907,17 @@ describe("saveSessionPreferences", () => {
     mockNoMembership();
 
     const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+      preferences: [{ sessionId: "s1", interest: "high" }],
     });
 
     expect(result.error).toBe("You are not an active member of this group.");
   });
 
   it("returns error when previous steps not completed", async () => {
-    mockActiveMember({ preferenceStep: "buddies_budget" });
+    mockActiveMember({ preferenceStep: "buddies" });
 
     const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+      preferences: [{ sessionId: "s1", interest: "high" }],
     });
 
     expect(result.error).toBe("You must complete previous steps first.");
@@ -801,7 +927,7 @@ describe("saveSessionPreferences", () => {
     mockActiveMember({ preferenceStep: null });
 
     const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+      preferences: [{ sessionId: "s1", interest: "high" }],
     });
 
     expect(result.error).toBe("You must complete previous steps first.");
@@ -822,8 +948,8 @@ describe("saveSessionPreferences", () => {
 
     const result = await saveSessionPreferences("group-1", {
       preferences: [
-        { sessionId: "s1", interest: "high", maxWillingness: 200 },
-        { sessionId: "s1", interest: "low", maxWillingness: 100 },
+        { sessionId: "s1", interest: "high" },
+        { sessionId: "s1", interest: "low" },
       ],
     });
 
@@ -838,7 +964,6 @@ describe("saveSessionPreferences", () => {
         {
           sessionId: "s1",
           interest: "extreme" as "high",
-          maxWillingness: 200,
         },
       ],
     });
@@ -846,36 +971,12 @@ describe("saveSessionPreferences", () => {
     expect(result.error).toBe("Invalid interest level.");
   });
 
-  it("returns error for invalid willingness value", async () => {
-    mockActiveMember({ preferenceStep: "sport_rankings" });
-
-    const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 75 }],
-    });
-
-    expect(result.error).toBe("Invalid willingness value.");
-  });
-
-  it("allows null maxWillingness (means $1000+)", async () => {
-    mockActiveMember({ preferenceStep: "sport_rankings" });
-    mockSportRankings(["Tennis"]);
-    mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
-
-    const result = await saveSessionPreferences("group-1", {
-      preferences: [
-        { sessionId: "s1", interest: "high", maxWillingness: null },
-      ],
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   it("returns error when sport rankings are empty", async () => {
     mockActiveMember({ preferenceStep: "sport_rankings" });
     mockLimit.mockResolvedValueOnce([{ sportRankings: [] }]);
 
     const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+      preferences: [{ sessionId: "s1", interest: "high" }],
     });
 
     expect(result.error).toBe("You must complete sport rankings first.");
@@ -888,7 +989,7 @@ describe("saveSessionPreferences", () => {
     mockValidSessions([]);
 
     const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+      preferences: [{ sessionId: "s1", interest: "high" }],
     });
 
     expect(result.error).toBe("Invalid session: s1");
@@ -911,13 +1012,20 @@ describe("saveSessionPreferences", () => {
         delete: vi.fn(() => ({ where: txDeleteWhere })),
         insert: vi.fn(() => ({ values: txInsertValues })),
         update: vi.fn(() => ({ set: txSetMock })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
       })
     );
 
     const result = await saveSessionPreferences("group-1", {
       preferences: [
-        { sessionId: "s1", interest: "high", maxWillingness: 200 },
-        { sessionId: "s2", interest: "medium", maxWillingness: null },
+        { sessionId: "s1", interest: "high" },
+        { sessionId: "s2", interest: "medium" },
       ],
     });
 
@@ -929,18 +1037,17 @@ describe("saveSessionPreferences", () => {
         sessionId: "s1",
         memberId: "member-1",
         interest: "high",
-        maxWillingness: 200,
       },
       {
         sessionId: "s2",
         memberId: "member-1",
         interest: "medium",
-        maxWillingness: null,
       },
     ]);
     expect(txSetMock).toHaveBeenCalledWith({
       preferenceStep: "sessions",
       status: "preferences_set",
+      statusChangedAt: expect.any(Date),
     });
   });
 
@@ -952,44 +1059,28 @@ describe("saveSessionPreferences", () => {
     mockSportRankings(["Tennis"]);
     mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
 
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+            })),
+          })),
+        })),
+      })
+    );
+
     const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "low", maxWillingness: 100 }],
+      preferences: [{ sessionId: "s1", interest: "low" }],
     });
 
     expect(result.success).toBe(true);
-  });
-
-  it("accepts all valid willingness bucket values", async () => {
-    const validValues = [50, 100, 150, 200, 250, 300, 400, 500, 1000];
-    for (const val of validValues) {
-      vi.clearAllMocks();
-      mockLimit.mockReset();
-      directWhereResults = [];
-      mockTransaction.mockImplementation(
-        (cb: (tx: unknown) => Promise<void>) => {
-          const tx = {
-            update: vi.fn(() => ({
-              set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-            })),
-            delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-            insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-          };
-          return cb(tx);
-        }
-      );
-
-      mockActiveMember({ preferenceStep: "sport_rankings" });
-      mockSportRankings(["Tennis"]);
-      mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
-
-      const result = await saveSessionPreferences("group-1", {
-        preferences: [
-          { sessionId: "s1", interest: "high", maxWillingness: val },
-        ],
-      });
-
-      expect(result.success).toBe(true);
-    }
   });
 
   it("returns error when transaction fails", async () => {
@@ -999,11 +1090,146 @@ describe("saveSessionPreferences", () => {
     mockTransaction.mockRejectedValue(new Error("TX error"));
 
     const result = await saveSessionPreferences("group-1", {
-      preferences: [{ sessionId: "s1", interest: "high", maxWillingness: 200 }],
+      preferences: [{ sessionId: "s1", interest: "high" }],
     });
 
     expect(result.error).toBe(
       "Failed to save session preferences. Please try again."
     );
+  });
+
+  it("clears affectedBuddyMembers entry for current member", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    mockSportRankings(["Tennis"]);
+    mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
+
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
+    const txSelectLimit = vi.fn(() => [
+      {
+        affectedBuddyMembers: { "member-1": ["Alice"], "member-2": ["Bob"] },
+      },
+    ]);
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        update: txUpdateMock,
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: txSelectLimit,
+            })),
+          })),
+        })),
+      })
+    );
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high" }],
+    });
+
+    expect(result.success).toBe(true);
+    // The tx.update is called twice: once for member status, once for group affectedBuddyMembers
+    // The second set call should clear member-1's entry and keep member-2's
+    expect(txSetMock).toHaveBeenCalledWith({
+      affectedBuddyMembers: { "member-2": ["Bob"] },
+    });
+  });
+});
+
+// ─── ackScheduleWarning ─────────────────────────────────────────────
+
+describe("ackScheduleWarning", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+  });
+
+  it("returns error when not a member", async () => {
+    mockNoMembership();
+    const result = await ackScheduleWarning("group-1");
+    expect(result.error).toBe("You are not an active member of this group.");
+  });
+
+  it("returns error when group not found", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([]);
+
+    const result = await ackScheduleWarning("group-1");
+    expect(result.error).toBe("Group not found.");
+  });
+
+  it("updates scheduleWarningAckedAt and returns success", async () => {
+    mockActiveMember();
+    const generatedAt = new Date("2028-01-15T00:00:00Z");
+    mockLimit.mockResolvedValueOnce([{ scheduleGeneratedAt: generatedAt }]);
+
+    const result = await ackScheduleWarning("group-1");
+    expect(result.success).toBe(true);
+    expect(mockUpdate).toHaveBeenCalled();
+    expect(mockSet).toHaveBeenCalledWith({
+      scheduleWarningAckedAt: generatedAt,
+    });
+  });
+});
+
+// ─── confirmAffectedBuddyReview ─────────────────────────────────────
+
+describe("confirmAffectedBuddyReview", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+  });
+
+  it("returns error when not authenticated", async () => {
+    mockNoMembership();
+    const result = await confirmAffectedBuddyReview("group-1");
+    expect(result.error).toBe("You are not an active member of this group.");
+  });
+
+  it("succeeds as no-op when member has no affectedBuddyMembers entry", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([{ affectedBuddyMembers: {} }]);
+    const result = await confirmAffectedBuddyReview("group-1");
+    expect(result.success).toBe(true);
+    // Should NOT call update since there's nothing to clear
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("clears member entry from affectedBuddyMembers", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([
+      {
+        affectedBuddyMembers: { "member-1": ["Bob Jones"] },
+      },
+    ]);
+    const result = await confirmAffectedBuddyReview("group-1");
+    expect(result.success).toBe(true);
+    expect(mockUpdate).toHaveBeenCalled();
+    expect(mockSet).toHaveBeenCalledWith({ affectedBuddyMembers: {} });
+  });
+
+  it("preserves other members entries in affectedBuddyMembers", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([
+      {
+        affectedBuddyMembers: {
+          "member-1": ["Bob Jones"],
+          "member-2": ["Charlie Brown"],
+        },
+      },
+    ]);
+    const result = await confirmAffectedBuddyReview("group-1");
+    expect(result.success).toBe(true);
+    expect(mockSet).toHaveBeenCalledWith({
+      affectedBuddyMembers: { "member-2": ["Charlie Brown"] },
+    });
   });
 });

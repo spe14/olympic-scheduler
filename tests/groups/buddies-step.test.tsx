@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import BuddiesBudgetStep from "@/app/(main)/groups/[groupId]/preferences/_components/buddies-budget-step";
+import BuddiesStep from "@/app/(main)/groups/[groupId]/preferences/_components/buddies-step";
+import type { GroupDetail } from "@/lib/types";
 
 // ─── Mocks ──────────────────────────────────────────────────────────
 
-const mockGroup = {
+const mockGroup: GroupDetail = {
   id: "group-1",
   name: "Test Group",
   phase: "preferences",
@@ -14,6 +15,7 @@ const mockGroup = {
   consecutiveDays: null,
   startDate: null,
   endDate: null,
+  scheduleGeneratedAt: null,
   createdAt: new Date().toISOString(),
   myRole: "member",
   myStatus: "joined",
@@ -28,8 +30,8 @@ const mockGroup = {
       avatarColor: "blue" as const,
       role: "owner",
       status: "joined",
-      budget: null,
       joinedAt: new Date().toISOString(),
+      statusChangedAt: null,
       createdAt: new Date().toISOString(),
     },
     {
@@ -41,8 +43,8 @@ const mockGroup = {
       avatarColor: "red" as const,
       role: "member",
       status: "joined",
-      budget: null,
       joinedAt: new Date().toISOString(),
+      statusChangedAt: null,
       createdAt: new Date().toISOString(),
     },
     {
@@ -54,8 +56,8 @@ const mockGroup = {
       avatarColor: "green" as const,
       role: "member",
       status: "joined",
-      budget: null,
       joinedAt: new Date().toISOString(),
+      statusChangedAt: null,
       createdAt: new Date().toISOString(),
     },
     {
@@ -67,11 +69,15 @@ const mockGroup = {
       avatarColor: "purple" as const,
       role: "member",
       status: "pending_approval",
-      budget: null,
       joinedAt: null,
+      statusChangedAt: null,
       createdAt: new Date().toISOString(),
     },
   ],
+  membersWithNoCombos: [],
+  departedMembers: [],
+  affectedBuddyMembers: {},
+  windowRankings: [],
 };
 
 vi.mock("@/app/(main)/groups/[groupId]/_components/group-context", () => ({
@@ -93,7 +99,6 @@ vi.mock("@/lib/constants", () => ({
 type BuddySelection = { memberId: string; type: "hard" | "soft" };
 
 const defaultProps = {
-  initialBudget: null as number | null,
   initialMinBuddies: 0,
   initialBuddies: [] as BuddySelection[],
   onChange: vi.fn(),
@@ -101,7 +106,7 @@ const defaultProps = {
 
 // ─── Tests ──────────────────────────────────────────────────────────
 
-describe("BuddiesBudgetStep", () => {
+describe("BuddiesStep", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset members to default
@@ -116,8 +121,8 @@ describe("BuddiesBudgetStep", () => {
         avatarColor: "blue" as const,
         role: "owner",
         status: "joined",
-        budget: null,
         joinedAt: new Date().toISOString(),
+        statusChangedAt: null,
         createdAt: new Date().toISOString(),
       },
       {
@@ -129,8 +134,8 @@ describe("BuddiesBudgetStep", () => {
         avatarColor: "red" as const,
         role: "member",
         status: "joined",
-        budget: null,
         joinedAt: new Date().toISOString(),
+        statusChangedAt: null,
         createdAt: new Date().toISOString(),
       },
       {
@@ -142,8 +147,8 @@ describe("BuddiesBudgetStep", () => {
         avatarColor: "green" as const,
         role: "member",
         status: "joined",
-        budget: null,
         joinedAt: new Date().toISOString(),
+        statusChangedAt: null,
         createdAt: new Date().toISOString(),
       },
       {
@@ -155,8 +160,8 @@ describe("BuddiesBudgetStep", () => {
         avatarColor: "purple" as const,
         role: "member",
         status: "pending_approval",
-        budget: null,
         joinedAt: null,
+        statusChangedAt: null,
         createdAt: new Date().toISOString(),
       },
     ];
@@ -166,97 +171,16 @@ describe("BuddiesBudgetStep", () => {
     cleanup();
   });
 
-  // ── Budget section ──────────────────────────────────────────────
-
-  describe("budget section", () => {
-    it("renders budget section with Optional label", () => {
-      render(<BuddiesBudgetStep {...defaultProps} />);
-      expect(screen.getByText("Budget")).toBeDefined();
-      expect(screen.getByText("(Optional)")).toBeDefined();
-    });
-
-    it("budget input starts empty when initialBudget is null", () => {
-      render(<BuddiesBudgetStep {...defaultProps} initialBudget={null} />);
-      const input = screen.getByPlaceholderText("");
-      expect(input).toBeDefined();
-      expect((input as HTMLInputElement).value).toBe("");
-    });
-
-    it("budget input shows formatted value when initialBudget is set", () => {
-      render(<BuddiesBudgetStep {...defaultProps} initialBudget={5000} />);
-      const inputs = document.querySelectorAll('input[inputmode="numeric"]');
-      const budgetInput = inputs[0] as HTMLInputElement;
-      expect(budgetInput.value).toBe("5,000");
-    });
-
-    it("budget input strips non-digit characters", () => {
-      const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
-      const inputs = document.querySelectorAll('input[inputmode="numeric"]');
-      const budgetInput = inputs[0] as HTMLInputElement;
-
-      fireEvent.change(budgetInput, { target: { value: "abc$1,23def4" } });
-
-      // onChange should receive the parsed integer of digits only ("1234")
-      expect(onChange).toHaveBeenCalledWith(
-        expect.objectContaining({ budget: 1234 })
-      );
-    });
-
-    it("budget onChange emits null for empty input", () => {
-      const onChange = vi.fn();
-      render(
-        <BuddiesBudgetStep
-          {...defaultProps}
-          initialBudget={500}
-          onChange={onChange}
-        />
-      );
-      const inputs = document.querySelectorAll('input[inputmode="numeric"]');
-      const budgetInput = inputs[0] as HTMLInputElement;
-
-      // Clear the input
-      fireEvent.change(budgetInput, { target: { value: "" } });
-
-      expect(onChange).toHaveBeenCalledWith(
-        expect.objectContaining({ budget: null })
-      );
-    });
-
-    it("budget onChange emits parsed integer for valid input", () => {
-      const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
-      const inputs = document.querySelectorAll('input[inputmode="numeric"]');
-      const budgetInput = inputs[0] as HTMLInputElement;
-
-      fireEvent.change(budgetInput, { target: { value: "2500" } });
-
-      expect(onChange).toHaveBeenCalledWith(
-        expect.objectContaining({ budget: 2500 })
-      );
-    });
-
-    it("comma formatting in budget - typing 5000 shows 5,000", () => {
-      render(<BuddiesBudgetStep {...defaultProps} />);
-      const inputs = document.querySelectorAll('input[inputmode="numeric"]');
-      const budgetInput = inputs[0] as HTMLInputElement;
-
-      fireEvent.change(budgetInput, { target: { value: "5000" } });
-
-      expect(budgetInput.value).toBe("5,000");
-    });
-  });
-
   // ── Minimum buddies section ─────────────────────────────────────
 
   describe("minimum buddies section", () => {
     it("renders minimum buddies section", () => {
-      render(<BuddiesBudgetStep {...defaultProps} />);
+      render(<BuddiesStep {...defaultProps} />);
       expect(screen.getByText("Minimum Buddies")).toBeDefined();
     });
 
     it("min buddies input starts with initial value", () => {
-      render(<BuddiesBudgetStep {...defaultProps} initialMinBuddies={2} />);
+      render(<BuddiesStep {...defaultProps} initialMinBuddies={2} />);
       const input = screen.getByDisplayValue("2");
       expect(input).toBeDefined();
     });
@@ -264,7 +188,7 @@ describe("BuddiesBudgetStep", () => {
     it("min buddies clamped to eligible member count max", () => {
       const onChange = vi.fn();
       // Eligible members: member-2, member-3 (not self, not pending) = 2
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
+      render(<BuddiesStep {...defaultProps} onChange={onChange} />);
       const input = document.querySelector(
         'input[type="number"]'
       ) as HTMLInputElement;
@@ -279,7 +203,7 @@ describe("BuddiesBudgetStep", () => {
 
     it("min buddies clamped to 0 minimum", () => {
       const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
+      render(<BuddiesStep {...defaultProps} onChange={onChange} />);
       const input = document.querySelector(
         'input[type="number"]'
       ) as HTMLInputElement;
@@ -290,13 +214,147 @@ describe("BuddiesBudgetStep", () => {
         expect.objectContaining({ minBuddies: 0 })
       );
     });
+
+    it("min buddies input min attribute is always 0", () => {
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={1}
+          initialBuddies={[{ memberId: "member-2", type: "hard" }]}
+        />
+      );
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+
+      expect(input.min).toBe("0");
+    });
+
+    it("shows error when minBuddies is less than hard buddy count", () => {
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={0}
+          initialBuddies={[{ memberId: "member-2", type: "hard" }]}
+        />
+      );
+
+      expect(
+        screen.getByText(
+          "The number of minimum buddies should be greater than or equal to the number of required buddies."
+        )
+      ).toBeDefined();
+    });
+
+    it("does not show error when minBuddies equals hard buddy count", () => {
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={1}
+          initialBuddies={[{ memberId: "member-2", type: "hard" }]}
+        />
+      );
+
+      expect(
+        screen.queryByText(
+          "The number of minimum buddies should be greater than or equal to the number of required buddies."
+        )
+      ).toBeNull();
+    });
+
+    it("does not show error when there are no hard buddies", () => {
+      render(<BuddiesStep {...defaultProps} initialMinBuddies={0} />);
+
+      expect(
+        screen.queryByText(
+          "The number of minimum buddies should be greater than or equal to the number of required buddies."
+        )
+      ).toBeNull();
+    });
+
+    it("error appears after toggling a buddy to Required with minBuddies=0", () => {
+      render(<BuddiesStep {...defaultProps} initialMinBuddies={0} />);
+
+      const bobButton = screen.getByText("Bob Jones").closest("button")!;
+      fireEvent.click(bobButton); // None → Required
+
+      expect(
+        screen.getByText(
+          "The number of minimum buddies should be greater than or equal to the number of required buddies."
+        )
+      ).toBeDefined();
+    });
+
+    it("error disappears after increasing minBuddies to meet hard buddy count", () => {
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={0}
+          initialBuddies={[{ memberId: "member-2", type: "hard" }]}
+        />
+      );
+
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "1" } });
+
+      expect(
+        screen.queryByText(
+          "The number of minimum buddies should be greater than or equal to the number of required buddies."
+        )
+      ).toBeNull();
+    });
+
+    it("emits isValid=false when minBuddies is below hard buddy count", () => {
+      const onChange = vi.fn();
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={1}
+          initialBuddies={[{ memberId: "member-2", type: "hard" }]}
+          onChange={onChange}
+        />
+      );
+
+      // Toggle Bob from Required → Preferred → None, then Charlie to Required × 2
+      // Easier: just add a second hard buddy to make hardCount > minBuddies
+      const charlieButton = screen
+        .getByText("Charlie Brown")
+        .closest("button")!;
+      fireEvent.click(charlieButton); // None → Required (hardCount=2, minBuddies=1)
+
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isValid: false })
+      );
+    });
+
+    it("emits isValid=true when minBuddies meets hard buddy count", () => {
+      const onChange = vi.fn();
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={0}
+          onChange={onChange}
+        />
+      );
+
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "1" } });
+
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isValid: true })
+      );
+    });
   });
 
   // ── Buddy preferences section ──────────────────────────────────
 
   describe("buddy preferences section", () => {
     it("renders eligible members excluding pending_approval and self", () => {
-      render(<BuddiesBudgetStep {...defaultProps} />);
+      render(<BuddiesStep {...defaultProps} />);
       expect(screen.getByText("Buddy Preferences")).toBeDefined();
 
       // Should show Bob and Charlie (not Alice/self, not Dana/pending)
@@ -319,14 +377,14 @@ describe("BuddiesBudgetStep", () => {
           avatarColor: "blue" as const,
           role: "owner",
           status: "joined",
-          budget: null,
           joinedAt: new Date().toISOString(),
+          statusChangedAt: null,
           createdAt: new Date().toISOString(),
         },
       ];
-      render(<BuddiesBudgetStep {...defaultProps} />);
+      render(<BuddiesStep {...defaultProps} />);
       expect(
-        screen.getByText("No other members in this group yet.")
+        screen.getByText("There are no other members in this group yet.")
       ).toBeDefined();
     });
 
@@ -342,8 +400,8 @@ describe("BuddiesBudgetStep", () => {
           avatarColor: "blue" as const,
           role: "owner",
           status: "joined",
-          budget: null,
           joinedAt: new Date().toISOString(),
+          statusChangedAt: null,
           createdAt: new Date().toISOString(),
         },
         {
@@ -355,15 +413,15 @@ describe("BuddiesBudgetStep", () => {
           avatarColor: "red" as const,
           role: "member",
           status: "pending_approval",
-          budget: null,
           joinedAt: null,
+          statusChangedAt: null,
           createdAt: new Date().toISOString(),
         },
       ];
-      render(<BuddiesBudgetStep {...defaultProps} />);
+      render(<BuddiesStep {...defaultProps} />);
       expect(screen.queryByText("Eve Pending")).toBeNull();
       expect(
-        screen.getByText("No other members in this group yet.")
+        screen.getByText("There are no other members in this group yet.")
       ).toBeDefined();
     });
   });
@@ -373,7 +431,7 @@ describe("BuddiesBudgetStep", () => {
   describe("buddy toggle cycle", () => {
     it("toggles None → Required (hard)", () => {
       const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
+      render(<BuddiesStep {...defaultProps} onChange={onChange} />);
 
       // All buddies start as "None"
       const bobButton = screen.getByText("Bob Jones").closest("button")!;
@@ -392,7 +450,7 @@ describe("BuddiesBudgetStep", () => {
     it("toggles Required (hard) → Preferred (soft)", () => {
       const onChange = vi.fn();
       render(
-        <BuddiesBudgetStep
+        <BuddiesStep
           {...defaultProps}
           initialBuddies={[{ memberId: "member-2", type: "hard" }]}
           onChange={onChange}
@@ -415,7 +473,7 @@ describe("BuddiesBudgetStep", () => {
     it("toggles Preferred (soft) → None (removed)", () => {
       const onChange = vi.fn();
       render(
-        <BuddiesBudgetStep
+        <BuddiesStep
           {...defaultProps}
           initialBuddies={[{ memberId: "member-2", type: "soft" }]}
           onChange={onChange}
@@ -437,7 +495,7 @@ describe("BuddiesBudgetStep", () => {
 
     it("full cycle: None → Required → Preferred → None", () => {
       const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
+      render(<BuddiesStep {...defaultProps} onChange={onChange} />);
 
       const bobButton = screen.getByText("Bob Jones").closest("button")!;
 
@@ -461,27 +519,9 @@ describe("BuddiesBudgetStep", () => {
   // ── onChange called on every interaction ────────────────────────
 
   describe("onChange called on every interaction", () => {
-    it("onChange called on budget change", () => {
-      const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
-      const inputs = document.querySelectorAll('input[inputmode="numeric"]');
-      const budgetInput = inputs[0] as HTMLInputElement;
-
-      fireEvent.change(budgetInput, { target: { value: "100" } });
-
-      expect(onChange).toHaveBeenCalledTimes(1);
-      expect(onChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          budget: 100,
-          minBuddies: 0,
-          buddies: [],
-        })
-      );
-    });
-
     it("onChange called on minBuddies change", () => {
       const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
+      render(<BuddiesStep {...defaultProps} onChange={onChange} />);
       const input = document.querySelector(
         'input[type="number"]'
       ) as HTMLInputElement;
@@ -491,7 +531,6 @@ describe("BuddiesBudgetStep", () => {
       expect(onChange).toHaveBeenCalledTimes(1);
       expect(onChange).toHaveBeenCalledWith(
         expect.objectContaining({
-          budget: null,
           minBuddies: 1,
           buddies: [],
         })
@@ -500,7 +539,7 @@ describe("BuddiesBudgetStep", () => {
 
     it("onChange called on buddy toggle", () => {
       const onChange = vi.fn();
-      render(<BuddiesBudgetStep {...defaultProps} onChange={onChange} />);
+      render(<BuddiesStep {...defaultProps} onChange={onChange} />);
 
       const charlieButton = screen
         .getByText("Charlie Brown")
@@ -510,10 +549,51 @@ describe("BuddiesBudgetStep", () => {
       expect(onChange).toHaveBeenCalledTimes(1);
       expect(onChange).toHaveBeenCalledWith(
         expect.objectContaining({
-          budget: null,
           minBuddies: 0,
           buddies: [{ memberId: "member-3", type: "hard" }],
+          isValid: false,
         })
+      );
+    });
+
+    it("minBuddies does not auto-bump when adding a hard buddy exceeds current value", () => {
+      const onChange = vi.fn();
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={0}
+          onChange={onChange}
+        />
+      );
+
+      const bobButton = screen.getByText("Bob Jones").closest("button")!;
+      fireEvent.click(bobButton); // None → Required
+
+      // minBuddies stays at 0, not auto-bumped
+      expect(onChange).toHaveBeenCalledWith(
+        expect.objectContaining({ minBuddies: 0, isValid: false })
+      );
+    });
+
+    it("minBuddies stays unchanged when toggling buddy type", () => {
+      const onChange = vi.fn();
+      render(
+        <BuddiesStep
+          {...defaultProps}
+          initialMinBuddies={2}
+          initialBuddies={[
+            { memberId: "member-2", type: "hard" },
+            { memberId: "member-3", type: "hard" },
+          ]}
+          onChange={onChange}
+        />
+      );
+
+      const bobButton = screen.getByText("Bob Jones").closest("button")!;
+      fireEvent.click(bobButton); // Required → Preferred (hard count drops to 1)
+
+      expect(onChange).toHaveBeenCalledWith(
+        expect.objectContaining({ minBuddies: 2, isValid: true })
       );
     });
   });
@@ -523,7 +603,7 @@ describe("BuddiesBudgetStep", () => {
   describe("initial buddies pre-populated", () => {
     it("renders initial buddies with correct states", () => {
       render(
-        <BuddiesBudgetStep
+        <BuddiesStep
           {...defaultProps}
           initialBuddies={[
             { memberId: "member-2", type: "hard" },

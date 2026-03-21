@@ -15,7 +15,7 @@ This document defines the API routes for the LA 2028 Olympics Group Scheduler (P
 - `:groupId`, `:memberId`, `:sessionId` are URL parameters
 - Authenticated user is inferred from the session token (no need to pass userId)
 - Routes validate group phase and member status before allowing actions
-- Cascading side effects (recomputing viable configs, rechecking conflicts, revoking confirmations) are handled server-side and documented per route
+- Cascading side effects (revoking confirmations, resetting statuses) are handled server-side and documented per route
 - **Route nesting principle:** Routes are scoped to the resource being acted on, not the full hierarchy. Since `memberId` implies the group, member-level routes use `/api/members/:memberId/...` rather than `/api/groups/:groupId/members/:memberId/...`. Group-level routes (schedule, windows, generate) remain under `/api/groups/:groupId/...`.
 - **Race condition handling:** Endpoints that check collective member states (e.g., "all members confirmed") or perform bulk transitions must use database-level transactions with appropriate locking to prevent race conditions from concurrent requests.
 
@@ -235,7 +235,7 @@ Returns full group info including all members and their statuses. Used by the gr
 {
   "id": "uuid",
   "name": "Olympics Squad",
-  "phase": "conflict_resolution",
+  "phase": "schedule_review",
   "invite_code": "OLYMP-X7K2",
   "date_mode": "consecutive",
   "consecutive_days": 5,
@@ -248,8 +248,7 @@ Returns full group info including all members and their statuses. Used by the gr
       "first_name": "Alice",
       "last_name": "Smith",
       "username": "alice_s",
-      "status": "conflict_resolution_confirmed",
-      "budget": 500
+      "status": "schedule_review_confirmed"
     }
   ]
 }
@@ -302,7 +301,7 @@ Delete the group entirely. **Owner only.** Frontend shows confirmation modal.
 
 **Side effects:**
 
-- Deletes all related data: members, buddy constraints, session preferences, all algorithm outputs (combos, viable configs, conflicts, window rankings)
+- Deletes all related data: members, buddy constraints, session preferences, all algorithm outputs (combos, window rankings)
 
 ### `DELETE /api/members/:memberId`
 
@@ -318,7 +317,7 @@ Leave the group (remove yourself). The `:memberId` must belong to the current us
 - Deletes `member` row and all associated data (buddy constraints, session preferences)
 - Auto-removes leaving member from other members' buddy constraints
 - If group is past `'preferences'` phase (algorithm has run):
-  - Members who had leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies_budget'` (other preferences preserved)
+  - Members who had leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies'` (other preferences preserved)
   - Members with no buddy connection: status → `'preferences_set'`
   - Group phase → `'preferences'`
   - All algorithm outputs deleted
@@ -359,7 +358,6 @@ Returns saved preferences for a member. Used to populate the preference wizard w
 ```json
 {
   "preference_step": "sport_rankings",
-  "budget": 500,
   "buddy_constraints": [
     { "buddy_member_id": "uuid", "type": "hard" },
     { "buddy_member_id": "uuid", "type": "soft" }
@@ -368,8 +366,7 @@ Returns saved preferences for a member. Used to populate the preference wizard w
   "session_preferences": [
     {
       "session_id": "GYM-WFINAL-0803",
-      "interest": "high",
-      "willingness_max": 400
+      "interest": "high"
     }
   ]
 }
@@ -377,7 +374,7 @@ Returns saved preferences for a member. Used to populate the preference wizard w
 
 **Notes:**
 
-- `preference_step` indicates which wizard step the user last completed (`'buddies_budget'`, `'sport_rankings'`, or `'sessions'`). Used by the frontend to show "continue where you left off."
+- `preference_step` indicates which wizard step the user last completed (`'buddies'`, `'sport_rankings'`, or `'sessions'`). Used by the frontend to show "continue where you left off."
 - If user hasn't started, returns empty/default values with `preference_step: null`.
 - This endpoint is available at **any group phase** for read-only viewing. Editing is restricted to the preference wizard (PUT route below), which requires the `preferences` phase.
 
@@ -389,8 +386,7 @@ Save preferences for a specific wizard step. Each call saves the data for one st
 
 ```json
 {
-  "preference_step": "buddies_budget",
-  "budget": 500,
+  "preference_step": "buddies",
   "buddy_constraints": [
     { "buddy_member_id": "uuid", "type": "hard" },
     { "buddy_member_id": "uuid", "type": "soft" }
@@ -399,8 +395,7 @@ Save preferences for a specific wizard step. Each call saves the data for one st
   "session_preferences": [
     {
       "session_id": "GYM-WFINAL-0803",
-      "interest": "high",
-      "willingness_max": 400
+      "interest": "high"
     }
   ]
 }
@@ -408,7 +403,7 @@ Save preferences for a specific wizard step. Each call saves the data for one st
 
 **Notes:**
 
-- Only include fields relevant to the current step. For example, saving the `buddies_budget` step only requires `preference_step`, `budget`, and `buddy_constraints`.
+- Only include fields relevant to the current step. For example, saving the `buddies` step only requires `preference_step` and `buddy_constraints`.
 - `preference_step` is required on every call — it indicates which step is being saved.
 - Users can navigate to any step and save it without re-saving earlier steps. This supports the re-enter preferences flow where a user only wants to change one thing.
 
@@ -416,11 +411,11 @@ Save preferences for a specific wizard step. Each call saves the data for one st
 
 - Saves the data for the specified step and updates `member.preference_step`
 - If `preference_step = 'sessions'`: member status transitions from `'joined'` to `'preferences_set'`
-- If `preference_step` is `'buddies_budget'` or `'sport_rankings'`: member status stays `'joined'`
+- If `preference_step` is `'buddies'` or `'sport_rankings'`: member status stays `'joined'`
 
 **Side effects:**
 
-- `buddies_budget` step: updates `member.budget`, upserts `buddy_constraint` rows (deletes old ones, inserts new ones), updates `member.min_buddies`
+- `buddies` step: upserts `buddy_constraint` rows (deletes old ones, inserts new ones), updates `member.min_buddies`
 - `sport_rankings` step: updates `member.sport_rankings`
 - `sessions` step: upserts `session_preference` rows (deletes removed ones, inserts/updates new ones)
 - On status transition to `'preferences_set'`: if this member was re-entering preferences after an algorithm run, the group phase and other members' statuses were already reset when the member first re-entered (see state transitions doc)
@@ -429,7 +424,7 @@ Save preferences for a specific wizard step. Each call saves the data for one st
 
 - `preference_step` is required
 - Group phase must be `preferences` (or member must be in `joined` status during re-entry)
-- When saving `buddies` step: `budget` is required and must be > 0
+- When saving `buddies` step: at least `min_buddies` must be provided
 - When saving `sessions` step: buddy constraints, sport rankings, and at least one session preference must exist (either from this request or previously saved)
 - `buddy_member_id` must be a valid member in the same group
 - Sport rankings limited to 10 sports max
@@ -455,10 +450,9 @@ Trigger schedule generation (algorithm Steps 4-7). **Owner only.** Frontend show
 
 **Side effects:**
 
-- Deletes any existing algorithm outputs for the group (combos, viable configs, conflicts, window rankings)
+- Deletes any existing algorithm outputs for the group (combos, window rankings)
 - Resets all buddy override flags and excluded flags on session_preference to `false` (previously excluded sessions are reconsidered)
-- Runs Steps 4-7: filter sessions, apply constraints, generate combos, compute viable configs
-- Detects conflicts (Step 9 pre-computation — conflict rows are created in the database but not displayed to users until the `conflict_resolution` phase)
+- Runs the algorithm: filter sessions, apply constraints, generate combos, compute window rankings
 - Sets all member statuses to `'schedule_review_pending'`
 - Sets group phase to `'schedule_review'`
 
@@ -527,7 +521,7 @@ Returns the member's combos and sessions for the calendar view. This is the ligh
 
 ### `GET /api/groups/:groupId/sessions/:sessionId`
 
-Returns detailed info for a specific session within the context of a group. Loaded on demand when a user clicks into a session on the calendar. Conflicts are shown to both the affected member and the causing member.
+Returns detailed info for a specific session within the context of a group. Loaded on demand when a user clicks into a session on the calendar.
 
 **Response:**
 
@@ -548,84 +542,7 @@ Returns detailed info for a specific session within the context of a group. Load
       "last_name": "Smith",
       "username": "alice_s",
       "interest": "high",
-      "willingness_max": 400,
       "in_combos": ["primary", "backup1"]
-    }
-  ],
-  "viable_configs": [
-    {
-      "price_min": 0,
-      "price_max": 150,
-      "members": [
-        {
-          "member_id": "uuid",
-          "first_name": "Alice",
-          "last_name": "Smith",
-          "username": "alice_s"
-        },
-        {
-          "member_id": "uuid",
-          "first_name": "Bob",
-          "last_name": "Jones",
-          "username": "bob_j"
-        },
-        {
-          "member_id": "uuid",
-          "first_name": "Carol",
-          "last_name": "Davis",
-          "username": "carol_d"
-        },
-        {
-          "member_id": "uuid",
-          "first_name": "Eve",
-          "last_name": "Wilson",
-          "username": "eve_w"
-        }
-      ]
-    },
-    {
-      "price_min": 151,
-      "price_max": 250,
-      "members": [
-        {
-          "member_id": "uuid",
-          "first_name": "Alice",
-          "last_name": "Smith",
-          "username": "alice_s"
-        },
-        {
-          "member_id": "uuid",
-          "first_name": "Bob",
-          "last_name": "Jones",
-          "username": "bob_j"
-        },
-        {
-          "member_id": "uuid",
-          "first_name": "Eve",
-          "last_name": "Wilson",
-          "username": "eve_w"
-        }
-      ]
-    }
-  ],
-  "conflicts": [
-    {
-      "id": "conflict-uuid",
-      "type": "hard_buddy_failure",
-      "affected_member": {
-        "id": "uuid",
-        "first_name": "Eve",
-        "last_name": "Wilson",
-        "username": "eve_w"
-      },
-      "causing_member": {
-        "id": "uuid",
-        "first_name": "Alice",
-        "last_name": "Smith",
-        "username": "alice_s"
-      },
-      "price_min": 151,
-      "price_max": 200
     }
   ]
 }
@@ -633,9 +550,8 @@ Returns detailed info for a specific session within the context of a group. Load
 
 **Notes:**
 
-- This endpoint serves both individual and group calendar views. The frontend controls what's actionable: conflict resolution controls are shown in the individual view during `'conflict_resolution'` phase, while the group view shows the same data read-only.
+- This endpoint serves both individual and group calendar views.
 - `members_attending` shows all members interested in this session with their preferences and which combos include this session for them.
-- **Conflict visibility:** Conflicts are returned for ALL involved members — both the affected member and the causing member. The frontend shows the conflict to both parties with all possible resolution options, enabling them to coordinate. For `min_buddies_failure` conflicts (no single causing member), the conflict is shown to the affected member and all members whose willingness affects the constraint.
 
 ---
 
@@ -655,83 +571,27 @@ Update a member's status. This single endpoint handles all member status transit
 
 **Valid Transitions:**
 
-| From                            | To                              | When                                      | Side Effects                                                                                                                     |
-| ------------------------------- | ------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `schedule_review_pending`       | `schedule_review_confirmed`     | Satisfaction check (Step 8)               | If ALL members reach `schedule_review_confirmed` → all bulk move to `conflict_resolution_pending`, group → `conflict_resolution` |
-| `schedule_review_confirmed`     | `schedule_review_pending`       | Revoke satisfaction                       | Only while group is `schedule_review`                                                                                            |
-| `conflict_resolution_pending`   | `conflict_resolution_confirmed` | Confirm schedule after conflicts resolved | If ALL members reach `conflict_resolution_confirmed` → group → `completed`                                                       |
-| `conflict_resolution_confirmed` | `conflict_resolution_pending`   | Revoke confirmation                       | Only while group is `conflict_resolution`                                                                                        |
-| Any (post-generation)           | `joined`                        | Re-enter preferences                      | Group → `preferences`, all OTHER members → `preferences_set`, algorithm outputs preserved until re-generation                    |
+| From                        | To                          | When                 | Side Effects                                                                              |
+| --------------------------- | --------------------------- | -------------------- | ----------------------------------------------------------------------------------------- |
+| `schedule_review_pending`   | `schedule_review_confirmed` | Confirm schedule     | If ALL members reach `schedule_review_confirmed` → group → `completed`                    |
+| `schedule_review_confirmed` | `schedule_review_pending`   | Revoke confirmation  | Only while group is `schedule_review`                                                     |
+| Any (post-generation)       | `joined`                    | Re-enter preferences | Group → `preferences`, all OTHER members → `preferences_set`, algorithm outputs preserved |
 
 **Validation:**
 
 - Transition must be in the valid transitions table above
-- For `→ conflict_resolution_confirmed`: member must have zero unresolved conflicts
 - For `→ joined` (re-enter preferences): frontend shows warning "This will reset everyone's schedules and require regeneration"
 
-**Race condition handling:** The "all members confirmed" checks (triggering bulk moves to `conflict_resolution_pending` or `completed`) must be performed within a database transaction with row-level locking on the group's member rows to prevent concurrent confirmations from both triggering the bulk transition.
+**Race condition handling:** The "all members confirmed" check (triggering group → `completed`) must be performed within a database transaction with row-level locking on the group's member rows to prevent concurrent confirmations from both triggering the transition.
 
 **Response:**
 
 ```json
 {
   "member_status": "schedule_review_confirmed",
-  "group_phase": "conflict_resolution"
+  "group_phase": "completed"
 }
 ```
-
----
-
-## Conflict Resolution
-
-Actions taken during the conflict resolution phase (Step 9). All of these trigger cascade effects documented in the database schema's Application Logic Notes.
-
-### `PUT /api/members/:memberId/session-preferences/:sessionId`
-
-Update a session preference during conflict resolution. Used for adjusting willingness, overriding buddy constraints, or excluding a session from the current schedule.
-
-**Request:**
-
-```json
-{
-  "willingness_max": 150,
-  "override_hard_buddy": false,
-  "override_min_buddies": true,
-  "excluded": false
-}
-```
-
-**Notes:**
-
-- Only include fields being changed. Omitted fields are left unchanged.
-- This is a PATCH-style update despite using PUT — only provided fields are modified.
-
-**Side effects depend on which fields are changed:**
-
-**For `willingness_max`, `override_hard_buddy`, `override_min_buddies` changes:**
-
-1. Updates `session_preference` row
-2. Recomputes viable configs for this session (delete + regenerate)
-3. Rechecks conflicts for this session across ALL members (delete + regenerate)
-4. If a new conflict is created for a member with status `'conflict_resolution_confirmed'`, their status is revoked back to `'conflict_resolution_pending'`
-
-**For `excluded: true` (remove session from schedule):**
-
-1. Sets `excluded = true` on the `session_preference` row (preference data preserved)
-2. Removes session from the member's combos (`combo_session` rows deleted)
-3. Recalculates scores for the member's affected combos
-4. Recalculates scores for other members whose soft buddy bonuses are affected by this member's exclusion
-5. De-duplicates combos if a backup becomes identical to primary or another backup
-6. Recomputes viable configs for this session (member removed from all price tiers)
-7. Rechecks conflicts for this session across ALL members
-8. If a new conflict is created for a member with status `'conflict_resolution_confirmed'`, their status is revoked
-
-**Note on `excluded`:** The `excluded` flag is reset to `false` when the algorithm re-runs, allowing the session to be reconsidered in the new schedule. Permanent removal of a session preference (deleting the row) only happens through the preference wizard (Step 3). Setting `excluded: false` on a previously excluded session is not supported during conflict resolution — excluded sessions are only reconsidered during re-generation.
-
-**Race condition handling:** Cascade effects (recomputing configs, rechecking conflicts, revoking confirmations) must be performed atomically within a database transaction to prevent concurrent conflict resolution actions from producing inconsistent state.
-
-**Response:**
-Returns updated session details (same shape as `GET /api/groups/:groupId/sessions/:sessionId`) so the frontend can refresh the session modal without a separate call.
 
 ---
 
@@ -801,7 +661,7 @@ Returns all members' combos and sessions for the group calendar view.
 - Sessions are aggregated across all members — each session appears once with lists of who's attending.
 - A member can appear in both `members_primary` and `members_backup` if the session is in their primary combo and also in a backup combo. The frontend can check for overlap to display this (e.g., with an asterisk).
 - `selected_window` is null if window selection hasn't happened yet.
-- No conflict info — conflicts are only shown in the individual calendar view.
+- Session detail is available via the individual session endpoint for more info.
 
 ### `POST /api/groups/:groupId/windows`
 
@@ -876,63 +736,59 @@ Switch the selected window. **Owner only.**
 
 ## Route Summary
 
-| Method                       | Path                                                        | Description                                                       | Group Phase         | Owner Only |
-| ---------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------- | ------------------- | ---------- |
-| **Seed Data**                |                                                             |                                                                   |                     |            |
-| GET                          | `/api/sessions`                                             | All Olympic sessions                                              | Any                 | No         |
-| GET                          | `/api/travel-times`                                         | Zone-to-zone travel matrix                                        | Any                 | No         |
-| **Groups**                   |                                                             |                                                                   |                     |            |
-| GET                          | `/api/groups`                                               | List user's groups                                                | Any                 | No         |
-| POST                         | `/api/groups`                                               | Create a group (with optional date config)                        | —                   | —          |
-| POST                         | `/api/groups/join`                                          | Request to join via invite code                                   | Any                 | No         |
-| GET                          | `/api/groups/:groupId`                                      | Group details + members                                           | Any                 | No         |
-| PUT                          | `/api/groups/:groupId`                                      | Update group settings (name: any member; date config: owner only) | Any                 | Partial    |
-| DELETE                       | `/api/groups/:groupId`                                      | Delete group                                                      | Any                 | **Yes**    |
-| **Members**                  |                                                             |                                                                   |                     |            |
-| PUT                          | `/api/members/:memberId/approve`                            | Approve/deny join request                                         | Any                 | **Yes**    |
-| PUT                          | `/api/members/:memberId/transfer-ownership`                 | Transfer ownership                                                | Any                 | **Yes**    |
-| DELETE                       | `/api/members/:memberId`                                    | Leave group                                                       | Any                 | No         |
-| **Preferences**              |                                                             |                                                                   |                     |            |
-| GET                          | `/api/members/:memberId/preferences`                        | Get saved preferences (read-only)                                 | Any                 | No         |
-| PUT                          | `/api/members/:memberId/preferences`                        | Save/submit preferences                                           | preferences         | No         |
-| **Algorithm**                |                                                             |                                                                   |                     |            |
-| POST                         | `/api/groups/:groupId/generate`                             | Run schedule generation                                           | preferences         | **Yes**    |
-| **Individual Calendar**      |                                                             |                                                                   |                     |            |
-| GET                          | `/api/members/:memberId/schedule`                           | Member's combos + sessions                                        | schedule_review+    | No         |
-| GET                          | `/api/groups/:groupId/sessions/:sessionId`                  | Session detail (members, configs, conflicts)                      | schedule_review+    | No         |
-| **Member Status**            |                                                             |                                                                   |                     |            |
-| PUT                          | `/api/members/:memberId/status`                             | Update member status (satisfaction, confirm, re-enter prefs)      | schedule_review+    | No         |
-| **Conflict Resolution**      |                                                             |                                                                   |                     |            |
-| PUT                          | `PUT /api/members/:memberId/session-preferences/:sessionId` | Adjust willingness, override buddy constraint, or exclude session | conflict_resolution | No         |
-| **Group Calendar & Windows** |                                                             |                                                                   |                     |            |
-| GET                          | `/api/groups/:groupId/schedule`                             | Group calendar (all members)                                      | schedule_review+    | No         |
-| POST                         | `/api/groups/:groupId/windows`                              | Compute window rankings                                           | completed           | **Yes**    |
-| GET                          | `/api/groups/:groupId/windows`                              | Get existing rankings                                             | schedule_review+    | No         |
-| PUT                          | `/api/groups/:groupId/windows/:windowId/select`             | Switch selected window                                            | completed           | **Yes**    |
+| Method                       | Path                                            | Description                                                       | Group Phase      | Owner Only |
+| ---------------------------- | ----------------------------------------------- | ----------------------------------------------------------------- | ---------------- | ---------- |
+| **Seed Data**                |                                                 |                                                                   |                  |            |
+| GET                          | `/api/sessions`                                 | All Olympic sessions                                              | Any              | No         |
+| GET                          | `/api/travel-times`                             | Zone-to-zone travel matrix                                        | Any              | No         |
+| **Groups**                   |                                                 |                                                                   |                  |            |
+| GET                          | `/api/groups`                                   | List user's groups                                                | Any              | No         |
+| POST                         | `/api/groups`                                   | Create a group (with optional date config)                        | —                | —          |
+| POST                         | `/api/groups/join`                              | Request to join via invite code                                   | Any              | No         |
+| GET                          | `/api/groups/:groupId`                          | Group details + members                                           | Any              | No         |
+| PUT                          | `/api/groups/:groupId`                          | Update group settings (name: any member; date config: owner only) | Any              | Partial    |
+| DELETE                       | `/api/groups/:groupId`                          | Delete group                                                      | Any              | **Yes**    |
+| **Members**                  |                                                 |                                                                   |                  |            |
+| PUT                          | `/api/members/:memberId/approve`                | Approve/deny join request                                         | Any              | **Yes**    |
+| PUT                          | `/api/members/:memberId/transfer-ownership`     | Transfer ownership                                                | Any              | **Yes**    |
+| DELETE                       | `/api/members/:memberId`                        | Leave group                                                       | Any              | No         |
+| **Preferences**              |                                                 |                                                                   |                  |            |
+| GET                          | `/api/members/:memberId/preferences`            | Get saved preferences (read-only)                                 | Any              | No         |
+| PUT                          | `/api/members/:memberId/preferences`            | Save/submit preferences                                           | preferences      | No         |
+| **Algorithm**                |                                                 |                                                                   |                  |            |
+| POST                         | `/api/groups/:groupId/generate`                 | Run schedule generation                                           | preferences      | **Yes**    |
+| **Individual Calendar**      |                                                 |                                                                   |                  |            |
+| GET                          | `/api/members/:memberId/schedule`               | Member's combos + sessions                                        | schedule_review+ | No         |
+| GET                          | `/api/groups/:groupId/sessions/:sessionId`      | Session detail (members attending)                                | schedule_review+ | No         |
+| **Member Status**            |                                                 |                                                                   |                  |            |
+| PUT                          | `/api/members/:memberId/status`                 | Update member status (confirm, re-enter prefs)                    | schedule_review+ | No         |
+| **Group Calendar & Windows** |                                                 |                                                                   |                  |            |
+| GET                          | `/api/groups/:groupId/schedule`                 | Group calendar (all members)                                      | schedule_review+ | No         |
+| POST                         | `/api/groups/:groupId/windows`                  | Compute window rankings                                           | completed        | **Yes**    |
+| GET                          | `/api/groups/:groupId/windows`                  | Get existing rankings                                             | schedule_review+ | No         |
+| PUT                          | `/api/groups/:groupId/windows/:windowId/select` | Switch selected window                                            | completed        | **Yes**    |
 
 ---
 
 ## Design Decisions
 
-| Decision                            | Choice                                                                               | Rationale                                                                                                                                                                     |
-| ----------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No separate setup phase             | Group starts in `preferences`; members join and enter preferences immediately        | Owner gates generation (the real checkpoint); eliminates unnecessary ceremony step                                                                                            |
-| Group owner role                    | Owner gates destructive/group-wide actions                                           | Prevents accidental disruption; owner approves joins, triggers generation, manages date config, deletes group                                                                 |
-| Date config at creation or deferred | Owner sets dates at creation or defers; required before generation; owner-only edits | Flexible — owner can discuss with group first; generation validation ensures dates are set; warning encourages agreement                                                      |
-| Join flow                           | Request/approve pattern                                                              | Prevents unexpected members joining mid-process; owner confirms group is complete before generation                                                                           |
-| Budget input                        | Collected during buddies wizard step                                                 | Budget is per-group, needs to be set before session selection, lightweight enough to pair with buddy preferences                                                              |
-| Preference viewing                  | GET available at any phase; PUT restricted to `preferences`                          | Users can reference their preferences during later phases without risk of accidental edits                                                                                    |
-| Preference submission               | Step-by-step save with independent step navigation                                   | Each wizard step saves independently; users can navigate to any step without re-saving earlier steps; saving the sessions step triggers status transition to preferences_set  |
-| Algorithm trigger                   | Explicit POST, not auto-trigger                                                      | Allows members to discuss preferences before generating; prevents premature runs                                                                                              |
-| Calendar data loading               | Two-tier (calendar GET + session detail GET)                                         | Fast calendar rendering; load details on demand                                                                                                                               |
-| Individual vs group schedule        | Separate endpoints                                                                   | Different response shapes; individual includes conflicts, group does not                                                                                                      |
-| Conflict visibility                 | Shown to both affected and causing members                                           | Both parties need to see the conflict and all resolution options to coordinate effectively                                                                                    |
-| Conflict resolution actions         | Single PUT endpoint for all modifications (willingness, overrides, exclusion)        | All actions modify the same `session_preference` row; different cascade logic based on which fields change; `excluded` flag enables soft-exclude with preference preservation |
-| Window computation                  | Explicit POST trigger (owner only), separate from date config                        | Date config changes don't auto-recompute; rankings computed explicitly at `completed` phase                                                                                   |
-| Window selection                    | Owner only                                                                           | Consistent with owner gating group-wide decisions; group discusses, owner executes                                                                                            |
-| Travel times                        | Separate cacheable endpoint                                                          | Frontend caches the full 18×18 matrix; used for display in session detail modal                                                                                               |
-| Auth                                | Supabase Auth (no custom routes)                                                     | Handles signup/login/sessions; app creates user record via post-signup hook                                                                                                   |
-| Race conditions                     | Database transactions with row-level locking for bulk transitions                    | Prevents concurrent confirmations from both triggering the same bulk move; ensures cascade effects are atomic                                                                 |
+| Decision                            | Choice                                                                               | Rationale                                                                                                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No separate setup phase             | Group starts in `preferences`; members join and enter preferences immediately        | Owner gates generation (the real checkpoint); eliminates unnecessary ceremony step                                                                                           |
+| Group owner role                    | Owner gates destructive/group-wide actions                                           | Prevents accidental disruption; owner approves joins, triggers generation, manages date config, deletes group                                                                |
+| Date config at creation or deferred | Owner sets dates at creation or defers; required before generation; owner-only edits | Flexible — owner can discuss with group first; generation validation ensures dates are set; warning encourages agreement                                                     |
+| Join flow                           | Request/approve pattern                                                              | Prevents unexpected members joining mid-process; owner confirms group is complete before generation                                                                          |
+| Budget input                        | Global, on user table. Set in user settings, not per-group.                          | Mirrors the 12-ticket limit: a global setting. Doesn't affect algorithm. Editable anytime.                                                                                   |
+| Preference viewing                  | GET available at any phase; PUT restricted to `preferences`                          | Users can reference their preferences during later phases without risk of accidental edits                                                                                   |
+| Preference submission               | Step-by-step save with independent step navigation                                   | Each wizard step saves independently; users can navigate to any step without re-saving earlier steps; saving the sessions step triggers status transition to preferences_set |
+| Algorithm trigger                   | Explicit POST, not auto-trigger                                                      | Allows members to discuss preferences before generating; prevents premature runs                                                                                             |
+| Calendar data loading               | Two-tier (calendar GET + session detail GET)                                         | Fast calendar rendering; load details on demand                                                                                                                              |
+| Individual vs group schedule        | Separate endpoints                                                                   | Different response shapes optimized for each view                                                                                                                            |
+| Window computation                  | Explicit POST trigger (owner only), separate from date config                        | Date config changes don't auto-recompute; rankings computed explicitly at `completed` phase                                                                                  |
+| Window selection                    | Owner only                                                                           | Consistent with owner gating group-wide decisions; group discusses, owner executes                                                                                           |
+| Travel times                        | Separate cacheable endpoint                                                          | Frontend caches the full 18×18 matrix; used for display in session detail modal                                                                                              |
+| Auth                                | Supabase Auth (no custom routes)                                                     | Handles signup/login/sessions; app creates user record via post-signup hook                                                                                                  |
+| Race conditions                     | Database transactions with row-level locking for bulk transitions                    | Prevents concurrent confirmations from both triggering the same bulk move; ensures cascade effects are atomic                                                                |
 
 ---
 
@@ -943,17 +799,14 @@ API routes validate the group phase before allowing actions. This prevents stale
 **Group phases:**
 
 ```
-preferences → schedule_review → conflict_resolution → completed
+preferences → schedule_review → completed
 ```
 
 - **`preferences`** — Group created, members joining and inputting preferences (Steps 1-3). This is the initial phase. Members can join at any time; the owner triggers generation when all members are ready.
-- **`schedule_review`** — Satisfaction check (Step 8). Each member reviews generated schedules and confirms satisfaction.
-- **`conflict_resolution`** — Conflict resolution (Step 9). Members resolve conflicts and individually confirm final schedules.
+- **`schedule_review`** — Members review generated schedules and confirm satisfaction. All members confirming moves the group to `completed`.
 - **`completed`** — All members confirmed. Window rankings computed and window selected here.
 
 The group phase is the primary gate. Member status provides additional per-member validation within a phase.
-
-**Example:** During the `'conflict_resolution'` phase, a member with status `'conflict_resolution_confirmed'` should not be able to adjust willingness (they already confirmed). But if a cascade revokes their confirmation (status back to `'conflict_resolution_pending'`), they can now make changes again.
 
 When a member re-enters preferences (goes back to the preference wizard after schedules are generated):
 
@@ -964,4 +817,4 @@ When a member re-enters preferences (goes back to the preference wizard after sc
 
 This ensures no one is acting on stale data while one member is editing preferences.
 
-For the full state transition specification, see `la2028-state-transitions.md`.
+For the full state transition specification, see `state-transitions.md`.

@@ -32,6 +32,7 @@ export function NavigationGuardProvider({
 }) {
   const router = useRouter();
   const dirtyChecker = useRef<DirtyChecker>(null);
+  const pendingOnDiscard = useRef<(() => void) | null>(null);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [dirtyStepNames, setDirtyStepNames] = useState<string[]>([]);
 
@@ -39,17 +40,21 @@ export function NavigationGuardProvider({
     dirtyChecker.current = checker;
   }, []);
 
-  const guardNavigation = useCallback((href: string): boolean => {
-    if (dirtyChecker.current) {
-      const dirtySteps = dirtyChecker.current();
-      if (dirtySteps.length > 0) {
-        setDirtyStepNames(dirtySteps);
-        setPendingHref(href);
-        return false;
+  const guardNavigation = useCallback(
+    (href: string, onDiscard?: () => void): boolean => {
+      if (dirtyChecker.current) {
+        const dirtySteps = dirtyChecker.current();
+        if (dirtySteps.length > 0) {
+          setDirtyStepNames(dirtySteps);
+          setPendingHref(href);
+          pendingOnDiscard.current = onDiscard ?? null;
+          return false;
+        }
       }
-    }
-    return true;
-  }, []);
+      return true;
+    },
+    []
+  );
 
   // Register guardNavigation in the global store so NavBar (outside this provider) can use it
   useEffect(() => {
@@ -85,6 +90,7 @@ export function NavigationGuardProvider({
           e.preventDefault();
           setDirtyStepNames(dirtySteps);
           setPendingHref("__back__");
+          pendingOnDiscard.current = null;
         }
       }
     }
@@ -95,11 +101,15 @@ export function NavigationGuardProvider({
 
   function handleDiscard() {
     const href = pendingHref;
+    const onDiscard = pendingOnDiscard.current;
     setPendingHref(null);
     setDirtyStepNames([]);
     dirtyChecker.current = null;
+    pendingOnDiscard.current = null;
 
-    if (href === "__back__") {
+    if (onDiscard) {
+      onDiscard();
+    } else if (href === "__back__") {
       history.back();
     } else if (href) {
       router.push(href);
@@ -109,6 +119,7 @@ export function NavigationGuardProvider({
   function handleCancel() {
     setPendingHref(null);
     setDirtyStepNames([]);
+    pendingOnDiscard.current = null;
   }
 
   return (

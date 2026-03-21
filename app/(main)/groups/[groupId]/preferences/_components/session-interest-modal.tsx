@@ -19,21 +19,11 @@ const INTEREST_LEVELS = [
   { value: "high" as const, label: "High" },
 ];
 
-const WILLINGNESS_BUCKETS = [
-  { value: 50, label: "<$50" },
-  { value: 100, label: "<$100" },
-  { value: 150, label: "<$150" },
-  { value: 200, label: "<$200" },
-  { value: 250, label: "<$250" },
-  { value: 300, label: "<$300" },
-  { value: 400, label: "<$400" },
-  { value: 500, label: "<$500" },
-  { value: 1000, label: "<$1000" },
-  { value: null as number | null, label: "$1000+" },
-];
+type SportColor = { accent: string; bg: string; text: string; title: string };
 
 type Props = {
   session: SessionData;
+  sportColor: SportColor;
   existingPreference: SessionPreferenceData | null;
   onSave: (pref: SessionPreferenceData) => void;
   onClear: (sessionId: string) => void;
@@ -59,6 +49,7 @@ function formatTime(timeStr: string): string {
 
 export default function SessionInterestModal({
   session,
+  sportColor,
   existingPreference,
   onSave,
   onClear,
@@ -68,64 +59,67 @@ export default function SessionInterestModal({
     existingPreference?.interest ?? null
   );
   const [showInterestInfo, setShowInterestInfo] = useState(false);
-  const [showPriceInfo, setShowPriceInfo] = useState(false);
-  const [maxWillingness, setMaxWillingness] = useState<
-    number | null | undefined
-  >(
-    existingPreference?.maxWillingness !== undefined
-      ? existingPreference.maxWillingness
-      : undefined
-  );
 
-  const canSave = interest !== null && maxWillingness !== undefined;
+  const canSave = interest !== null;
 
   function handleSave() {
     if (!canSave) return;
     onSave({
       sessionId: session.sessionCode,
       interest: interest!,
-      maxWillingness: maxWillingness ?? null,
     });
   }
 
   return (
     <Modal title="Session Interest" onClose={onClose}>
       {/* Session info */}
-      <div className="mb-5 space-y-1.5 rounded-lg bg-slate-50 p-3.5">
+      <div
+        className="mb-5 space-y-0.5 rounded-lg p-3.5"
+        style={{ backgroundColor: `${sportColor.bg}99` }}
+      >
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-900">
+          <span
+            className="text-base font-bold"
+            style={{ color: sportColor.accent }}
+          >
+            {session.sessionCode}
+          </span>
+          <span
+            className="rounded px-1.5 py-0.5 text-xs font-semibold text-white"
+            style={{ backgroundColor: sportColor.accent }}
+          >
             {session.sport}
           </span>
-          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
             {session.sessionType}
           </span>
         </div>
+        <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
+          <span>{formatDate(session.sessionDate)}</span>
+          <span style={{ color: sportColor.accent }}>|</span>
+          <span>
+            {formatTime(session.startTime)} &ndash;{" "}
+            {formatTime(session.endTime)} PT
+          </span>
+        </p>
+        <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
+          <span>{session.venue}</span>
+          <span style={{ color: sportColor.accent }}>|</span>
+          <span>{session.zone}</span>
+        </p>
         {session.sessionDescription && (
           <ul className="space-y-0.5 text-sm text-slate-600">
             {session.sessionDescription.split(";").map((event, i) => (
               <li key={i} className="flex items-start gap-1.5">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                <span
+                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: sportColor.accent }}
+                />
                 {event.trim()}
               </li>
             ))}
           </ul>
         )}
-        <div className="space-y-1 text-xs">
-          <p className="text-slate-500">
-            <span className="font-medium text-slate-600">Session Code:</span>{" "}
-            {session.sessionCode}
-          </p>
-          <p className="text-slate-500">
-            <span className="font-medium text-slate-600">Date/Time (PT):</span>{" "}
-            {formatDate(session.sessionDate)} &middot;{" "}
-            {formatTime(session.startTime)} &ndash;{" "}
-            {formatTime(session.endTime)}
-          </p>
-          <p className="text-slate-500">
-            <span className="font-medium text-slate-600">Venue/Zone:</span>{" "}
-            {session.venue} &middot; {session.zone}
-          </p>
-        </div>
       </div>
 
       {/* Interest level */}
@@ -193,83 +187,6 @@ export default function SessionInterestModal({
               }
             >
               {level.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Willingness bucket */}
-      <div className="mb-5">
-        <div className="mb-2 flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-700">
-            Price Ceiling
-          </label>
-          <div
-            className="relative"
-            onMouseEnter={() => setShowPriceInfo(true)}
-            onMouseLeave={() => setShowPriceInfo(false)}
-          >
-            <button
-              type="button"
-              onClick={() => setShowPriceInfo(!showPriceInfo)}
-              className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-xs font-medium text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-500"
-            >
-              ?
-            </button>
-            {showPriceInfo && (
-              <div className="absolute bottom-full left-1/2 z-10 mb-2 w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
-                <p className="mb-2 text-xs leading-relaxed text-slate-500">
-                  This is the most you&apos;d be willing to pay to attend this
-                  session. Your price ceiling helps the algorithm match you with
-                  group members at similar price points.
-                </p>
-                <p className="mb-2 text-xs leading-relaxed text-slate-500">
-                  Set this based on how much the session is worth to you — not
-                  your overall budget. A higher ceiling doesn&apos;t mean
-                  you&apos;ll pay more; it just means you&apos;re open to
-                  higher-priced tickets if needed.
-                </p>
-                <p className="text-xs leading-relaxed text-slate-500">
-                  You can adjust this amount later as needed.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="grid grid-cols-5 gap-1.5">
-          {WILLINGNESS_BUCKETS.map((bucket) => (
-            <button
-              key={bucket.label}
-              type="button"
-              onClick={() =>
-                setMaxWillingness((prev) =>
-                  prev === bucket.value ? undefined : bucket.value
-                )
-              }
-              className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-                maxWillingness !== bucket.value
-                  ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                  : ""
-              }`}
-              style={
-                maxWillingness === bucket.value &&
-                interest &&
-                INTEREST_COLORS[interest]
-                  ? {
-                      backgroundColor: INTEREST_COLORS[interest].bg,
-                      color: INTEREST_COLORS[interest].text,
-                      borderColor: INTEREST_COLORS[interest].border,
-                    }
-                  : maxWillingness === bucket.value
-                    ? {
-                        backgroundColor: "rgba(0, 157, 229, 0.2)",
-                        color: "#009de5",
-                        borderColor: "#009de5",
-                      }
-                    : undefined
-              }
-            >
-              {bucket.label}
             </button>
           ))}
         </div>

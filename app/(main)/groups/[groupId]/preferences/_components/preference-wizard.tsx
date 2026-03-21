@@ -3,16 +3,20 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGroup } from "../../_components/group-context";
-import BuddiesBudgetStep from "./buddies-budget-step";
+import BuddiesStep from "./buddies-step";
 import SportRankingsStep from "./sport-rankings-step";
 import SessionsStep from "./sessions-step";
 import ReviewStep from "./review-step";
 import {
-  saveBuddiesBudget,
+  saveBuddies,
   saveSportRankings,
   saveSessionPreferences,
+  confirmAffectedBuddyReview,
+  ackScheduleWarning,
 } from "../actions";
 import { useNavigationGuard } from "../../_components/navigation-guard-context";
+import { isStatusAtLeast } from "@/lib/constants";
+import ConfirmModal from "@/components/confirm-modal";
 
 type BuddySelection = { memberId: string; type: "hard" | "soft" };
 
@@ -31,11 +35,9 @@ export type SessionData = {
 export type SessionPreferenceData = {
   sessionId: string;
   interest: "low" | "medium" | "high";
-  maxWillingness: number | null;
 };
 
 type Props = {
-  initialBudget: number | null;
   initialMinBuddies: number;
   initialBuddies: BuddySelection[];
   initialSportRankings: string[];
@@ -47,7 +49,7 @@ type Props = {
 };
 
 const STEPS = [
-  { key: "buddies_budget", label: "Buddies & Budget" },
+  { key: "buddies", label: "Buddies" },
   { key: "sport_rankings", label: "Sport Rankings" },
   { key: "sessions", label: "Session Interests" },
   { key: "review", label: "Review" },
@@ -57,20 +59,22 @@ function getInitialStep(
   preferenceStep: string | null,
   status: string
 ): { step: number; completed: Set<number> } {
-  if (preferenceStep === "sessions" && status === "preferences_set") {
+  if (
+    preferenceStep === "sessions" &&
+    isStatusAtLeast(status, "preferences_set")
+  ) {
     return { step: 3, completed: new Set([0, 1, 2, 3]) };
   }
   if (preferenceStep === "sport_rankings") {
     return { step: 2, completed: new Set([0, 1]) };
   }
-  if (preferenceStep === "buddies_budget") {
+  if (preferenceStep === "buddies") {
     return { step: 1, completed: new Set([0]) };
   }
   return { step: 0, completed: new Set() };
 }
 
 function buildInitialSnapshots(
-  initialBudget: number | null,
   initialMinBuddies: number,
   initialBuddies: BuddySelection[],
   initialSportRankings: string[],
@@ -79,7 +83,6 @@ function buildInitialSnapshots(
   // All steps always have snapshots since they're loaded with initial data
   const snaps: Record<number, string> = {
     0: JSON.stringify({
-      budget: initialBudget,
       minBuddies: initialMinBuddies,
       buddies: initialBuddies,
     }),
@@ -90,7 +93,6 @@ function buildInitialSnapshots(
 }
 
 export default function PreferenceWizard({
-  initialBudget,
   initialMinBuddies,
   initialBuddies,
   initialSportRankings,
@@ -106,6 +108,18 @@ export default function PreferenceWizard({
   const { setDirtyChecker } = useNavigationGuard();
   const initial = getInitialStep(initialPreferenceStep, initialStatus);
 
+  const myMember = group.members.find((m) => m.id === group.myMemberId);
+  const joinedAfterSchedule =
+    group.scheduleGeneratedAt &&
+    myMember?.joinedAt &&
+    new Date(myMember.joinedAt) > new Date(group.scheduleGeneratedAt);
+  const scheduleHasBeenGenerated = group.scheduleGeneratedAt != null;
+  const myHasNoCombos = group.membersWithNoCombos.includes(group.myMemberId);
+  const myHasAffectedBuddyReview =
+    group.myMemberId in group.affectedBuddyMembers;
+  const [showPhaseWarning, setShowPhaseWarning] = useState(false);
+  const [stepResetKey, setStepResetKey] = useState(0);
+
   const stepFromUrl = searchParams.get("step");
   const urlStepIndex = stepFromUrl
     ? STEPS.findIndex((s) => s.key === stepFromUrl)
@@ -119,31 +133,41 @@ export default function PreferenceWizard({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Track sessions loading: stores the sessions identity at the time loading
+  // started. When sessions prop changes (server re-fetch), loading clears
+  // automatically since sessions !== sessionsWhenLoadingStarted.
+  const [sessionsWhenLoadingStarted, setSessionsWhenLoadingStarted] = useState<
+    unknown[] | null
+  >(null);
+  const sessionsLoading =
+    sessionsWhenLoadingStarted !== null &&
+    sessionsWhenLoadingStarted === sessions;
 
-  const navigateToStep = useCallback(
-    (stepIndex: number) => {
-      setCurrentStep(stepIndex);
-      setVisitedSteps((prev) => {
-        if (prev.has(stepIndex)) return prev;
-        return new Set([...prev, stepIndex]);
-      });
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("step", STEPS[stepIndex].key);
-      router.replace(`?${params.toString()}`, { scroll: false });
-    },
-    [searchParams, router]
-  );
+  const navigateToStep = useCallback((stepIndex: number) => {
+    setCurrentStep(stepIndex);
+    setVisitedSteps((prev) => {
+      if (prev.has(stepIndex)) return prev;
+      return new Set([...prev, stepIndex]);
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    params.set("step", STEPS[stepIndex].key);
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}?${params.toString()}`
+    );
+  }, []);
 
   // Step data as state (needed during render for ReviewStep/SessionsStep props)
-  const [buddiesBudgetValues, setBuddiesBudgetValues] = useState<{
-    budget: number | null;
+  const [buddiesValues, setBuddiesValues] = useState<{
     minBuddies: number;
     buddies: BuddySelection[];
   }>({
-    budget: initialBudget,
     minBuddies: initialMinBuddies,
     buddies: initialBuddies,
   });
+  const [buddiesValid, setBuddiesValid] = useState(true);
 
   const [sportRankings, setSportRankings] =
     useState<string[]>(initialSportRankings);
@@ -160,7 +184,6 @@ export default function PreferenceWizard({
   const [savedSnapshots, setSavedSnapshots] = useState<Record<number, string>>(
     () =>
       buildInitialSnapshots(
-        initialBudget,
         initialMinBuddies,
         initialBuddies,
         initialSportRankings,
@@ -170,7 +193,7 @@ export default function PreferenceWizard({
 
   function getStepSnapshot(step: number): string {
     if (step === 0) {
-      return JSON.stringify(buddiesBudgetValues);
+      return JSON.stringify(buddiesValues);
     } else if (step === 1) {
       return JSON.stringify(sportRankings);
     } else if (step === 2) {
@@ -211,13 +234,14 @@ export default function PreferenceWizard({
     return names;
   }
 
-  const handleBuddiesBudgetChange = useCallback(
+  const handleBuddiesChange = useCallback(
     (data: {
-      budget: number | null;
       minBuddies: number;
       buddies: BuddySelection[];
+      isValid: boolean;
     }) => {
-      setBuddiesBudgetValues(data);
+      setBuddiesValues({ minBuddies: data.minBuddies, buddies: data.buddies });
+      setBuddiesValid(data.isValid);
     },
     []
   );
@@ -283,7 +307,7 @@ export default function PreferenceWizard({
     let result;
     try {
       if (currentStep === 0) {
-        result = await saveBuddiesBudget(group.id, buddiesBudgetValues);
+        result = await saveBuddies(group.id, buddiesValues);
       } else if (currentStep === 1) {
         result = await saveSportRankings(group.id, {
           sportRankings: sportRankings,
@@ -307,15 +331,29 @@ export default function PreferenceWizard({
       return false;
     }
 
-    // Record snapshot after successful save
-    setSavedSnapshots((prev) => ({ ...prev, [currentStep]: snapshot }));
+    // Record snapshot after successful save.
+    // When sport rankings (step 1) are saved, the server also deletes session
+    // preferences for sports that were removed from the rankings. The client-side
+    // handleSportRankingsChange already filters session preferences in-memory, so
+    // we must update the step-2 snapshot to match — otherwise step 2 would appear
+    // dirty even though its data is consistent with what the server now has.
+    if (currentStep === 1) {
+      const sessionSnapshot = getStepSnapshot(2);
+      setSavedSnapshots((prev) => ({
+        ...prev,
+        [currentStep]: snapshot,
+        2: sessionSnapshot,
+      }));
+    } else {
+      setSavedSnapshots((prev) => ({ ...prev, [currentStep]: snapshot }));
+    }
     return true;
   }
 
   // Step validity
   const isStepValid =
     currentStep === 0
-      ? true // buddies & budget always valid
+      ? buddiesValid
       : currentStep === 1
         ? sportRankings.length > 0
         : currentStep === 2
@@ -350,12 +388,71 @@ export default function PreferenceWizard({
     return () => setDirtyChecker(null);
   }, [setDirtyChecker]);
 
-  async function handleNext() {
-    const saved = await saveCurrentStep();
-    if (!saved) return;
+  // ── Save orchestration ──────────────────────────────────────
 
+  // Pure save-then-advance, no phase warning concern
+  async function saveAndAdvance() {
+    // Mark sessions as loading if sport rankings changed — the server will
+    // re-fetch sessions for the updated sports after the save action
+    if (currentStep === 1 && isCurrentStepDirty()) {
+      setSessionsWhenLoadingStarted(sessions);
+    }
+    const saved = await saveCurrentStep();
+    if (!saved) {
+      setSessionsWhenLoadingStarted(null);
+      return;
+    }
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
     navigateToStep(currentStep + 1);
+  }
+
+  // Main button handler — thin orchestrator
+  async function handleNext() {
+    if (
+      scheduleHasBeenGenerated &&
+      !joinedAfterSchedule &&
+      !myHasNoCombos &&
+      !myHasAffectedBuddyReview &&
+      isCurrentStepDirty() &&
+      String(group.scheduleGeneratedAt) !==
+        String(group.myScheduleWarningAckedAt)
+    ) {
+      setShowPhaseWarning(true);
+      return;
+    }
+    await saveAndAdvance();
+  }
+
+  // ── Phase warning handlers ────────────────────────────────────
+
+  async function handlePhaseWarningProceed() {
+    setShowPhaseWarning(false);
+    await ackScheduleWarning(group.id);
+    saveAndAdvance();
+  }
+
+  function revertAllStepsToSaved() {
+    if (savedSnapshots[0] !== undefined) {
+      setBuddiesValues(JSON.parse(savedSnapshots[0]));
+    }
+    if (savedSnapshots[1] !== undefined) {
+      setSportRankings(JSON.parse(savedSnapshots[1]));
+    }
+    if (savedSnapshots[2] !== undefined) {
+      const prefs: SessionPreferenceData[] = JSON.parse(savedSnapshots[2]);
+      setSessionPreferences(new Map(prefs.map((p) => [p.sessionId, p])));
+    }
+    setStepResetKey((k) => k + 1);
+  }
+
+  function handlePhaseWarningCancel() {
+    setShowPhaseWarning(false);
+    revertAllStepsToSaved();
+  }
+
+  async function handleConfirmReview() {
+    await confirmAffectedBuddyReview(group.id);
+    router.refresh();
   }
 
   function handleBack() {
@@ -388,23 +485,18 @@ export default function PreferenceWizard({
     setError("");
   }
 
-  // Read-only mode when group is past preferences phase
-  if (group.phase !== "preferences") {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-        <h2 className="mb-2 text-lg font-semibold text-slate-900">
-          Preferences Locked
-        </h2>
-        <p className="text-sm text-slate-500">
-          The group has moved past the preferences phase. Preferences can no
-          longer be edited.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
+      {/* Phase warning dialog */}
+      {showPhaseWarning && (
+        <ConfirmModal
+          message="Schedules have already been generated. If you update preferences now, the owner will need to re-generate schedules for all group members. Are you sure you want to proceed?"
+          onConfirm={handlePhaseWarningProceed}
+          onCancel={handlePhaseWarningCancel}
+          disabled={saving}
+        />
+      )}
+
       {/* Step indicator */}
       <div className="flex items-center justify-center gap-0">
         {STEPS.map((step, index) => {
@@ -457,14 +549,14 @@ export default function PreferenceWizard({
                 >
                   <div
                     className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
-                      isComplete
+                      isComplete || (isActive && index === 3)
                         ? "bg-emerald-500 text-white"
                         : isActive
                           ? "bg-[#009de5] text-white"
                           : "bg-slate-200 text-slate-500"
                     }`}
                   >
-                    {isComplete ? (
+                    {isComplete || (isActive && index === 3) ? (
                       <svg
                         width="14"
                         height="14"
@@ -481,10 +573,10 @@ export default function PreferenceWizard({
                   </div>
                   <span
                     className={`text-[10px] font-medium sm:text-xs ${
-                      isActive
-                        ? "text-[#009de5]"
-                        : isComplete
-                          ? "text-emerald-600"
+                      isComplete || (isActive && index === 3)
+                        ? "text-emerald-600"
+                        : isActive
+                          ? "text-[#009de5]"
                           : "text-slate-400"
                     }`}
                   >
@@ -505,15 +597,16 @@ export default function PreferenceWizard({
       {/* Step content */}
       <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
         {currentStep === 0 && (
-          <BuddiesBudgetStep
-            initialBudget={initialBudget}
-            initialMinBuddies={initialMinBuddies}
-            initialBuddies={initialBuddies}
-            onChange={handleBuddiesBudgetChange}
+          <BuddiesStep
+            key={stepResetKey}
+            initialMinBuddies={buddiesValues.minBuddies}
+            initialBuddies={buddiesValues.buddies}
+            onChange={handleBuddiesChange}
           />
         )}
         {currentStep === 1 && (
           <SportRankingsStep
+            key={stepResetKey}
             availableSports={availableSports}
             initialRankings={sportRankings}
             onChange={handleSportRankingsChange}
@@ -521,22 +614,32 @@ export default function PreferenceWizard({
         )}
         {currentStep === 2 && (
           <SessionsStep
+            key={stepResetKey}
             sessions={sessions}
             sportRankings={sportRankings}
             initialPreferences={sessionPreferences}
             initialHiddenSessions={hiddenSessionIds}
             onChange={handleSessionPreferencesChange}
             onHiddenChange={handleHiddenSessionsChange}
+            loading={sessionsLoading}
           />
         )}
         {currentStep === 3 && (
           <ReviewStep
-            budget={buddiesBudgetValues.budget}
-            minBuddies={buddiesBudgetValues.minBuddies}
-            buddies={buddiesBudgetValues.buddies}
+            minBuddies={buddiesValues.minBuddies}
+            buddies={buddiesValues.buddies}
             sportRankings={sportRankings}
             sessionPreferences={sessionPreferences}
             sessions={sessions}
+            affectedBuddyNames={
+              group.affectedBuddyMembers[group.myMemberId] ?? []
+            }
+            onConfirmReview={handleConfirmReview}
+            isNoCombos={
+              group.membersWithNoCombos.includes(group.myMemberId) &&
+              group.myStatus !== "preferences_set"
+            }
+            loading={sessionsLoading}
           />
         )}
 

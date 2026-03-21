@@ -1,0 +1,1 @@
+ALTER TABLE "member" ADD COLUMN "status_changed_at" timestamp;

@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN IF NOT EXISTS "departed_members" jsonb DEFAULT '[]'::jsonb;

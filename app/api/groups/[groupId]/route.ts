@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { group, member, user } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { group, member, user, windowRanking } from "@/lib/db/schema";
+import { eq, and, desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -36,6 +36,9 @@ export async function GET(
       consecutiveDays: group.consecutiveDays,
       startDate: group.startDate,
       endDate: group.endDate,
+      scheduleGeneratedAt: group.scheduleGeneratedAt,
+      departedMembers: group.departedMembers,
+      affectedBuddyMembers: group.affectedBuddyMembers,
       createdAt: group.createdAt,
     })
     .from(group)
@@ -44,6 +47,18 @@ export async function GET(
   if (!groupData) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  const windowRankings = await db
+    .select({
+      id: windowRanking.id,
+      startDate: windowRanking.startDate,
+      endDate: windowRanking.endDate,
+      score: windowRanking.score,
+      selected: windowRanking.selected,
+    })
+    .from(windowRanking)
+    .where(eq(windowRanking.groupId, groupId))
+    .orderBy(desc(windowRanking.score));
 
   const members = await db
     .select({
@@ -55,7 +70,8 @@ export async function GET(
       avatarColor: user.avatarColor,
       role: member.role,
       status: member.status,
-      budget: member.budget,
+      joinedAt: member.joinedAt,
+      statusChangedAt: member.statusChangedAt,
       createdAt: member.createdAt,
     })
     .from(member)
@@ -69,5 +85,19 @@ export async function GET(
     myStatus: myMembership[0].status,
     myMemberId: myMembership[0].id,
     members,
+    windowRankings,
+    departedMembers: Array.isArray(groupData.departedMembers)
+      ? (groupData.departedMembers as unknown[]).map((entry) =>
+          typeof entry === "string"
+            ? { name: entry, departedAt: new Date().toISOString() }
+            : entry
+        )
+      : [],
+    affectedBuddyMembers:
+      groupData.affectedBuddyMembers &&
+      typeof groupData.affectedBuddyMembers === "object" &&
+      !Array.isArray(groupData.affectedBuddyMembers)
+        ? groupData.affectedBuddyMembers
+        : {},
   });
 }

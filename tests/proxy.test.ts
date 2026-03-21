@@ -257,6 +257,48 @@ describe("updateSession (proxy)", () => {
     });
   });
 
+  it("clears stale sb-* cookies when getUser returns null", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+
+    const request = makeRequest({
+      "sb-access-token": "stale-access",
+      "sb-refresh-token.0": "stale-chunk-0",
+      "sb-refresh-token.1": "stale-chunk-1",
+    });
+    const result = await updateSession(request as any);
+
+    expect(result).toBe(mockNextResponse);
+    expect(deletedCookies.has("sb-access-token")).toBe(true);
+    expect(deletedCookies.has("sb-refresh-token.0")).toBe(true);
+    expect(deletedCookies.has("sb-refresh-token.1")).toBe(true);
+  });
+
+  it("clears tracking cookies alongside stale auth cookies", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+
+    const request = makeRequest({
+      "sb-access-token": "stale",
+      session_start_at: "1234567890",
+      last_active_at: "1234567890",
+    });
+    const result = await updateSession(request as any);
+
+    expect(result).toBe(mockNextResponse);
+    expect(deletedCookies.has("sb-access-token")).toBe(true);
+    expect(deletedCookies.has("session_start_at")).toBe(true);
+    expect(deletedCookies.has("last_active_at")).toBe(true);
+  });
+
+  it("does not clear cookies on clean unauthenticated requests", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+
+    const request = makeRequest(); // no cookies at all
+    const result = await updateSession(request as any);
+
+    expect(result).toBe(mockNextResponse);
+    expect(mockResponseCookies.delete).not.toHaveBeenCalled();
+  });
+
   it("session at exactly MAX_SESSION_DURATION does not redirect", async () => {
     mockGetUser.mockResolvedValue({
       data: { user: { id: "user-1" } },

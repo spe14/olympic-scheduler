@@ -3,6 +3,7 @@
 import { getMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  group,
   member,
   buddyConstraint,
   session,
@@ -14,10 +15,19 @@ import type { ActionResult } from "@/lib/types";
 
 const PREFERENCE_STEP_ORDER = [
   null,
-  "buddies_budget",
+  "buddies",
   "sport_rankings",
   "sessions",
 ] as const;
+
+/**
+ * After state simplification, members stay at "preferences_set" after
+ * generation. No status reset needed — saving preferences during
+ * schedule_review just updates statusChangedAt naturally.
+ */
+function shouldResetStatus(_memberStatus: string): boolean {
+  return false;
+}
 
 function shouldAdvanceStep(current: string | null, next: string): boolean {
   const currentIndex = PREFERENCE_STEP_ORDER.indexOf(
@@ -29,10 +39,9 @@ function shouldAdvanceStep(current: string | null, next: string): boolean {
   return nextIndex > currentIndex;
 }
 
-export async function saveBuddiesBudget(
+export async function saveBuddies(
   groupId: string,
   data: {
-    budget: number | null;
     minBuddies: number;
     buddies: { memberId: string; type: "hard" | "soft" }[];
   }
@@ -42,14 +51,7 @@ export async function saveBuddiesBudget(
     return { error: "You are not an active member of this group." };
   }
 
-  const { budget, minBuddies, buddies } = data;
-
-  if (
-    budget !== null &&
-    (typeof budget !== "number" || budget <= 0 || !Number.isInteger(budget))
-  ) {
-    return { error: "Budget must be a positive whole number." };
-  }
+  const { minBuddies, buddies } = data;
 
   // Fetch eligible members (active, not self)
   const validMembers = await db
@@ -80,6 +82,13 @@ export async function saveBuddiesBudget(
     };
   }
 
+  const hardBuddyCount = buddies.filter((b) => b.type === "hard").length;
+  if (minBuddies < hardBuddyCount) {
+    return {
+      error: `Minimum buddies must be at least ${hardBuddyCount} (your number of required buddies).`,
+    };
+  }
+
   // Validate no duplicate buddy member IDs
   const buddyIds = buddies.map((b) => b.memberId);
   if (new Set(buddyIds).size !== buddyIds.length) {
@@ -105,11 +114,18 @@ export async function saveBuddiesBudget(
       await tx
         .update(member)
         .set({
-          budget,
           minBuddies,
-          ...(shouldAdvanceStep(membership.preferenceStep, "buddies_budget")
-            ? { preferenceStep: "buddies_budget" }
+          ...(shouldAdvanceStep(membership.preferenceStep, "buddies")
+            ? { preferenceStep: "buddies" }
             : {}),
+          ...(shouldResetStatus(membership.status)
+            ? {
+                status: "preferences_set" as const,
+                statusChangedAt: new Date(),
+              }
+            : membership.status === "preferences_set"
+              ? { statusChangedAt: new Date() }
+              : {}),
         })
         .where(eq(member.id, membership.id));
 
@@ -128,12 +144,28 @@ export async function saveBuddiesBudget(
           }))
         );
       }
+
+      // Clear this member's affectedBuddyMembers entry since they've now
+      // reviewed/updated their buddy preferences
+      const [grpData] = await tx
+        .select({ affectedBuddyMembers: group.affectedBuddyMembers })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .limit(1);
+      const affected =
+        (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
+      if (affected[membership.id]) {
+        const { [membership.id]: _removed, ...remaining } = affected;
+        await tx
+          .update(group)
+          .set({ affectedBuddyMembers: remaining })
+          .where(eq(group.id, groupId));
+      }
     });
   } catch {
     return { error: "Failed to save preferences. Please try again." };
   }
 
-  revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };
 }
 
@@ -181,6 +213,14 @@ export async function saveSportRankings(
           ...(shouldAdvanceStep(membership.preferenceStep, "sport_rankings")
             ? { preferenceStep: "sport_rankings" }
             : {}),
+          ...(shouldResetStatus(membership.status)
+            ? {
+                status: "preferences_set" as const,
+                statusChangedAt: new Date(),
+              }
+            : membership.status === "preferences_set"
+              ? { statusChangedAt: new Date() }
+              : {}),
         })
         .where(eq(member.id, membership.id));
 
@@ -224,11 +264,8 @@ export async function saveSportRankings(
     return { error: "Failed to save sport rankings. Please try again." };
   }
 
-  revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };
 }
-
-const VALID_WILLINGNESS_VALUES = [50, 100, 150, 200, 250, 300, 400, 500, 1000];
 
 export async function saveSessionPreferences(
   groupId: string,
@@ -236,7 +273,6 @@ export async function saveSessionPreferences(
     preferences: {
       sessionId: string;
       interest: "low" | "medium" | "high";
-      maxWillingness: number | null;
     }[];
   }
 ): Promise<ActionResult> {
@@ -269,16 +305,6 @@ export async function saveSessionPreferences(
   for (const pref of preferences) {
     if (!validInterests.has(pref.interest)) {
       return { error: "Invalid interest level." };
-    }
-  }
-
-  // Validate willingness values
-  for (const pref of preferences) {
-    if (
-      pref.maxWillingness !== null &&
-      !VALID_WILLINGNESS_VALUES.includes(pref.maxWillingness)
-    ) {
-      return { error: "Invalid willingness value." };
     }
   }
 
@@ -323,7 +349,6 @@ export async function saveSessionPreferences(
           sessionId: p.sessionId,
           memberId: membership.id,
           interest: p.interest,
-          maxWillingness: p.maxWillingness,
         }))
       );
 
@@ -333,12 +358,88 @@ export async function saveSessionPreferences(
         .set({
           preferenceStep: "sessions",
           status: "preferences_set",
+          statusChangedAt: new Date(),
         })
         .where(eq(member.id, membership.id));
+
+      // Clear this member's affectedBuddyMembers entry since they've now
+      // completed preferences (the warning is no longer relevant)
+      const [grpData] = await tx
+        .select({ affectedBuddyMembers: group.affectedBuddyMembers })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .limit(1);
+      const affected =
+        (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
+      if (affected[membership.id]) {
+        const { [membership.id]: _removed, ...remaining } = affected;
+        await tx
+          .update(group)
+          .set({ affectedBuddyMembers: remaining })
+          .where(eq(group.id, groupId));
+      }
     });
   } catch {
     return { error: "Failed to save session preferences. Please try again." };
   }
+
+  revalidatePath(`/groups/${groupId}`, "layout");
+  return { success: true };
+}
+
+export async function ackScheduleWarning(
+  groupId: string
+): Promise<ActionResult> {
+  const membership = await getMembership(groupId);
+  if (!membership) {
+    return { error: "You are not an active member of this group." };
+  }
+
+  const [groupData] = await db
+    .select({ scheduleGeneratedAt: group.scheduleGeneratedAt })
+    .from(group)
+    .where(eq(group.id, groupId))
+    .limit(1);
+
+  if (!groupData) {
+    return { error: "Group not found." };
+  }
+
+  await db
+    .update(member)
+    .set({ scheduleWarningAckedAt: groupData.scheduleGeneratedAt })
+    .where(eq(member.id, membership.id));
+
+  revalidatePath(`/groups/${groupId}`, "layout");
+  return { success: true };
+}
+
+export async function confirmAffectedBuddyReview(
+  groupId: string
+): Promise<ActionResult> {
+  const membership = await getMembership(groupId);
+  if (!membership) {
+    return { error: "You are not an active member of this group." };
+  }
+
+  const [grpData] = await db
+    .select({ affectedBuddyMembers: group.affectedBuddyMembers })
+    .from(group)
+    .where(eq(group.id, groupId))
+    .limit(1);
+
+  const affected =
+    (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
+
+  if (!affected[membership.id]) {
+    return { success: true };
+  }
+
+  const { [membership.id]: _removed, ...remaining } = affected;
+  await db
+    .update(group)
+    .set({ affectedBuddyMembers: remaining })
+    .where(eq(group.id, groupId));
 
   revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };

@@ -19,10 +19,6 @@ const phaseBadgeStyles: Record<
     backgroundColor: "rgba(250, 204, 21, 0.2)",
     color: "#d97706",
   },
-  conflict_resolution: {
-    backgroundColor: "rgba(250, 204, 21, 0.2)",
-    color: "#d97706",
-  },
   completed: { backgroundColor: "rgba(16, 185, 129, 0.2)", color: "#059669" },
 };
 

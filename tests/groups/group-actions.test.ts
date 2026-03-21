@@ -8,6 +8,7 @@ import {
   removeMember,
   transferOwnership,
   deleteGroup,
+  generateSchedules,
 } from "@/app/(main)/groups/[groupId]/actions";
 
 // Mock next/cache
@@ -34,7 +35,14 @@ const mockWhere = vi.fn(() => ({
     resolve(directWhereResults.shift() ?? []);
   },
 }));
-const mockFrom = vi.fn(() => ({ where: mockWhere }));
+let directFromResults: unknown[][] = [];
+const mockFrom = vi.fn(() => ({
+  where: mockWhere,
+  innerJoin: vi.fn(() => ({ where: mockWhere })),
+  then(resolve: (v: unknown) => void) {
+    resolve(directFromResults.shift() ?? []);
+  },
+}));
 const mockSelect = vi.fn(() => ({ from: mockFrom }));
 
 const mockUpdateWhere = vi.fn(() => Promise.resolve());
@@ -49,6 +57,7 @@ const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
   const txSelect = vi.fn(() => ({
     from: vi.fn(() => ({
       where: vi.fn(() => ({
+        limit: vi.fn(() => []),
         then(r: (v: unknown) => void) {
           r([]);
         },
@@ -61,6 +70,7 @@ const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
     select: txSelect,
     delete: vi.fn(() => ({ where: txDeleteWhere })),
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: txUpdateWhere })) })),
+    insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
   };
   return cb(tx);
 });
@@ -75,7 +85,19 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  group: { id: "id", name: "name", phase: "phase" },
+  group: {
+    id: "id",
+    name: "name",
+    phase: "phase",
+    dateMode: "date_mode",
+    consecutiveDays: "consecutive_days",
+    startDate: "start_date",
+    endDate: "end_date",
+    departedMembers: "departed_members",
+    affectedBuddyMembers: "affected_buddy_members",
+    scheduleGeneratedAt: "schedule_generated_at",
+    membersWithNoCombos: "members_with_no_combos",
+  },
   member: {
     id: "id",
     userId: "user_id",
@@ -83,21 +105,63 @@ vi.mock("@/lib/db/schema", () => ({
     role: "role",
     status: "status",
     preferenceStep: "preference_step",
+    joinedAt: "joined_at",
+    statusChangedAt: "status_changed_at",
+  },
+  user: {
+    id: "id",
+    firstName: "first_name",
+    lastName: "last_name",
   },
   buddyConstraint: { memberId: "member_id", buddyMemberId: "buddy_id" },
   sessionPreference: {
     memberId: "member_id",
-    hardBuddyOverride: "hard_buddy_override",
-    minBuddyOverride: "min_buddy_override",
+    sessionId: "session_id",
+    interest: "interest",
     excluded: "excluded",
   },
-  combo: { id: "id", groupId: "group_id" },
+  session: {
+    sessionCode: "session_code",
+    sport: "sport",
+    zone: "zone",
+    sessionDate: "session_date",
+    startTime: "start_time",
+    endTime: "end_time",
+  },
+  travelTime: {
+    originZone: "origin_zone",
+    destinationZone: "destination_zone",
+    drivingMinutes: "driving_minutes",
+    transitMinutes: "transit_minutes",
+  },
+  combo: {
+    id: "id",
+    groupId: "group_id",
+    memberId: "member_id",
+    day: "day",
+    rank: "rank",
+    score: "score",
+  },
   comboSession: { comboId: "combo_id" },
-  viableConfig: { id: "id", groupId: "group_id" },
-  viableConfigMember: { viableConfigId: "viable_config_id" },
-  conflict: { groupId: "group_id" },
   windowRanking: { groupId: "group_id" },
 }));
+
+// Mock algorithm runner
+const mockRunScheduleGeneration = vi.fn();
+vi.mock("@/lib/algorithm/runner", () => ({
+  runScheduleGeneration: (...args: unknown[]) =>
+    mockRunScheduleGeneration(...args),
+}));
+
+// Mock window ranking computation
+const mockComputeWindowRankings = vi.fn();
+vi.mock("@/lib/algorithm/window-ranking", () => ({
+  computeWindowRankings: (...args: unknown[]) =>
+    mockComputeWindowRankings(...args),
+}));
+
+// Mock algorithm types (type-only, no runtime exports needed)
+vi.mock("@/lib/algorithm/types", () => ({}));
 
 function makeFormData(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -232,6 +296,10 @@ describe("approveMember", () => {
       { id: "member-2", status: "pending_approval" },
     ]); // target
     directWhereResults.push([{ count: 5 }]); // not full
+    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]); // user name
+    mockLimit.mockResolvedValueOnce([
+      { departedMembers: [], affectedBuddyMembers: {} },
+    ]); // group data
 
     const result = await approveMember("group-1", "member-2");
 
@@ -248,6 +316,10 @@ describe("approveMember", () => {
       { id: "member-2", status: "pending_approval" },
     ]);
     directWhereResults.push([{ count: 5 }]);
+    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
+    mockLimit.mockResolvedValueOnce([
+      { departedMembers: [], affectedBuddyMembers: {} },
+    ]);
 
     const before = new Date();
     await approveMember("group-1", "member-2");
@@ -291,11 +363,142 @@ describe("approveMember", () => {
       { id: "member-2", status: "pending_approval" },
     ]);
     directWhereResults.push([{ count: 11 }]); // one slot left
+    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
+    mockLimit.mockResolvedValueOnce([
+      { departedMembers: [], affectedBuddyMembers: {} },
+    ]);
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
+  });
+
+  it("sets rejoinedAt on departed member entry when rejoining", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", status: "pending_approval" },
+    ]);
+    directWhereResults.push([{ count: 5 }]);
+    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
+    mockLimit.mockResolvedValueOnce([
+      {
+        departedMembers: [
+          { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
+          { name: "Bob Smith", departedAt: "2028-01-11T12:00:00Z" },
+        ],
+      },
+    ]);
+
+    const result = await approveMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Should update group with rejoinedAt set on Jane Doe, Bob Smith unchanged
+    const groupUpdateCall = mockSet.mock.calls.find(
+      (call: unknown[]) =>
+        call[0] &&
+        typeof call[0] === "object" &&
+        "departedMembers" in (call[0] as Record<string, unknown>)
+    );
+    expect(groupUpdateCall).toBeDefined();
+    const updated = (
+      groupUpdateCall![0] as {
+        departedMembers: {
+          name: string;
+          departedAt: string;
+          rejoinedAt?: string;
+        }[];
+      }
+    ).departedMembers;
+    expect(updated).toHaveLength(2);
+    expect(updated[0].name).toBe("Jane Doe");
+    expect(updated[0].rejoinedAt).toBeDefined();
+    expect(updated[1].name).toBe("Bob Smith");
+    expect(updated[1].rejoinedAt).toBeUndefined();
+  });
+
+  it("does not clear affectedBuddyMembers when departed member rejoins", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", status: "pending_approval" },
+    ]);
+    directWhereResults.push([{ count: 5 }]);
+    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
+    mockLimit.mockResolvedValueOnce([
+      {
+        departedMembers: [
+          { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
+        ],
+      },
+    ]);
+
+    const result = await approveMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Should only update departedMembers (with rejoinedAt), NOT affectedBuddyMembers
+    const groupUpdateCall = mockSet.mock.calls.find(
+      (call: unknown[]) =>
+        call[0] &&
+        typeof call[0] === "object" &&
+        "departedMembers" in (call[0] as Record<string, unknown>)
+    );
+    expect(groupUpdateCall).toBeDefined();
+    expect(groupUpdateCall![0]).not.toHaveProperty("affectedBuddyMembers");
+  });
+
+  it("departed member rejoins — affected members still have entries in affectedBuddyMembers", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", status: "pending_approval" },
+    ]);
+    directWhereResults.push([{ count: 5 }]);
+    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
+    mockLimit.mockResolvedValueOnce([
+      {
+        departedMembers: [
+          { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
+        ],
+      },
+    ]);
+
+    const result = await approveMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // The group update should only contain departedMembers
+    // affectedBuddyMembers entries for member-3 and member-4 are preserved
+    const setCalls = mockSet.mock.calls;
+    const groupUpdate = setCalls.find(
+      (call: unknown[]) =>
+        call[0] &&
+        typeof call[0] === "object" &&
+        "departedMembers" in (call[0] as Record<string, unknown>)
+    );
+    expect(groupUpdate).toBeDefined();
+    expect(groupUpdate![0]).not.toHaveProperty("affectedBuddyMembers");
+  });
+
+  it("does not update group when approved member is not in departedMembers", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", status: "pending_approval" },
+    ]);
+    directWhereResults.push([{ count: 5 }]);
+    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
+    mockLimit.mockResolvedValueOnce([
+      {
+        departedMembers: [
+          { name: "Bob Smith", departedAt: "2028-01-10T12:00:00Z" },
+        ],
+      },
+    ]);
+
+    await approveMember("group-1", "member-2");
+
+    // Only the member status update, no group update
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "joined" })
+    );
   });
 
   it("returns error when db update fails", async () => {
@@ -394,6 +597,67 @@ function mockActiveOwner() {
   });
 }
 
+/**
+ * Creates a thenable where mock that supports .limit() and direct .then().
+ * If `results` is a queue array, shifts the next result on each call.
+ */
+function makeThenableWhere(resultOrQueue: unknown[] | (() => unknown[]) = []) {
+  const getResult =
+    typeof resultOrQueue === "function" ? resultOrQueue : () => resultOrQueue;
+  return () => ({
+    limit: vi.fn(() => ({
+      then(r: (v: unknown) => void) {
+        r(getResult());
+      },
+    })),
+    then(r: (v: unknown) => void) {
+      r(getResult());
+    },
+  });
+}
+
+/**
+ * Creates a tx.select().from() mock that handles both .where() and .innerJoin().where()
+ * chains. If `result` is an array, returns it for all queries. If undefined, returns [].
+ */
+function makeTxSelectFrom(result: unknown[] = []) {
+  return vi.fn(() => ({
+    where: vi.fn(makeThenableWhere(result)),
+    innerJoin: vi.fn(() => ({
+      where: vi.fn(makeThenableWhere(result)),
+    })),
+  }));
+}
+
+/**
+ * Creates a tx.select().from() mock that returns sequential results from a queue.
+ * Each query call shifts the next result from the queue.
+ */
+function makeTxSelectFromQueue(queue: unknown[][]) {
+  let idx = 0;
+  const getNext = () => queue[idx++] ?? [];
+  return vi.fn(() => ({
+    where: vi.fn(makeThenableWhere(getNext)),
+    innerJoin: vi.fn(() => ({
+      where: vi.fn(makeThenableWhere(getNext)),
+    })),
+  }));
+}
+
+// Reusable default transaction mock for removeMemberTransaction tests.
+function defaultRemoveMemberTxMock() {
+  mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+    const tx = {
+      select: vi.fn(() => ({ from: makeTxSelectFrom() })),
+      delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+      })),
+    };
+    return cb(tx);
+  });
+}
+
 describe("leaveGroup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -402,28 +666,7 @@ describe("leaveGroup", () => {
     mockTransaction.mockClear();
     directWhereResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
-    // Reset transaction to default (succeeds)
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txSelect = vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            then(r: (v: unknown) => void) {
-              r([]);
-            },
-          })),
-        })),
-      }));
-      const txDeleteWhere = vi.fn(() => Promise.resolve());
-      const txUpdateWhere = vi.fn(() => Promise.resolve());
-      const tx = {
-        select: txSelect,
-        delete: vi.fn(() => ({ where: txDeleteWhere })),
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: txUpdateWhere })),
-        })),
-      };
-      return cb(tx);
-    });
+    defaultRemoveMemberTxMock();
   });
 
   it("returns error when not logged in", async () => {
@@ -494,15 +737,7 @@ describe("leaveGroup", () => {
 
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
       const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              then(r: (v: unknown) => void) {
-                r([]); // no affected buddies
-              },
-            })),
-          })),
-        })),
+        select: vi.fn(() => ({ from: makeTxSelectFrom() })),
         delete: txDelete,
         update: vi.fn(() => ({
           set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
@@ -518,7 +753,7 @@ describe("leaveGroup", () => {
     expect(txDelete).toHaveBeenCalledTimes(3);
   });
 
-  it("resets affected buddy members to joined/buddies_budget in preferences phase", async () => {
+  it("does not reset affected buddy members to joined/buddies in preferences phase", async () => {
     mockActiveMember();
     mockLimit.mockResolvedValueOnce([{ phase: "preferences" }]);
 
@@ -533,14 +768,7 @@ describe("leaveGroup", () => {
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
       const tx = {
         select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              then(r: (v: unknown) => void) {
-                // Return affected buddies — member-3 had the departing member as a buddy
-                r([{ memberId: "member-3" }]);
-              },
-            })),
-          })),
+          from: makeTxSelectFrom([{ memberId: "member-3" }]),
         })),
         delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
         update: txUpdate,
@@ -551,10 +779,10 @@ describe("leaveGroup", () => {
     const result = await leaveGroup("group-1");
 
     expect(result.success).toBe(true);
-    // Should have called update with affected member reset
-    expect(setCalls).toContainEqual({
+    // Affected members are no longer reset to joined/buddies
+    expect(setCalls).not.toContainEqual({
       status: "joined",
-      preferenceStep: "buddies_budget",
+      preferenceStep: "buddies",
     });
   });
 
@@ -571,15 +799,41 @@ describe("leaveGroup", () => {
       return { where: txUpdateWhere };
     });
 
+    // Queue: 1) affected buddies, 2) group data, 3) departing user
+    const queryQueue: unknown[][] = [
+      [], // no affected buddies
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Test",
+          lastName: "User",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ];
+    let qIdx = 0;
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const makeWhere = () => ({
+        limit: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r(queryQueue[qIdx++] ?? []);
+          },
+        })),
+        then(r: (v: unknown) => void) {
+          r(queryQueue[qIdx++] ?? []);
+        },
+      });
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              then(r: (v: unknown) => void) {
-                r([]); // no affected buddies
-              },
-            })),
+            where: vi.fn(makeWhere),
+            innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
           })),
         })),
         delete: vi.fn(() => {
@@ -595,18 +849,17 @@ describe("leaveGroup", () => {
 
     expect(result.success).toBe(true);
     // Post-preferences: deletes buddy constraints, session prefs, combo_session,
-    // combo, viable_config_member, viable_config, conflict, window_ranking, member
-    expect(deleteCount).toBeGreaterThanOrEqual(9);
-    // Should reset override/excluded flags
+    // combo, window_ranking, member
+    expect(deleteCount).toBeGreaterThanOrEqual(6);
+    // Should reset group phase to preferences
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // Should reset non-buddy member statuses to preferences_set with statusChangedAt
     expect(setCalls).toContainEqual({
-      hardBuddyOverride: false,
-      minBuddyOverride: false,
-      excluded: false,
+      status: "preferences_set",
+      statusChangedAt: expect.any(Date),
     });
-    // Should reset unaffected members to preferences_set
-    expect(setCalls).toContainEqual({ status: "preferences_set" });
-    // Should reset group phase
-    expect(setCalls).toContainEqual({ phase: "preferences" });
   });
 
   it("does not delete algorithm outputs or reset group in preferences phase", async () => {
@@ -618,15 +871,7 @@ describe("leaveGroup", () => {
 
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
       const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              then(r: (v: unknown) => void) {
-                r([]); // no affected buddies
-              },
-            })),
-          })),
-        })),
+        select: vi.fn(() => ({ from: makeTxSelectFrom() })),
         delete: vi.fn(() => {
           deleteCount++;
           return { where: vi.fn(() => Promise.resolve()) };
@@ -646,13 +891,69 @@ describe("leaveGroup", () => {
     expect(result.success).toBe(true);
     // Preferences phase: only deletes buddy constraints, session prefs, member row
     expect(deleteCount).toBe(3);
-    // Should NOT reset group phase or override flags
+    // Should NOT reset group phase
     expect(setCalls).not.toContainEqual({ phase: "preferences" });
-    expect(setCalls).not.toContainEqual({
-      hardBuddyOverride: false,
-      minBuddyOverride: false,
-      excluded: false,
+  });
+
+  it("persists affectedBuddyMembers when leaving during preferences phase with buddy connections", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([{ phase: "preferences" }]);
+
+    const setCalls: Record<string, unknown>[] = [];
+
+    // Queue: 1) affected buddies, 2) group data (no schedule), 3) departing user
+    const queryQueue: unknown[][] = [
+      [{ memberId: "member-3" }], // member-3 had departing member as buddy
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: null,
+        },
+      ],
+      [{ firstName: "Test", lastName: "User", joinedAt: null }],
+    ];
+    let qIdx = 0;
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const makeWhere = () => ({
+        limit: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r(queryQueue[qIdx++] ?? []);
+          },
+        })),
+        then(r: (v: unknown) => void) {
+          r(queryQueue[qIdx++] ?? []);
+        },
+      });
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(makeWhere),
+            innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
+          })),
+        })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        update: vi.fn(() => ({
+          set: vi.fn((vals: Record<string, unknown>) => {
+            setCalls.push(vals);
+            return { where: vi.fn(() => Promise.resolve()) };
+          }),
+        })),
+      };
+      return cb(tx);
     });
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.success).toBe(true);
+    // Should persist affectedBuddyMembers even without a schedule
+    expect(setCalls).toContainEqual({
+      affectedBuddyMembers: { "member-3": ["Test User"] },
+    });
+    // Should NOT reset phase or delete algorithm outputs
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
   });
 
   it("returns error when transaction fails", async () => {
@@ -674,28 +975,7 @@ describe("removeMember", () => {
     mockTransaction.mockClear();
     directWhereResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
-    // Reset transaction to default (succeeds)
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txSelect = vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            then(r: (v: unknown) => void) {
-              r([]);
-            },
-          })),
-        })),
-      }));
-      const txDeleteWhere = vi.fn(() => Promise.resolve());
-      const txUpdateWhere = vi.fn(() => Promise.resolve());
-      const tx = {
-        select: txSelect,
-        delete: vi.fn(() => ({ where: txDeleteWhere })),
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: txUpdateWhere })),
-        })),
-      };
-      return cb(tx);
-    });
+    defaultRemoveMemberTxMock();
   });
 
   it("returns error when caller is not the owner", async () => {
@@ -826,25 +1106,6 @@ describe("removeMember", () => {
     expect(mockTransaction).toHaveBeenCalledTimes(1);
   });
 
-  it("succeeds for target in conflict_resolution phase", async () => {
-    mockOwner();
-    mockLimit.mockResolvedValueOnce([
-      {
-        id: "member-2",
-        role: "member",
-        status: "conflict_resolution_pending",
-        groupId: "group-1",
-      },
-    ]);
-    mockLimit.mockResolvedValueOnce([{ phase: "conflict_resolution" }]);
-
-    const result = await removeMember("group-1", "member-2");
-
-    expect(result.success).toBe(true);
-    expect(result.error).toBeUndefined();
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
-  });
-
   it("deletes algorithm outputs and resets group in post-preferences phase", async () => {
     mockOwner();
     mockLimit.mockResolvedValueOnce([
@@ -860,15 +1121,41 @@ describe("removeMember", () => {
     const setCalls: Record<string, unknown>[] = [];
     let deleteCount = 0;
 
+    // Queue: 1) affected buddies, 2) group data, 3) departing user
+    const queryQueue: unknown[][] = [
+      [], // no affected buddies
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Test",
+          lastName: "User",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ];
+    let qIdx = 0;
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const makeWhere = () => ({
+        limit: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r(queryQueue[qIdx++] ?? []);
+          },
+        })),
+        then(r: (v: unknown) => void) {
+          r(queryQueue[qIdx++] ?? []);
+        },
+      });
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              then(r: (v: unknown) => void) {
-                r([]); // no affected buddies
-              },
-            })),
+            where: vi.fn(makeWhere),
+            innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
           })),
         })),
         delete: vi.fn(() => {
@@ -889,19 +1176,20 @@ describe("removeMember", () => {
 
     expect(result.success).toBe(true);
     // Post-preferences: deletes buddy constraints, session prefs, combo_session,
-    // combo, viable_config_member, viable_config, conflict, window_ranking, member
-    expect(deleteCount).toBeGreaterThanOrEqual(9);
-    // Should reset override/excluded flags
+    // combo, window_ranking, member
+    expect(deleteCount).toBeGreaterThanOrEqual(6);
+    // Should reset group phase to preferences
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // Should reset non-buddy member statuses to preferences_set with statusChangedAt
     expect(setCalls).toContainEqual({
-      hardBuddyOverride: false,
-      minBuddyOverride: false,
-      excluded: false,
+      status: "preferences_set",
+      statusChangedAt: expect.any(Date),
     });
-    // Should reset group phase
-    expect(setCalls).toContainEqual({ phase: "preferences" });
   });
 
-  it("resets affected buddy members when removing in preferences phase", async () => {
+  it("does not reset affected buddy members to joined/buddies when removing in preferences phase", async () => {
     mockOwner();
     mockLimit.mockResolvedValueOnce([
       {
@@ -918,14 +1206,7 @@ describe("removeMember", () => {
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
       const tx = {
         select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              then(r: (v: unknown) => void) {
-                // member-3 had the departing member-2 as a buddy
-                r([{ memberId: "member-3" }]);
-              },
-            })),
-          })),
+          from: makeTxSelectFrom([{ memberId: "member-3" }]),
         })),
         delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
         update: vi.fn(() => ({
@@ -941,9 +1222,10 @@ describe("removeMember", () => {
     const result = await removeMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
-    expect(setCalls).toContainEqual({
+    // Affected members are no longer reset to joined/buddies
+    expect(setCalls).not.toContainEqual({
       status: "joined",
-      preferenceStep: "buddies_budget",
+      preferenceStep: "buddies",
     });
   });
 
@@ -1190,9 +1472,9 @@ describe("deleteGroup", () => {
     const result = await deleteGroup("group-1");
 
     expect(result.success).toBe(true);
-    // Should delete: combo_session, combo, viable_config_member, viable_config,
-    // conflict, window_ranking, session_preference, buddy_constraint, member, group
-    expect(deleteCount).toBe(10);
+    // Should delete: combo_session, combo, window_ranking,
+    // session_preference, buddy_constraint, member, group
+    expect(deleteCount).toBe(7);
   });
 
   it("returns error when transaction fails", async () => {
@@ -1212,6 +1494,28 @@ describe("updateDateConfig", () => {
     mockUpdateWhere.mockReset();
     directWhereResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
+    // Restore default mockTransaction implementation for updateDateConfig
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txSelect = vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => []),
+            then(r: (v: unknown) => void) {
+              r([]);
+            },
+          })),
+        })),
+      }));
+      const txDeleteWhere = vi.fn(() => Promise.resolve());
+      const txUpdateWhere = vi.fn(() => Promise.resolve());
+      const tx = {
+        select: txSelect,
+        delete: vi.fn(() => ({ where: txDeleteWhere })),
+        update: vi.fn(() => ({ set: vi.fn(() => ({ where: txUpdateWhere })) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+      };
+      return cb(tx);
+    });
   });
 
   it("returns error when not logged in", async () => {
@@ -1237,12 +1541,7 @@ describe("updateDateConfig", () => {
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
-    expect(mockSet).toHaveBeenCalledWith({
-      dateMode: "consecutive",
-      consecutiveDays: 5,
-      startDate: null,
-      endDate: null,
-    });
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("updates to specific mode successfully", async () => {
@@ -1256,22 +1555,16 @@ describe("updateDateConfig", () => {
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
-    expect(mockSet).toHaveBeenCalledWith({
-      dateMode: "specific",
-      startDate: "2028-07-14",
-      endDate: "2028-07-18",
-      consecutiveDays: null,
-    });
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("clears specific date fields when switching to consecutive", async () => {
     mockOwner();
     const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "3" });
-    await updateDateConfig("group-1", fd);
+    const result = await updateDateConfig("group-1", fd);
 
-    expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ startDate: null, endDate: null })
-    );
+    expect(result.success).toBe(true);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("clears consecutive days when switching to specific", async () => {
@@ -1281,11 +1574,10 @@ describe("updateDateConfig", () => {
       startDate: "2028-07-12",
       endDate: "2028-07-20",
     });
-    await updateDateConfig("group-1", fd);
+    const result = await updateDateConfig("group-1", fd);
 
-    expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ consecutiveDays: null })
-    );
+    expect(result.success).toBe(true);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("returns error for invalid consecutive days (0)", async () => {
@@ -1429,7 +1721,7 @@ describe("updateDateConfig", () => {
 
   it("returns error when db update fails for consecutive mode", async () => {
     mockOwner();
-    mockUpdateWhere.mockRejectedValue(new Error("DB error"));
+    mockTransaction.mockRejectedValue(new Error("DB error"));
     const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
     const result = await updateDateConfig("group-1", fd);
 
@@ -1438,7 +1730,7 @@ describe("updateDateConfig", () => {
 
   it("returns error when db update fails for specific mode", async () => {
     mockOwner();
-    mockUpdateWhere.mockRejectedValue(new Error("DB error"));
+    mockTransaction.mockRejectedValue(new Error("DB error"));
     const fd = makeFormData({
       dateMode: "specific",
       startDate: "2028-07-14",
@@ -1447,5 +1739,1375 @@ describe("updateDateConfig", () => {
     const result = await updateDateConfig("group-1", fd);
 
     expect(result.error).toContain("Failed to update date configuration");
+  });
+
+  it("recomputes window rankings when combos exist", async () => {
+    mockOwner();
+
+    // Track calls inside the transaction
+    let insertValuesCalled = false;
+    let deleteCalled = false;
+
+    // Tx query queue:
+    // 1. tx.select({scheduleGeneratedAt}).from(group).where().limit() → truthy
+    // 2. tx.select({memberId,day,score,rank}).from(combo).where() → combo data
+    const txQueryQueue: unknown[][] = [
+      [{ scheduleGeneratedAt: "2028-01-01" }],
+      [
+        { memberId: "m1", day: "2028-07-12", score: 80, rank: "primary" },
+        { memberId: "m1", day: "2028-07-13", score: 70, rank: "primary" },
+        { memberId: "m1", day: "2028-07-12", score: 60, rank: "backup1" },
+      ],
+    ];
+    let qIdx = 0;
+
+    mockComputeWindowRankings.mockReturnValue([
+      { startDate: "2028-07-12", endDate: "2028-07-16", score: 150 },
+    ]);
+
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const makeThenableWhere = () => ({
+        limit: vi.fn(() => {
+          const res = txQueryQueue[qIdx++] ?? [];
+          return res;
+        }),
+        then(r: (v: unknown) => void) {
+          r(txQueryQueue[qIdx++] ?? []);
+        },
+      });
+      const tx = {
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(makeThenableWhere),
+          })),
+        })),
+        delete: vi.fn(() => {
+          deleteCalled = true;
+          return { where: vi.fn(() => Promise.resolve()) };
+        }),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => {
+            insertValuesCalled = true;
+            return Promise.resolve();
+          }),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.success).toBe(true);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(mockComputeWindowRankings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dateMode: "consecutive",
+        consecutiveDays: 5,
+      })
+    );
+    expect(deleteCalled).toBe(true);
+    expect(insertValuesCalled).toBe(true);
+  });
+
+  it("skips window ranking computation when no combos exist", async () => {
+    mockOwner();
+
+    // Tx query queue:
+    // 1. tx.select({scheduleGeneratedAt}).from(group).where().limit() → truthy
+    // 2. tx.select({...}).from(combo).where() → empty array
+    const txQueryQueue: unknown[][] = [
+      [{ scheduleGeneratedAt: "2028-01-01" }],
+      [], // no combos
+    ];
+    let qIdx = 0;
+
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const makeThenableWhere = () => ({
+        limit: vi.fn(() => {
+          return txQueryQueue[qIdx++] ?? [];
+        }),
+        then(r: (v: unknown) => void) {
+          r(txQueryQueue[qIdx++] ?? []);
+        },
+      });
+      const tx = {
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(makeThenableWhere),
+          })),
+        })),
+        delete: vi.fn(() => ({
+          where: vi.fn(() => Promise.resolve()),
+        })),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => Promise.resolve()),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
+    const result = await updateDateConfig("group-1", fd);
+
+    expect(result.success).toBe(true);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    // computeWindowRankings should NOT be called since no combos
+    expect(mockComputeWindowRankings).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// removeMemberTransaction — departure tracking & schedule preservation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("removeMember — departure tracking", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+  });
+
+  /**
+   * Builds a mock transaction that returns sequential query results.
+   * txQueryResults is an array of arrays — each inner array is returned by the next
+   * tx.select().from().where() / .innerJoin().where() / .limit() call (in order).
+   */
+  function buildTx(
+    txQueryResults: unknown[][],
+    opts?: { trackSets?: boolean; trackDeletes?: boolean }
+  ) {
+    const setCalls: Record<string, unknown>[] = [];
+    let deleteCount = 0;
+    let queryIndex = 0;
+
+    const txDeleteWhere = vi.fn(() => Promise.resolve());
+    const txUpdateWhere = vi.fn(() => Promise.resolve());
+
+    const makeThenableWhere = () => ({
+      limit: vi.fn(() => ({
+        then(r: (v: unknown) => void) {
+          r(txQueryResults[queryIndex++] ?? []);
+        },
+      })),
+      then(r: (v: unknown) => void) {
+        r(txQueryResults[queryIndex++] ?? []);
+      },
+    });
+
+    const txFrom = vi.fn(() => ({
+      where: vi.fn(makeThenableWhere),
+      innerJoin: vi.fn(() => ({
+        where: vi.fn(makeThenableWhere),
+      })),
+    }));
+
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn(() => ({ from: txFrom })),
+        delete: vi.fn(() => {
+          deleteCount++;
+          return { where: txDeleteWhere };
+        }),
+        update: vi.fn(() => ({
+          set: vi.fn((vals: Record<string, unknown>) => {
+            setCalls.push(vals);
+            return { where: txUpdateWhere };
+          }),
+        })),
+      };
+      return cb(tx);
+    });
+
+    return { setCalls, getDeleteCount: () => deleteCount };
+  }
+
+  it("records departed member name when departing member was part of schedule", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      // 1. affectedBuddies query — none
+      [],
+      // 2. grpData query
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // 3. departingUser query (innerJoin)
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Should have set departedMembers with the name+timestamp, phase regression, affectedBuddyMembers, and cleared membersWithNoCombos
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        phase: "preferences",
+        departedMembers: [
+          { name: "Bob Jones", departedAt: expect.any(String) },
+        ],
+        affectedBuddyMembers: {},
+        membersWithNoCombos: [],
+      })
+    );
+  });
+
+  it("does NOT record departed member or delete combos when member joined after schedule generation", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", role: "member", status: "joined", groupId: "group-1" },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      // 1. affectedBuddies — none
+      [],
+      // 2. grpData
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // 3. departingUser — joined AFTER schedule generation
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-02-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Should NOT record departed member name
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ departedMembers: expect.anything() })
+    );
+    // Should NOT reset group phase
+    expect(setCalls).not.toContainEqual({ phase: "preferences" });
+    // Should only delete: buddy constraints, session prefs, member row (3 deletes)
+    // NOT combo/comboSession/windowRanking
+    expect(getDeleteCount()).toBe(3);
+  });
+
+  it("records affectedBuddyMembers when departing member has buddy connections in post-preferences phase", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      // 1. affectedBuddies — member-3 had departing member as buddy
+      [{ memberId: "member-3" }],
+      // 2. grpData
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // 3. departingUser
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Should record affected buddy mapping (values are arrays now)
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        affectedBuddyMembers: { "member-3": ["Bob Jones"] },
+      })
+    );
+  });
+
+  it("appends to existing departedMembers array", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      [],
+      [
+        {
+          departedMembers: [
+            { name: "Alice Smith", departedAt: "2028-01-14T00:00:00Z" },
+          ],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        departedMembers: [
+          { name: "Alice Smith", departedAt: "2028-01-14T00:00:00Z" },
+          { name: "Bob Jones", departedAt: expect.any(String) },
+        ],
+      })
+    );
+  });
+
+  it("merges into existing affectedBuddyMembers map", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      // member-4 had departing member-2 as buddy
+      [{ memberId: "member-4" }],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: { "member-3": ["Alice Smith"] },
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        affectedBuddyMembers: {
+          "member-3": ["Alice Smith"],
+          "member-4": ["Bob Jones"],
+        },
+      })
+    );
+  });
+
+  it("persists affectedBuddyMembers cleanup even when no new affected buddies", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      // No affected buddies
+      [],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Combined update includes affectedBuddyMembers (cleaned) and departedMembers
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        departedMembers: [
+          { name: "Bob Jones", departedAt: expect.any(String) },
+        ],
+        affectedBuddyMembers: {},
+      })
+    );
+  });
+
+  it("deletes algorithm outputs and regresses phase to preferences when wasPartOfSchedule is true", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      [],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Should reset group phase to preferences
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // Should reset non-buddy member statuses to preferences_set with statusChangedAt
+    expect(setCalls).toContainEqual({
+      status: "preferences_set",
+      statusChangedAt: expect.any(Date),
+    });
+    // Step 4 NOT triggered (no affected buddies)
+    expect(setCalls).not.toContainEqual({
+      status: "joined",
+      preferenceStep: "buddies",
+    });
+  });
+
+  it("does NOT delete combos when departing member has null joinedAt", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", role: "member", status: "joined", groupId: "group-1" },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      [],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // departingUser has null joinedAt — wasPartOfSchedule should be false
+      [{ firstName: "Bob", lastName: "Jones", joinedAt: null }],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // null joinedAt means wasPartOfSchedule is falsy — no combo deletion
+    expect(getDeleteCount()).toBe(3); // only buddy constraints, session prefs, member
+    expect(setCalls).not.toContainEqual({ phase: "preferences" });
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ departedMembers: expect.anything() })
+    );
+  });
+
+  it("does NOT delete combos when group has null scheduleGeneratedAt", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      [],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: null, // no schedule generated yet
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // null scheduleGeneratedAt means wasPartOfSchedule is falsy
+    expect(getDeleteCount()).toBe(3);
+    expect(setCalls).not.toContainEqual({ phase: "preferences" });
+  });
+
+  it("records affected buddies even when wasPartOfSchedule is false", async () => {
+    // This tests that affectedBuddyMembers tracking is independent of wasPartOfSchedule
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", role: "member", status: "joined", groupId: "group-1" },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      // member-3 had departing member as buddy
+      [{ memberId: "member-3" }],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // departed AFTER schedule generation — wasPartOfSchedule = false
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-02-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // affectedBuddyMembers SHOULD still be recorded even though wasPartOfSchedule is false
+    expect(setCalls).toContainEqual({
+      affectedBuddyMembers: { "member-3": ["Bob Jones"] },
+    });
+    // But combos should NOT be deleted (only 3 base deletes + member)
+    // and phase should NOT be reset
+    expect(setCalls).not.toContainEqual({ phase: "preferences" });
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ departedMembers: expect.anything() })
+    );
+  });
+
+  it("cleans up departing member's own affectedBuddyMembers entry", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", role: "member", status: "joined", groupId: "group-1" },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      [],
+      [
+        {
+          departedMembers: [],
+          // member-2 was previously affected by a departure — now they're also leaving
+          affectedBuddyMembers: {
+            "member-2": ["Alice Smith"],
+            "member-3": ["Alice Smith"],
+          },
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-02-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // member-2's entry should be cleaned up since they're departing
+    expect(setCalls).toContainEqual({
+      affectedBuddyMembers: { "member-3": ["Alice Smith"] },
+    });
+  });
+
+  it("wasPartOfSchedule=true with buddy connections: all members→preferences_set, phase→preferences", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      // member-3 had departing member as buddy
+      [{ memberId: "member-3" }],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // departed BEFORE schedule generation — wasPartOfSchedule = true
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Affected members are no longer reset to joined/buddies
+    expect(setCalls).not.toContainEqual({
+      status: "joined",
+      preferenceStep: "buddies",
+    });
+    // All remaining active members (including affected) reset to preferences_set with statusChangedAt
+    expect(setCalls).toContainEqual({
+      status: "preferences_set",
+      statusChangedAt: expect.any(Date),
+    });
+    // Phase regressed
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // Algorithm outputs deleted (buddy constraints + session prefs + combo_session + combo + window_ranking + member)
+    expect(getDeleteCount()).toBeGreaterThanOrEqual(6);
+    // affectedBuddyMembers recorded
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        affectedBuddyMembers: { "member-3": ["Bob Jones"] },
+      })
+    );
+  });
+
+  it("removeMember during preferences phase with buddy connections persists affectedBuddyMembers", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", role: "member", status: "joined", groupId: "group-1" },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      // member-3 had departing member as buddy
+      [{ memberId: "member-3" }],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: null, // no schedule generated
+        },
+      ],
+      [{ firstName: "Bob", lastName: "Jones", joinedAt: null }],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // affectedBuddyMembers persisted even without a schedule
+    expect(setCalls).toContainEqual({
+      affectedBuddyMembers: { "member-3": ["Bob Jones"] },
+    });
+    // No phase regression (was already preferences)
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // No departedMembers (no schedule to depart from)
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ departedMembers: expect.anything() })
+    );
+    // Only base deletes (buddy constraints, session prefs, member)
+    expect(getDeleteCount()).toBe(3);
+  });
+
+  it("schedule_review phase departure with wasPartOfSchedule=true triggers regression", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      [],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Algorithm outputs deleted
+    expect(getDeleteCount()).toBeGreaterThanOrEqual(6);
+    // Phase regressed to preferences
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // Non-buddy members reset with statusChangedAt
+    expect(setCalls).toContainEqual({
+      status: "preferences_set",
+      statusChangedAt: expect.any(Date),
+    });
+    // Departed member recorded
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        departedMembers: [
+          { name: "Bob Jones", departedAt: expect.any(String) },
+        ],
+      })
+    );
+  });
+
+  it("schedule_review phase departure with wasPartOfSchedule=false preserves schedules", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-2", role: "member", status: "joined", groupId: "group-1" },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      [],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // joined AFTER schedule generation
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-02-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Schedules preserved — only base deletes
+    expect(getDeleteCount()).toBe(3);
+    // Phase NOT regressed
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // No departed member recorded
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ departedMembers: expect.anything() })
+    );
+    // No non-buddy status reset
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({
+        status: "preferences_set",
+        statusChangedAt: expect.any(Date),
+      })
+    );
+  });
+
+  it("wasPartOfSchedule=false with buddy connections: schedules preserved, buddies tracked, no joined/buddies reset", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls, getDeleteCount } = buildTx([
+      [{ memberId: "member-3" }],
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // joined AFTER schedule generation
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-02-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // Affected members are no longer reset to joined/buddies
+    expect(setCalls).not.toContainEqual({
+      status: "joined",
+      preferenceStep: "buddies",
+    });
+    // affectedBuddyMembers tracked
+    expect(setCalls).toContainEqual({
+      affectedBuddyMembers: { "member-3": ["Bob Jones"] },
+    });
+    // Schedules preserved — only base deletes (buddy constraints, session prefs, member)
+    expect(getDeleteCount()).toBe(3);
+    // Phase NOT regressed
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ phase: "preferences" })
+    );
+    // No departed member recorded
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({ departedMembers: expect.anything() })
+    );
+    // No non-buddy status reset
+    expect(setCalls).not.toContainEqual(
+      expect.objectContaining({
+        status: "preferences_set",
+        statusChangedAt: expect.any(Date),
+      })
+    );
+  });
+
+  it("appends to existing affected buddy names array for same member", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "preferences_set",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const { setCalls } = buildTx([
+      [{ memberId: "member-3" }],
+      [
+        {
+          departedMembers: [
+            { name: "Alice Smith", departedAt: "2028-01-14T00:00:00Z" },
+          ],
+          // member-3 was already affected by Alice Smith's departure
+          affectedBuddyMembers: { "member-3": ["Alice Smith"] },
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ]);
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.success).toBe(true);
+    // member-3 should now have both departed buddy names
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        affectedBuddyMembers: { "member-3": ["Alice Smith", "Bob Jones"] },
+      })
+    );
+  });
+});
+
+describe("leaveGroup — departure tracking", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
+    directWhereResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+  });
+
+  it("records affected buddy members and departed name when leaving in schedule_review phase", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const setCalls: Record<string, unknown>[] = [];
+    let queryIndex = 0;
+    const txQueryResults: unknown[][] = [
+      // 1. affectedBuddies — member-3 had member-1 as buddy
+      [{ memberId: "member-3" }],
+      // 2. grpData
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: new Date("2028-01-15"),
+        },
+      ],
+      // 3. departingUser
+      [
+        {
+          firstName: "John",
+          lastName: "Doe",
+          joinedAt: new Date("2028-01-01"),
+        },
+      ],
+    ];
+
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const makeThenableWhere = () => ({
+        limit: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r(txQueryResults[queryIndex++] ?? []);
+          },
+        })),
+        then(r: (v: unknown) => void) {
+          r(txQueryResults[queryIndex++] ?? []);
+        },
+      });
+      const txFrom = vi.fn(() => ({
+        where: vi.fn(makeThenableWhere),
+        innerJoin: vi.fn(() => ({ where: vi.fn(makeThenableWhere) })),
+      }));
+      const tx = {
+        select: vi.fn(() => ({ from: txFrom })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        update: vi.fn(() => ({
+          set: vi.fn((vals: Record<string, unknown>) => {
+            setCalls.push(vals);
+            return { where: vi.fn(() => Promise.resolve()) };
+          }),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.success).toBe(true);
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        affectedBuddyMembers: { "member-3": ["John Doe"] },
+      })
+    );
+    expect(setCalls).toContainEqual(
+      expect.objectContaining({
+        departedMembers: [{ name: "John Doe", departedAt: expect.any(String) }],
+      })
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// generateSchedules
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("generateSchedules", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLimit.mockReset();
+    mockUpdateWhere.mockReset();
+    directWhereResults = [];
+    directFromResults = [];
+    mockUpdateWhere.mockResolvedValue(undefined);
+  });
+
+  it("returns error when not the owner", async () => {
+    mockNonOwner();
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe("Only the group owner can generate schedules.");
+  });
+
+  it("returns error when affectedBuddyMembers is non-empty", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        phase: "preferences",
+        affectedBuddyMembers: { "member-2": ["Bob Jones"] },
+      },
+    ]);
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe(
+      "All affected members must review their preferences before generating schedules."
+    );
+  });
+
+  it("returns error when group not found", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([]); // group not found
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe("Group not found.");
+  });
+
+  it("returns error when group phase is invalid", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        phase: "invalid_phase",
+        affectedBuddyMembers: {},
+      },
+    ]);
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe(
+      "Schedules can only be generated during the preferences or schedule review phase."
+    );
+  });
+
+  it("returns error when all members don't have preferences set", async () => {
+    mockOwner();
+    // Group data (via mockLimit)
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+    // activeMembers query — one member has status "joined" (not preferences_set)
+    directWhereResults.push([
+      { id: "m1", status: "preferences_set", minBuddies: 0, sportRankings: [] },
+      { id: "m2", status: "joined", minBuddies: 0, sportRankings: [] },
+    ]);
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe(
+      "All members must have their preferences set before generating schedules."
+    );
+  });
+
+  it("generates schedules successfully and returns success", async () => {
+    mockOwner();
+    // 1. Group data (via mockLimit)
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers (via directWhereResults)
+    directWhereResults.push([
+      {
+        id: "m1",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: ["tennis"],
+      },
+      {
+        id: "m2",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: ["swimming"],
+      },
+    ]);
+
+    // 3. buddies (via directWhereResults)
+    directWhereResults.push([]);
+
+    // 4. sessionPrefs (innerJoin path — still goes through mockWhere via directWhereResults)
+    directWhereResults.push([
+      {
+        memberId: "m1",
+        sessionCode: "S001",
+        sport: "tennis",
+        zone: "Z1",
+        sessionDate: "2028-07-12",
+        startTime: "09:00",
+        endTime: "12:00",
+        interest: "must_see",
+      },
+    ]);
+
+    // 5. travelEntries (via directFromResults — no .where())
+    directFromResults.push([
+      {
+        originZone: "Z1",
+        destinationZone: "Z2",
+        drivingMinutes: 30,
+        transitMinutes: 45,
+      },
+    ]);
+
+    // Mock algorithm result
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "primary",
+          score: 100,
+          sessionCodes: ["S001"],
+        },
+        {
+          memberId: "m2",
+          day: "2028-07-12",
+          rank: "primary",
+          score: 90,
+          sessionCodes: [],
+        },
+      ],
+      membersWithNoCombos: [],
+      convergence: { iterations: 1, converged: true, violations: [] },
+    });
+
+    // Mock window rankings
+    mockComputeWindowRankings.mockReturnValue([
+      { startDate: "2028-07-12", endDate: "2028-07-16", score: 190 },
+    ]);
+
+    // Transaction mock for the write phase
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txQueryQueue: unknown[][] = [
+        // dateConfig query inside tx
+        [
+          {
+            dateMode: "consecutive",
+            consecutiveDays: 5,
+            startDate: null,
+            endDate: null,
+          },
+        ],
+      ];
+      let qIdx = 0;
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => txQueryQueue[qIdx++] ?? []),
+              then(r: (v: unknown) => void) {
+                r(txQueryQueue[qIdx++] ?? []);
+              },
+            })),
+            then(r: (v: unknown) => void) {
+              r(txQueryQueue[qIdx++] ?? []);
+            },
+          })),
+        })),
+        delete: vi.fn(() => ({
+          where: vi.fn(() => Promise.resolve()),
+        })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => ({
+            returning: vi.fn(() => [{ id: "combo-1" }]),
+          })),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.success).toBe(true);
+    expect(result.membersWithNoCombos).toBeUndefined();
+    expect(mockRunScheduleGeneration).toHaveBeenCalledTimes(1);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(mockComputeWindowRankings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dateMode: "consecutive",
+        consecutiveDays: 5,
+      })
+    );
+  });
+
+  it("returns membersWithNoCombos when some members have no combos", async () => {
+    mockOwner();
+    // 1. Group data
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers
+    directWhereResults.push([
+      { id: "m1", status: "preferences_set", minBuddies: 0, sportRankings: [] },
+      { id: "m2", status: "preferences_set", minBuddies: 0, sportRankings: [] },
+    ]);
+
+    // 3. buddies
+    directWhereResults.push([]);
+
+    // 4. sessionPrefs (innerJoin)
+    directWhereResults.push([]);
+
+    // 5. travelEntries (no where)
+    directFromResults.push([]);
+
+    // Algorithm returns some members with no combos
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "primary",
+          score: 50,
+          sessionCodes: [],
+        },
+      ],
+      membersWithNoCombos: ["m2"],
+      convergence: { iterations: 1, converged: true, violations: [] },
+    });
+
+    // Transaction — newPhase will be "preferences" since membersWithNoCombos is non-empty
+    // So window rankings computation is skipped
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => []),
+              then(r: (v: unknown) => void) {
+                r([]);
+              },
+            })),
+            then(r: (v: unknown) => void) {
+              r([]);
+            },
+          })),
+        })),
+        delete: vi.fn(() => ({
+          where: vi.fn(() => Promise.resolve()),
+        })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => ({
+            returning: vi.fn(() => [{ id: "combo-1" }]),
+          })),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.success).toBe(true);
+    expect(result.membersWithNoCombos).toEqual(["m2"]);
+    expect(mockRunScheduleGeneration).toHaveBeenCalledTimes(1);
+    // Window rankings NOT computed because newPhase is "preferences"
+    expect(mockComputeWindowRankings).not.toHaveBeenCalled();
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockOwner();
+    // 1. Group data
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers
+    directWhereResults.push([
+      { id: "m1", status: "preferences_set", minBuddies: 0, sportRankings: [] },
+    ]);
+
+    // 3. buddies
+    directWhereResults.push([]);
+
+    // 4. sessionPrefs
+    directWhereResults.push([]);
+
+    // 5. travelEntries
+    directFromResults.push([]);
+
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [],
+      membersWithNoCombos: [],
+      convergence: { iterations: 1, converged: true, violations: [] },
+    });
+
+    // Transaction rejects
+    mockTransaction.mockRejectedValue(new Error("TX error"));
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe(
+      "Failed to generate schedules. Please try again."
+    );
   });
 });

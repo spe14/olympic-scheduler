@@ -9,26 +9,21 @@ import type { AvatarColor } from "@/lib/constants";
 type BuddySelection = { memberId: string; type: "hard" | "soft" };
 
 type Props = {
-  initialBudget: number | null;
   initialMinBuddies: number;
   initialBuddies: BuddySelection[];
   onChange: (data: {
-    budget: number | null;
     minBuddies: number;
     buddies: BuddySelection[];
+    isValid: boolean;
   }) => void;
 };
 
-export default function BuddiesBudgetStep({
-  initialBudget,
+export default function BuddiesStep({
   initialMinBuddies,
   initialBuddies,
   onChange,
 }: Props) {
   const group = useGroup();
-  const [budget, setBudget] = useState(
-    initialBudget !== null ? String(initialBudget) : ""
-  );
   const [minBuddies, setMinBuddies] = useState(String(initialMinBuddies));
   const [buddies, setBuddies] = useState<BuddySelection[]>(initialBuddies);
 
@@ -36,16 +31,24 @@ export default function BuddiesBudgetStep({
     (m) => m.status !== "pending_approval" && m.id !== group.myMemberId
   );
 
+  const hardBuddyCount = buddies.filter((b) => b.type === "hard").length;
+  const parsedMin = parseInt(minBuddies) || 0;
+  const minBuddiesError =
+    hardBuddyCount > 0 && parsedMin < hardBuddyCount
+      ? "The number of minimum buddies should be greater than or equal to the number of required buddies."
+      : null;
+
   function emitChange(
-    b: string = budget,
     mb: string = minBuddies,
     buddyList: BuddySelection[] = buddies
   ) {
-    const parsed = parseInt(b, 10);
+    const hardCount = buddyList.filter((b) => b.type === "hard").length;
+    const parsed = parseInt(mb) || 0;
+    const isValid = parsed >= hardCount;
     onChange({
-      budget: b.trim() === "" ? null : isNaN(parsed) ? null : parsed,
-      minBuddies: parseInt(mb) || 0,
+      minBuddies: parsed,
       buddies: buddyList,
+      isValid,
     });
   }
 
@@ -64,7 +67,7 @@ export default function BuddiesBudgetStep({
     }
 
     setBuddies(next);
-    emitChange(budget, minBuddies, next);
+    emitChange(minBuddies, next);
   }
 
   function getBuddyState(memberId: string): "none" | "hard" | "soft" {
@@ -88,39 +91,6 @@ export default function BuddiesBudgetStep({
     <div className="space-y-6">
       <div>
         <h3 className="mb-1 text-base font-semibold text-slate-900">
-          Budget <span className="font-normal text-slate-400">(Optional)</span>
-        </h3>
-        <p className="mb-0 text-sm text-slate-500">
-          Maximum amount you&apos;re willing to spend on tickets (USD).
-        </p>
-        <p className="mb-2 text-sm text-slate-500">
-          This field is for reference only and will not impact your generated
-          schedule.
-        </p>
-        <div className="relative max-w-xs">
-          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-            $
-          </span>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder=""
-            className={
-              inputClass +
-              " pl-7 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            }
-            value={budget ? Number(budget).toLocaleString("en-US") : ""}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/[^0-9]/g, "");
-              setBudget(raw);
-              emitChange(raw, minBuddies, buddies);
-            }}
-          />
-        </div>
-      </div>
-
-      <div>
-        <h3 className="mb-1 text-base font-semibold text-slate-900">
           Minimum Buddies
         </h3>
         <p className="mb-0 text-sm text-slate-500">
@@ -136,7 +106,11 @@ export default function BuddiesBudgetStep({
           max={eligibleMembers.length}
           step="1"
           placeholder="0"
-          className={inputClass + " max-w-xs"}
+          disabled={eligibleMembers.length === 0}
+          className={
+            inputClass +
+            " max-w-xs disabled:cursor-not-allowed disabled:opacity-50"
+          }
           value={minBuddies}
           onChange={(e) => {
             const val = parseInt(e.target.value, 10);
@@ -144,9 +118,12 @@ export default function BuddiesBudgetStep({
               ? ""
               : String(Math.min(Math.max(val, 0), eligibleMembers.length));
             setMinBuddies(clamped);
-            emitChange(budget, clamped, buddies);
+            emitChange(clamped, buddies);
           }}
         />
+        {minBuddiesError && (
+          <p className="mt-1.5 text-sm text-red-600">{minBuddiesError}</p>
+        )}
       </div>
 
       <div>
@@ -168,8 +145,8 @@ export default function BuddiesBudgetStep({
           it&apos;s not a dealbreaker.
         </p>
         {eligibleMembers.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            No other members in this group yet.
+          <p className="text-base text-[#d97706]">
+            There are no other members in this group yet.
           </p>
         ) : (
           <div className="space-y-2">

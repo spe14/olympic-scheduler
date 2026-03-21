@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  fireEvent,
+  act,
+} from "@testing-library/react";
 import NavBar from "@/components/nav-bar";
 import { setGlobalGuard } from "@/lib/navigation-guard-store";
+import { logout as mockLogout } from "@/app/(auth)/actions";
 
 // ─── Mocks ──────────────────────────────────────────────────────────
 
@@ -39,9 +46,17 @@ const defaultProps = {
   avatarColor: "blue" as const,
 };
 
+// ─── Helpers ────────────────────────────────────────────────────────
+
+function openDropdownAndGet(label: string) {
+  const avatarButton = screen.getByText("@janedoe").closest("button")!;
+  fireEvent.click(avatarButton);
+  return screen.getByText(label);
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
-describe("NavBar — home link navigation guard", () => {
+describe("NavBar navigation guards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setGlobalGuard(null);
@@ -52,71 +67,169 @@ describe("NavBar — home link navigation guard", () => {
     setGlobalGuard(null);
   });
 
-  it("navigates to home when no guard is registered", () => {
-    render(<NavBar {...defaultProps} />);
+  // ── Home link ───────────────────────────────────────────────────
 
-    const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
-    const clickEvent = new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
+  describe("home link", () => {
+    it("navigates when no guard is registered", () => {
+      render(<NavBar {...defaultProps} />);
+
+      const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        homeLink.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
     });
-    homeLink.dispatchEvent(clickEvent);
 
-    // No guard registered — default browser navigation should NOT be prevented
-    expect(clickEvent.defaultPrevented).toBe(false);
-  });
+    it("navigates when guard allows (no dirty steps)", () => {
+      setGlobalGuard(() => true);
+      render(<NavBar {...defaultProps} />);
 
-  it("navigates to home when guard is registered but no dirty steps", () => {
-    setGlobalGuard(() => true); // clean — allow navigation
+      const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        homeLink.dispatchEvent(clickEvent);
+      });
 
-    render(<NavBar {...defaultProps} />);
-
-    const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
-    const clickEvent = new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
+      expect(clickEvent.defaultPrevented).toBe(false);
     });
-    homeLink.dispatchEvent(clickEvent);
 
-    expect(clickEvent.defaultPrevented).toBe(false);
-  });
+    it("prevents navigation when guard blocks (unsaved changes)", () => {
+      const mockGuard = vi.fn(() => false);
+      setGlobalGuard(mockGuard);
+      render(<NavBar {...defaultProps} />);
 
-  it("prevents navigation when guard returns false (unsaved changes)", () => {
-    const mockGuard = vi.fn(() => false); // dirty — block navigation
-    setGlobalGuard(mockGuard);
+      const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
+      fireEvent.click(homeLink);
 
-    render(<NavBar {...defaultProps} />);
-
-    const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
-    fireEvent.click(homeLink);
-
-    expect(mockGuard).toHaveBeenCalledWith("/");
-  });
-
-  it("calls the guard with '/' as the href", () => {
-    const mockGuard = vi.fn(() => true);
-    setGlobalGuard(mockGuard);
-
-    render(<NavBar {...defaultProps} />);
-
-    const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
-    fireEvent.click(homeLink);
-
-    expect(mockGuard).toHaveBeenCalledWith("/");
-  });
-
-  it("allows navigation when guard is registered and returns true", () => {
-    setGlobalGuard(() => true);
-
-    render(<NavBar {...defaultProps} />);
-
-    const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
-    const clickEvent = new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
+      expect(mockGuard).toHaveBeenCalledWith("/", undefined);
     });
-    homeLink.dispatchEvent(clickEvent);
+  });
 
-    expect(clickEvent.defaultPrevented).toBe(false);
+  // ── Profile link ────────────────────────────────────────────────
+
+  describe("profile link", () => {
+    it("navigates when no guard is registered", () => {
+      render(<NavBar {...defaultProps} />);
+      const profileLink = openDropdownAndGet("Profile");
+
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        profileLink.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    it("navigates when guard allows (no dirty steps)", () => {
+      setGlobalGuard(() => true);
+      render(<NavBar {...defaultProps} />);
+      const profileLink = openDropdownAndGet("Profile");
+
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        profileLink.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    it("prevents navigation when guard blocks (unsaved changes)", () => {
+      const mockGuard = vi.fn(() => false);
+      setGlobalGuard(mockGuard);
+      render(<NavBar {...defaultProps} />);
+      const profileLink = openDropdownAndGet("Profile");
+
+      fireEvent.click(profileLink);
+
+      expect(mockGuard).toHaveBeenCalledWith("/profile", undefined);
+    });
+
+    it("closes dropdown regardless of guard result", () => {
+      setGlobalGuard(() => false);
+      render(<NavBar {...defaultProps} />);
+      openDropdownAndGet("Profile");
+
+      fireEvent.click(screen.getByText("Profile"));
+
+      expect(screen.queryByText("Profile")).toBeNull();
+    });
+  });
+
+  // ── Logout button ───────────────────────────────────────────────
+
+  describe("logout button", () => {
+    it("submits form when no guard is registered", () => {
+      render(<NavBar {...defaultProps} />);
+      const logoutBtn = openDropdownAndGet("Log Out");
+
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        logoutBtn.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    it("submits form when guard allows (no dirty steps)", () => {
+      setGlobalGuard(() => true);
+      render(<NavBar {...defaultProps} />);
+      const logoutBtn = openDropdownAndGet("Log Out");
+
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        logoutBtn.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    it("prevents logout and closes dropdown when guard blocks", () => {
+      const mockGuard = vi.fn(() => false);
+      setGlobalGuard(mockGuard);
+      render(<NavBar {...defaultProps} />);
+      openDropdownAndGet("Log Out");
+
+      fireEvent.click(screen.getByText("Log Out"));
+
+      expect(mockGuard).toHaveBeenCalledWith("/login", expect.any(Function));
+      expect(screen.queryByText("Log Out")).toBeNull();
+    });
+
+    it("passes logout action as onDiscard callback", () => {
+      let capturedCallback: (() => void) | undefined;
+      const mockGuard = vi.fn((_href: string, onDiscard?: () => void) => {
+        capturedCallback = onDiscard;
+        return false;
+      });
+      setGlobalGuard(mockGuard);
+      render(<NavBar {...defaultProps} />);
+      openDropdownAndGet("Log Out");
+
+      fireEvent.click(screen.getByText("Log Out"));
+
+      expect(capturedCallback).toBeDefined();
+      capturedCallback!();
+      expect(mockLogout).toHaveBeenCalled();
+    });
   });
 });

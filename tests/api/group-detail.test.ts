@@ -48,7 +48,6 @@ vi.mock("@/lib/db/schema", () => ({
     groupId: "group_id",
     role: "role",
     status: "status",
-    budget: "budget",
     createdAt: "created_at",
   },
   user: {
@@ -58,11 +57,20 @@ vi.mock("@/lib/db/schema", () => ({
     username: "username",
     avatarColor: "avatar_color",
   },
+  windowRanking: {
+    id: "id",
+    groupId: "group_id",
+    startDate: "start_date",
+    endDate: "end_date",
+    score: "score",
+    selected: "selected",
+  },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   and: vi.fn(),
+  desc: vi.fn(),
 }));
 
 const mockUser = { id: "user-1" };
@@ -96,7 +104,6 @@ const sampleMembers = [
     avatarColor: "blue",
     role: "owner",
     status: "joined",
-    budget: null,
     createdAt: "2028-01-01",
   },
 ];
@@ -151,6 +158,8 @@ describe("GET /api/groups/[groupId]", () => {
       { id: "member-1", role: "owner", status: "joined" },
     ]);
     directWhereResults.push([sampleGroup]);
+    // First orderBy call is for windowRankings, second is for members
+    mockOrderBy.mockResolvedValueOnce([]);
     mockOrderBy.mockResolvedValueOnce(sampleMembers);
 
     const response = await callGET();
@@ -162,6 +171,7 @@ describe("GET /api/groups/[groupId]", () => {
     expect(body.myStatus).toBe("joined");
     expect(body.myMemberId).toBe("member-1");
     expect(body.members).toEqual(sampleMembers);
+    expect(body.windowRankings).toEqual([]);
   });
 
   it("returns correct myRole and myStatus for non-owner member", async () => {
@@ -170,6 +180,8 @@ describe("GET /api/groups/[groupId]", () => {
       { id: "member-2", role: "member", status: "preferences_set" },
     ]);
     directWhereResults.push([sampleGroup]);
+    // First orderBy call is for windowRankings, second is for members
+    mockOrderBy.mockResolvedValueOnce([]);
     mockOrderBy.mockResolvedValueOnce([]);
 
     const response = await callGET();
