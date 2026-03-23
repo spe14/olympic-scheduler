@@ -269,8 +269,22 @@ export default function ScheduleContent() {
   const weekLabel = `${weekStart.monthDay} - ${weekEnd.monthDay}, 2028`;
   const gridHeight = TOTAL_HOURS * HOUR_HEIGHT;
 
+  const isAffectedByNonConvergence =
+    group.nonConvergenceMembers?.includes(group.myMemberId) ?? false;
+
   return (
     <section>
+      {isAffectedByNonConvergence && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-800">
+          <p>
+            The algorithm was not able to meet all of your requirements during
+            schedule generation. The generated schedule is the best-effort
+            output. You can adjust preferences as needed in the{" "}
+            <span className="font-semibold">Preferences</span> tab if you are
+            unsatisfied with your schedule.
+          </p>
+        </div>
+      )}
       {/* Top bar */}
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-900">My Schedule</h2>

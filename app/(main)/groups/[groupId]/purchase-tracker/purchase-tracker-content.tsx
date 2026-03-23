@@ -41,7 +41,7 @@ import type {
   PurchaseData,
   ReportedPriceData,
 } from "../schedule/purchase-actions";
-import { PageError } from "@/components/page-state";
+import { PageError, PageEmpty } from "@/components/page-state";
 import FilterPill, { FilterGroup } from "@/components/filter-pill";
 import SidebarSearch from "@/components/sidebar-search";
 import {
@@ -284,6 +284,17 @@ export default function PurchaseTrackerContent() {
     }
     return codes;
   }, [data]);
+
+  if (group.phase === "preferences") {
+    return (
+      <PageEmpty title="Purchase Planner & Tracker">
+        <p className="text-base text-slate-500">
+          The purchase planner & tracker will be available once the owner has
+          generated schedules for the group.
+        </p>
+      </PageEmpty>
+    );
+  }
 
   if (loading) {
     return (

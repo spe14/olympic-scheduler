@@ -127,7 +127,13 @@ function makeGroup(overrides: Partial<GroupDetail> = {}): GroupDetail {
       },
     ],
     membersWithNoCombos: [],
+    nonConvergenceMembers: [],
     memberTimeslots: [],
+    membersPurchased: [],
+    membersWithPurchaseData: [],
+    purchaseDataChangedAt: null,
+    myScheduleWarningAckedAt: null,
+    myTimeslot: null,
     departedMembers: [],
     affectedBuddyMembers: {},
     windowRankings: [],
@@ -496,40 +502,31 @@ describe("GroupShell — sidebar nav statuses", () => {
       expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(false);
     });
 
-    it("shows warning when any member has no combos (preferences phase post-generation)", () => {
+    it("shows 'not generated' warning in preferences phase even when membersWithNoCombos is non-empty", () => {
       const group = makeGroup({
         phase: "preferences",
         myStatus: "preferences_set",
         scheduleGeneratedAt: "2028-01-01T00:00:00Z",
         membersWithNoCombos: ["member-2"],
-        members: [
-          {
-            id: "owner-1",
-            userId: "user-1",
-            firstName: "Alice",
-            lastName: "Smith",
-            username: "alice",
-            avatarColor: "blue",
-            role: "owner",
-            status: "preferences_set",
-            joinedAt: "2027-12-01T00:00:00Z",
-            statusChangedAt: null,
-            createdAt: "2027-12-01T00:00:00Z",
-          },
-          {
-            id: "member-2",
-            userId: "user-2",
-            firstName: "Bob",
-            lastName: "Jones",
-            username: "bob",
-            avatarColor: "red",
-            role: "member",
-            status: "preferences_set",
-            joinedAt: "2027-12-02T00:00:00Z",
-            statusChangedAt: null,
-            createdAt: "2027-12-02T00:00:00Z",
-          },
-        ],
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      // "not generated" takes precedence over no-combos warning in preferences phase
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
+    });
+
+    it("shows no-combos warning in schedule_review phase when membersWithNoCombos is non-empty", () => {
+      const group = makeGroup({
+        phase: "schedule_review",
+        myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+        membersWithNoCombos: ["member-2"],
       });
       render(
         <GroupShell group={group}>
@@ -616,14 +613,16 @@ describe("GroupShell — sidebar nav statuses", () => {
           <div />
         </GroupShell>
       );
-      // My Schedule: no warning (phase is preferences, membersWithNoCombos is empty)
-      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(false);
-      expect(hasCheckIcon(getNavItem("My Schedule"))).toBe(false);
+      // My Schedule: warning (schedules not generated)
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
       // Overview: warning (departed member)
       expect(hasWarningIcon(getNavItem("Overview"))).toBe(true);
     });
 
-    it("shows no icon in preferences phase even if status is preferences_set", () => {
+    it("shows 'not generated' warning in preferences phase even if status is preferences_set", () => {
       const group = makeGroup({
         phase: "preferences",
         myStatus: "preferences_set",
@@ -633,11 +632,13 @@ describe("GroupShell — sidebar nav statuses", () => {
           <div />
         </GroupShell>
       );
-      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(false);
-      expect(hasCheckIcon(getNavItem("My Schedule"))).toBe(false);
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
     });
 
-    it("shows no warning after departure resets phase to preferences", () => {
+    it("shows 'not generated' warning after departure resets phase to preferences", () => {
       // Simulates the post-departure state: phase regressed, myStatus reset
       const group = makeGroup({
         phase: "preferences",
@@ -652,12 +653,160 @@ describe("GroupShell — sidebar nav statuses", () => {
           <div />
         </GroupShell>
       );
-      // My Schedule should have no warning (phase is preferences)
-      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(false);
+      // My Schedule should have 'not generated' warning (phase is preferences)
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
       // But Preferences should show warning (affected buddy)
       expect(hasWarningIcon(getNavItem("Preferences"))).toBe(true);
       // And Overview should show warning (departed + affected)
       expect(hasWarningIcon(getNavItem("Overview"))).toBe(true);
+    });
+  });
+
+  // ── "Schedules not generated" warning across all tabs ─────────
+
+  describe("'Schedules not generated' warning across tabs", () => {
+    it("My Schedule shows 'not generated' warning when not in schedule_review", () => {
+      const group = makeGroup({ phase: "preferences" });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
+    });
+
+    it("Group Schedule shows 'not generated' warning when scheduleGeneratedAt is null", () => {
+      const group = makeGroup({ phase: "preferences" });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(hasWarningIcon(getNavItem("Group Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("Group Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
+    });
+
+    it("Purchase Planner & Tracker shows 'not generated' warning when not in schedule_review", () => {
+      const group = makeGroup({ phase: "preferences" });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(hasWarningIcon(getNavItem("Purchase Planner & Tracker"))).toBe(
+        true
+      );
+      expect(getTooltipText(getNavItem("Purchase Planner & Tracker"))).toBe(
+        "Schedules have not been generated yet."
+      );
+    });
+
+    it("'not generated' warning clears on all tabs once in schedule_review", () => {
+      const group = makeGroup({
+        phase: "schedule_review",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(getTooltipText(getNavItem("My Schedule"))).not.toBe(
+        "Schedules have not been generated yet."
+      );
+      expect(getTooltipText(getNavItem("Group Schedule"))).not.toBe(
+        "Schedules have not been generated yet."
+      );
+      expect(getTooltipText(getNavItem("Purchase Planner & Tracker"))).not.toBe(
+        "Schedules have not been generated yet."
+      );
+    });
+  });
+
+  // ── Purchase Planner & Tracker nav status ────────────────────
+
+  describe("Purchase Planner & Tracker nav status", () => {
+    it("shows timeslot warning when in schedule_review with no timeslot", () => {
+      const group = makeGroup({
+        phase: "schedule_review",
+        myTimeslot: null,
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(hasWarningIcon(getNavItem("Purchase Planner & Tracker"))).toBe(
+        true
+      );
+      expect(getTooltipText(getNavItem("Purchase Planner & Tracker"))).toBe(
+        "You haven't entered your purchase timeslot yet."
+      );
+    });
+
+    it("shows in-progress warning when timeslot is in progress", () => {
+      const group = makeGroup({
+        phase: "schedule_review",
+        myTimeslot: {
+          timeslotStart: "2028-07-01T10:00:00Z",
+          timeslotEnd: "2028-07-01T12:00:00Z",
+          status: "in_progress",
+        },
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(hasWarningIcon(getNavItem("Purchase Planner & Tracker"))).toBe(
+        true
+      );
+      expect(getTooltipText(getNavItem("Purchase Planner & Tracker"))).toBe(
+        "Your purchase timeslot is in progress."
+      );
+    });
+
+    it("shows check when timeslot is completed", () => {
+      const group = makeGroup({
+        phase: "schedule_review",
+        myTimeslot: {
+          timeslotStart: "2028-07-01T10:00:00Z",
+          timeslotEnd: "2028-07-01T12:00:00Z",
+          status: "completed",
+        },
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(hasCheckIcon(getNavItem("Purchase Planner & Tracker"))).toBe(true);
+      expect(hasWarningIcon(getNavItem("Purchase Planner & Tracker"))).toBe(
+        false
+      );
+    });
+
+    it("'not generated' warning takes precedence over timeslot warning", () => {
+      const group = makeGroup({
+        phase: "preferences",
+        myTimeslot: null,
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(getTooltipText(getNavItem("Purchase Planner & Tracker"))).toBe(
+        "Schedules have not been generated yet."
+      );
     });
   });
 
@@ -752,8 +901,11 @@ describe("GroupShell — sidebar nav statuses", () => {
       );
 
       // After sync effect fires, sidebar should use fresh data:
-      // - My Schedule: NO warning (phase is preferences, not schedule_review)
-      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(false);
+      // - My Schedule: WARNING (schedules not generated — phase is preferences)
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
       // - Preferences: WARNING (affected buddy)
       expect(hasWarningIcon(getNavItem("Preferences"))).toBe(true);
       expect(getTooltipText(getNavItem("Preferences"))).toBe(
@@ -933,8 +1085,11 @@ describe("GroupShell — sidebar nav statuses", () => {
         </GroupShell>
       );
 
-      // My Schedule: NO warning (phase is preferences after sync)
-      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(false);
+      // My Schedule: WARNING (schedules not generated — phase is preferences after sync)
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules have not been generated yet."
+      );
 
       // Preferences: WARNING (owner is affected buddy)
       expect(hasWarningIcon(getNavItem("Preferences"))).toBe(true);

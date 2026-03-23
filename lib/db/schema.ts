@@ -144,6 +144,9 @@ export const group = pgTable("groups", {
   membersWithNoCombos: jsonb("members_with_no_combos")
     .$type<string[]>()
     .default([]),
+  nonConvergenceMembers: jsonb("non_convergence_members")
+    .$type<string[]>()
+    .default([]),
   purchaseDataChangedAt: timestamp("purchase_data_changed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

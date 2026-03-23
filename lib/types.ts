@@ -81,6 +81,7 @@ export type GroupDetail = {
   membersPurchased: string[];
   membersWithPurchaseData: string[];
   membersWithNoCombos: string[];
+  nonConvergenceMembers: string[];
   departedMembers: { name: string; departedAt: string; rejoinedAt?: string }[];
   affectedBuddyMembers: Record<string, string[]>;
   windowRankings: WindowRanking[];

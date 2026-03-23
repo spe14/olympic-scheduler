@@ -1026,6 +1026,11 @@ export async function generateSchedules(
           ? "preferences"
           : "schedule_review";
 
+      // Extract unique member IDs affected by non-convergence violations
+      const nonConvergenceMembers = result.convergence.converged
+        ? []
+        : [...new Set(result.convergence.violations.map((v) => v.memberId))];
+
       await tx
         .update(group)
         .set({
@@ -1035,6 +1040,7 @@ export async function generateSchedules(
           departedMembers: [],
           affectedBuddyMembers: {},
           membersWithNoCombos: result.membersWithNoCombos,
+          nonConvergenceMembers,
         })
         .where(eq(group.id, groupId));
 

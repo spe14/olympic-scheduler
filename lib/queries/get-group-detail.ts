@@ -46,6 +46,7 @@ export const getGroupDetail = cache(async function getGroupDetail(
       departedMembers: group.departedMembers,
       affectedBuddyMembers: group.affectedBuddyMembers,
       membersWithNoCombos: group.membersWithNoCombos,
+      nonConvergenceMembers: group.nonConvergenceMembers,
       createdAt: group.createdAt,
     })
     .from(group)
@@ -146,6 +147,9 @@ export const getGroupDetail = cache(async function getGroupDetail(
     windowRankings,
     membersWithNoCombos: Array.isArray(groupData.membersWithNoCombos)
       ? (groupData.membersWithNoCombos as string[])
+      : [],
+    nonConvergenceMembers: Array.isArray(groupData.nonConvergenceMembers)
+      ? (groupData.nonConvergenceMembers as string[])
       : [],
     departedMembers: Array.isArray(groupData.departedMembers)
       ? (groupData.departedMembers as unknown[]).map((entry) =>

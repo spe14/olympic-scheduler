@@ -265,7 +265,21 @@ export default function NotificationsSection() {
     });
   }
 
-  // 6. Purchase Changes (AMBER)
+  // 6. Non-Convergence (AMBER) — shown only to affected members
+  const isAffectedByNonConvergence =
+    group.nonConvergenceMembers?.includes(group.myMemberId) ?? false;
+
+  if (isAffectedByNonConvergence && group.scheduleGeneratedAt) {
+    notifications.push({
+      key: "non-convergence",
+      variant: "warning",
+      content:
+        "The algorithm was not able to meet all of your requirements during schedule generation. The generated schedule is the best-effort output. You can adjust preferences as needed in the Preferences tab if you are unsatisfied with your schedule.",
+      timestamp: new Date(group.scheduleGeneratedAt),
+    });
+  }
+
+  // 7. Purchase Changes (AMBER)
   const hasPurchaseChanges =
     group.purchaseDataChangedAt &&
     group.scheduleGeneratedAt &&

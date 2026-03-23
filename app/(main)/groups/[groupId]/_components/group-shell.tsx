@@ -142,8 +142,9 @@ export default function GroupShell({
       label: "My Schedule",
       href: `${basePath}/schedule`,
       visible: true,
-      status:
-        inScheduleReview && !anyMemberHasNoCombos
+      status: !inScheduleReview
+        ? { type: "warning", tooltip: "Schedules have not been generated yet." }
+        : !anyMemberHasNoCombos
           ? { type: "complete" }
           : getScheduleWarning()
             ? { type: "warning", tooltip: getScheduleWarning() }
@@ -155,7 +156,7 @@ export default function GroupShell({
       href: `${basePath}/group-schedule`,
       visible: true,
       status: !group.scheduleGeneratedAt
-        ? { type: "none" }
+        ? { type: "warning", tooltip: "Schedules have not been generated yet." }
         : !hasDateConfig
           ? {
               type: "warning",
@@ -176,20 +177,22 @@ export default function GroupShell({
       key: "purchase-tracker",
       label: "Purchase Planner & Tracker",
       href: `${basePath}/purchase-tracker`,
-      visible: inScheduleReview,
-      status: group.myTimeslot
-        ? group.myTimeslot.status === "completed"
-          ? { type: "complete" }
-          : group.myTimeslot.status === "in_progress"
-            ? {
-                type: "warning",
-                tooltip: "Your purchase timeslot is in progress.",
-              }
-            : { type: "complete" }
-        : {
-            type: "warning",
-            tooltip: "You haven't entered your purchase timeslot yet.",
-          },
+      visible: true,
+      status: !inScheduleReview
+        ? { type: "warning", tooltip: "Schedules have not been generated yet." }
+        : group.myTimeslot
+          ? group.myTimeslot.status === "completed"
+            ? { type: "complete" }
+            : group.myTimeslot.status === "in_progress"
+              ? {
+                  type: "warning",
+                  tooltip: "Your purchase timeslot is in progress.",
+                }
+              : { type: "complete" }
+          : {
+              type: "warning",
+              tooltip: "You haven't entered your purchase timeslot yet.",
+            },
     },
   ];
 

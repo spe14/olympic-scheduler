@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "non_convergence_members" jsonb DEFAULT '[]'::jsonb;

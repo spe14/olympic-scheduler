@@ -32,6 +32,7 @@ function makeGroup(overrides: Partial<GroupDetail> = {}): GroupDetail {
     myTimeslot: null,
     members: [],
     membersWithNoCombos: [],
+    nonConvergenceMembers: [],
     memberTimeslots: [],
     membersPurchased: [],
     membersWithPurchaseData: [],

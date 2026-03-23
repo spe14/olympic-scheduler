@@ -986,4 +986,75 @@ describe("NotificationsSection", () => {
       screen.getByText(/Bob Jones recently joined the group/)
     ).toBeInTheDocument();
   });
+
+  // --- Non-convergence (AMBER) ---
+
+  it("shows non-convergence warning for affected member", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      nonConvergenceMembers: ["owner-1"],
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.getByText(/not able to meet all of your requirements/)
+    ).toBeInTheDocument();
+  });
+
+  it("does not show non-convergence warning for unaffected member", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      nonConvergenceMembers: ["member-2"],
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.queryByText(/not able to meet all of your requirements/)
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show non-convergence warning when list is empty", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      nonConvergenceMembers: [],
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.queryByText(/not able to meet all of your requirements/)
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows non-convergence notification with amber styling", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      nonConvergenceMembers: ["owner-1"],
+    });
+    const { container } = render(<NotificationsSection />);
+    const amberNotifications = container.querySelectorAll(".border-amber-200");
+    const texts = Array.from(amberNotifications).map((el) => el.textContent);
+    expect(texts.some((t) => t?.includes("not able to meet all"))).toBe(true);
+  });
+
+  it("shows non-convergence timestamp from scheduleGeneratedAt", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-07-15T14:30:00Z",
+      nonConvergenceMembers: ["owner-1"],
+    });
+    render(<NotificationsSection />);
+    expect(screen.getByText(/Jul 15, 2028/)).toBeInTheDocument();
+  });
+
+  it("does not show non-convergence warning when scheduleGeneratedAt is null", () => {
+    mockGroup = baseGroup({
+      nonConvergenceMembers: ["owner-1"],
+      scheduleGeneratedAt: null,
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.queryByText(/not able to meet all of your requirements/)
+    ).not.toBeInTheDocument();
+  });
 });
