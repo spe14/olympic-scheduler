@@ -870,8 +870,8 @@ describe("deleteOffScheduleSessionData", () => {
     mockGetMembership.mockResolvedValue(membership);
     const result = await deleteOffScheduleSessionData("group-1", "SES-001");
     expect(result).toEqual({ success: true });
-    // Two delete calls: ticket purchases + reported prices
-    expect(mockDelete).toHaveBeenCalledTimes(2);
+    // Deletes run inside a transaction
+    expect(mockTransaction).toHaveBeenCalledOnce();
   });
 });
 

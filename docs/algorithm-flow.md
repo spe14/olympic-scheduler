@@ -13,7 +13,7 @@ Traces every user action from first visit through schedule generation and purcha
 **Validation:**
 
 - Username must be unique
-- Password: min 8 chars, uppercase, number, special char
+- Password: min 8 chars
 
 **System:**
 
@@ -58,9 +58,9 @@ User sees three sections:
 
 **User provides:**
 
-- Group name (1–100 chars)
+- Group name (1–50 chars)
 - Date mode (one of):
-  - Consecutive Days → how many (1–16)
+  - Consecutive Days → how many (1–19)
   - Specific Dates → start and end dates
   - Decide Later → null
 

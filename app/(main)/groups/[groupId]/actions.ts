@@ -1029,8 +1029,21 @@ export async function generateSchedules(
     // Run algorithm
     const result = runScheduleGeneration(membersData, travelData, days);
 
-    // Write results in transaction
+    // Write results in transaction (lock group row to prevent concurrent departures)
     await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ phase: group.phase })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .limit(1)
+        .for("update");
+      if (
+        !locked ||
+        (locked.phase !== "preferences" && locked.phase !== "schedule_review")
+      ) {
+        throw new Error("Group state changed during generation");
+      }
+
       // Cleanup existing data
       const existingComboIds = tx
         .select({ id: combo.id })

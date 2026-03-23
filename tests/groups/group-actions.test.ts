@@ -3272,6 +3272,8 @@ describe("generateSchedules", () => {
     // Transaction mock for the write phase
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
       const txQueryQueue: unknown[][] = [
+        // lock query: group phase re-check
+        [{ phase: "preferences" }],
         // dateConfig query inside tx
         [
           {
@@ -3283,16 +3285,20 @@ describe("generateSchedules", () => {
         ],
       ];
       let qIdx = 0;
+      const makeLimitResult = () => {
+        const val = txQueryQueue[qIdx++] ?? [];
+        return {
+          for: vi.fn(() => val),
+          then(r: (v: unknown) => void) {
+            r(val);
+          },
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(() => txQueryQueue[qIdx++] ?? []),
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r(txQueryQueue[qIdx++] ?? []);
-                },
-              })),
+              limit: vi.fn(makeLimitResult),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },
@@ -3380,22 +3386,31 @@ describe("generateSchedules", () => {
     // Transaction — newPhase will be "preferences" since membersWithNoCombos is non-empty
     // So window rankings computation is skipped
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txQueryQueue: unknown[][] = [
+        // lock query: group phase re-check
+        [{ phase: "preferences" }],
+      ];
+      let qIdx = 0;
+      const makeLimitResult = () => {
+        const val = txQueryQueue[qIdx++] ?? [];
+        return {
+          for: vi.fn(() => val),
+          then(r: (v: unknown) => void) {
+            r(val);
+          },
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(() => []),
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([]);
-                },
-              })),
+              limit: vi.fn(makeLimitResult),
               then(r: (v: unknown) => void) {
-                r([]);
+                r(txQueryQueue[qIdx++] ?? []);
               },
             })),
             then(r: (v: unknown) => void) {
-              r([]);
+              r(txQueryQueue[qIdx++] ?? []);
             },
           })),
         })),
@@ -3583,24 +3598,40 @@ describe("generateSchedules", () => {
 
     // Transaction mock
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txQueryQueue: unknown[][] = [
+        // lock query: group phase re-check
+        [{ phase: "schedule_review" }],
+        // dateConfig query inside tx
+        [
+          {
+            dateMode: "consecutive",
+            consecutiveDays: 3,
+            startDate: null,
+            endDate: null,
+          },
+        ],
+      ];
+      let qIdx = 0;
+      const makeLimitResult = () => {
+        const val = txQueryQueue[qIdx++] ?? [];
+        return {
+          for: vi.fn(() => val),
+          then(r: (v: unknown) => void) {
+            r(val);
+          },
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(() => [
-                {
-                  dateMode: "consecutive",
-                  consecutiveDays: 3,
-                  startDate: null,
-                  endDate: null,
-                },
-              ]),
+              limit: vi.fn(makeLimitResult),
               then(r: (v: unknown) => void) {
-                r([]);
+                r(txQueryQueue[qIdx++] ?? []);
               },
             })),
             then(r: (v: unknown) => void) {
-              r([]);
+              r(txQueryQueue[qIdx++] ?? []);
             },
           })),
         })),
@@ -3696,24 +3727,40 @@ describe("generateSchedules", () => {
     // Track group update values
     const setCalls: Record<string, unknown>[] = [];
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txQueryQueue: unknown[][] = [
+        // lock query: group phase re-check
+        [{ phase: "schedule_review" }],
+        // dateConfig query inside tx
+        [
+          {
+            dateMode: "consecutive",
+            consecutiveDays: 3,
+            startDate: null,
+            endDate: null,
+          },
+        ],
+      ];
+      let qIdx = 0;
+      const makeLimitResult = () => {
+        const val = txQueryQueue[qIdx++] ?? [];
+        return {
+          for: vi.fn(() => val),
+          then(r: (v: unknown) => void) {
+            r(val);
+          },
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(() => [
-                {
-                  dateMode: "consecutive",
-                  consecutiveDays: 3,
-                  startDate: null,
-                  endDate: null,
-                },
-              ]),
+              limit: vi.fn(makeLimitResult),
               then(r: (v: unknown) => void) {
-                r([]);
+                r(txQueryQueue[qIdx++] ?? []);
               },
             })),
             then(r: (v: unknown) => void) {
-              r([]);
+              r(txQueryQueue[qIdx++] ?? []);
             },
           })),
         })),
@@ -3822,6 +3869,9 @@ describe("generateSchedules", () => {
     // Transaction mock
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
       const txQueryQueue: unknown[][] = [
+        // lock query: group phase re-check
+        [{ phase: "schedule_review" }],
+        // dateConfig query inside tx
         [
           {
             dateMode: "consecutive",
@@ -3832,11 +3882,20 @@ describe("generateSchedules", () => {
         ],
       ];
       let qIdx = 0;
+      const makeLimitResult = () => {
+        const val = txQueryQueue[qIdx++] ?? [];
+        return {
+          for: vi.fn(() => val),
+          then(r: (v: unknown) => void) {
+            r(val);
+          },
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(() => txQueryQueue[qIdx++] ?? []),
+              limit: vi.fn(makeLimitResult),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },

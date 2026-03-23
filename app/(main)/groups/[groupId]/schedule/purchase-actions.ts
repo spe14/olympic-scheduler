@@ -19,6 +19,7 @@ import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types";
 import type { AvatarColor } from "@/lib/constants";
 import { groupBy } from "@/lib/utils";
+import { failedAction } from "@/lib/messages";
 
 // ── Timeslot actions ────────────────────────────────────────────────────────
 
@@ -75,22 +76,26 @@ export async function saveTimeslot(
     return { error: "End time must be after start time." };
   }
 
-  await db
-    .insert(purchaseTimeslot)
-    .values({
-      groupId,
-      memberId: membership.id,
-      timeslotStart: start,
-      timeslotEnd: end,
-    })
-    .onConflictDoUpdate({
-      target: [purchaseTimeslot.memberId, purchaseTimeslot.groupId],
-      set: {
+  try {
+    await db
+      .insert(purchaseTimeslot)
+      .values({
+        groupId,
+        memberId: membership.id,
         timeslotStart: start,
         timeslotEnd: end,
-        updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: [purchaseTimeslot.memberId, purchaseTimeslot.groupId],
+        set: {
+          timeslotStart: start,
+          timeslotEnd: end,
+          updatedAt: new Date(),
+        },
+      });
+  } catch {
+    return { error: failedAction("save timeslot") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   return { success: true };
@@ -116,10 +121,14 @@ export async function updateTimeslotStatus(
 
   if (!existing) return { error: "No timeslot found." };
 
-  await db
-    .update(purchaseTimeslot)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(purchaseTimeslot.id, existing.id));
+  try {
+    await db
+      .update(purchaseTimeslot)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(purchaseTimeslot.id, existing.id));
+  } catch {
+    return { error: failedAction("update timeslot status") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   return { success: true };
@@ -138,26 +147,34 @@ export async function savePurchasePlanEntry(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  await db
-    .insert(purchasePlanEntry)
-    .values({
-      groupId,
-      memberId: membership.id,
-      sessionId: data.sessionId,
-      assigneeMemberId: data.assigneeMemberId,
-      priceCeiling: data.priceCeiling,
-    })
-    .onConflictDoUpdate({
-      target: [
-        purchasePlanEntry.memberId,
-        purchasePlanEntry.sessionId,
-        purchasePlanEntry.assigneeMemberId,
-      ],
-      set: {
+  if (data.priceCeiling != null && data.priceCeiling < 0) {
+    return { error: "Price ceiling cannot be negative." };
+  }
+
+  try {
+    await db
+      .insert(purchasePlanEntry)
+      .values({
+        groupId,
+        memberId: membership.id,
+        sessionId: data.sessionId,
+        assigneeMemberId: data.assigneeMemberId,
         priceCeiling: data.priceCeiling,
-        updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: [
+          purchasePlanEntry.memberId,
+          purchasePlanEntry.sessionId,
+          purchasePlanEntry.assigneeMemberId,
+        ],
+        set: {
+          priceCeiling: data.priceCeiling,
+          updatedAt: new Date(),
+        },
+      });
+  } catch {
+    return { error: failedAction("save purchase plan entry") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   return { success: true };
@@ -170,16 +187,20 @@ export async function removePurchasePlanEntry(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  await db
-    .delete(purchasePlanEntry)
-    .where(
-      and(
-        eq(purchasePlanEntry.groupId, groupId),
-        eq(purchasePlanEntry.memberId, membership.id),
-        eq(purchasePlanEntry.sessionId, data.sessionId),
-        eq(purchasePlanEntry.assigneeMemberId, data.assigneeMemberId)
-      )
-    );
+  try {
+    await db
+      .delete(purchasePlanEntry)
+      .where(
+        and(
+          eq(purchasePlanEntry.groupId, groupId),
+          eq(purchasePlanEntry.memberId, membership.id),
+          eq(purchasePlanEntry.sessionId, data.sessionId),
+          eq(purchasePlanEntry.assigneeMemberId, data.assigneeMemberId)
+        )
+      );
+  } catch {
+    return { error: failedAction("remove purchase plan entry") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   return { success: true };
@@ -202,29 +223,33 @@ export async function markAsPurchased(
     return { error: "Must select at least one member to buy for." };
   }
 
-  await db.transaction(async (tx) => {
-    const [purchase] = await tx
-      .insert(ticketPurchase)
-      .values({
-        groupId,
-        sessionId: data.sessionId,
-        purchasedByMemberId: membership.id,
-        pricePerTicket: data.pricePerTicket ?? 0,
-      })
-      .returning({ id: ticketPurchase.id });
+  try {
+    await db.transaction(async (tx) => {
+      const [purchase] = await tx
+        .insert(ticketPurchase)
+        .values({
+          groupId,
+          sessionId: data.sessionId,
+          purchasedByMemberId: membership.id,
+          pricePerTicket: data.pricePerTicket ?? 0,
+        })
+        .returning({ id: ticketPurchase.id });
 
-    await tx.insert(ticketPurchaseAssignee).values(
-      data.assignees.map((a) => ({
-        ticketPurchaseId: purchase.id,
-        memberId: a.memberId,
-        pricePaid: a.pricePaid ?? null,
-      }))
-    );
-    await tx
-      .update(group)
-      .set({ purchaseDataChangedAt: new Date() })
-      .where(eq(group.id, groupId));
-  });
+      await tx.insert(ticketPurchaseAssignee).values(
+        data.assignees.map((a) => ({
+          ticketPurchaseId: purchase.id,
+          memberId: a.memberId,
+          pricePaid: a.pricePaid ?? null,
+        }))
+      );
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: failedAction("record purchase") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -254,22 +279,26 @@ export async function deletePurchase(
     return { error: "Purchase not found or not yours." };
   }
 
-  await db.transaction(async (tx) => {
-    // Cascade handles ticketPurchaseAssignee deletion
-    await tx
-      .delete(ticketPurchase)
-      .where(
-        and(
-          eq(ticketPurchase.id, purchaseId),
-          eq(ticketPurchase.groupId, groupId)
-        )
-      );
+  try {
+    await db.transaction(async (tx) => {
+      // Cascade handles ticketPurchaseAssignee deletion
+      await tx
+        .delete(ticketPurchase)
+        .where(
+          and(
+            eq(ticketPurchase.id, purchaseId),
+            eq(ticketPurchase.groupId, groupId)
+          )
+        );
 
-    await tx
-      .update(group)
-      .set({ purchaseDataChangedAt: new Date() })
-      .where(eq(group.id, groupId));
-  });
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: failedAction("delete purchase") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -283,48 +312,52 @@ export async function removePurchaseAssignee(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  await db.transaction(async (tx) => {
-    // Verify the purchase belongs to this group
-    const [purchase] = await tx
-      .select({ id: ticketPurchase.id })
-      .from(ticketPurchase)
-      .where(
-        and(
-          eq(ticketPurchase.id, data.purchaseId),
-          eq(ticketPurchase.groupId, groupId)
+  try {
+    await db.transaction(async (tx) => {
+      // Verify the purchase belongs to this group
+      const [purchase] = await tx
+        .select({ id: ticketPurchase.id })
+        .from(ticketPurchase)
+        .where(
+          and(
+            eq(ticketPurchase.id, data.purchaseId),
+            eq(ticketPurchase.groupId, groupId)
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    if (!purchase) return;
+      if (!purchase) return;
 
-    await tx
-      .delete(ticketPurchaseAssignee)
-      .where(
-        and(
-          eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId),
-          eq(ticketPurchaseAssignee.memberId, data.memberId)
-        )
-      );
-
-    // If no assignees left, delete the purchase record too
-    const remaining = await tx
-      .select({ memberId: ticketPurchaseAssignee.memberId })
-      .from(ticketPurchaseAssignee)
-      .where(eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId))
-      .limit(1);
-
-    if (remaining.length === 0) {
       await tx
-        .delete(ticketPurchase)
-        .where(eq(ticketPurchase.id, data.purchaseId));
-    }
+        .delete(ticketPurchaseAssignee)
+        .where(
+          and(
+            eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId),
+            eq(ticketPurchaseAssignee.memberId, data.memberId)
+          )
+        );
 
-    await tx
-      .update(group)
-      .set({ purchaseDataChangedAt: new Date() })
-      .where(eq(group.id, groupId));
-  });
+      // If no assignees left, delete the purchase record too
+      const remaining = await tx
+        .select({ memberId: ticketPurchaseAssignee.memberId })
+        .from(ticketPurchaseAssignee)
+        .where(eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId))
+        .limit(1);
+
+      if (remaining.length === 0) {
+        await tx
+          .delete(ticketPurchase)
+          .where(eq(ticketPurchase.id, data.purchaseId));
+      }
+
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: failedAction("remove purchase assignee") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -352,15 +385,19 @@ export async function updatePurchaseAssigneePrice(
 
   if (!purchase) return { error: "Purchase not found." };
 
-  await db
-    .update(ticketPurchaseAssignee)
-    .set({ pricePaid: data.pricePaid })
-    .where(
-      and(
-        eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId),
-        eq(ticketPurchaseAssignee.memberId, data.memberId)
-      )
-    );
+  try {
+    await db
+      .update(ticketPurchaseAssignee)
+      .set({ pricePaid: data.pricePaid })
+      .where(
+        and(
+          eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId),
+          eq(ticketPurchaseAssignee.memberId, data.memberId)
+        )
+      );
+  } catch {
+    return { error: failedAction("update assignee price") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   return { success: true };
@@ -375,21 +412,25 @@ export async function markAsSoldOut(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(soldOutSession)
-      .values({
-        groupId,
-        sessionId: data.sessionId,
-        reportedByMemberId: membership.id,
-      })
-      .onConflictDoNothing();
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(soldOutSession)
+        .values({
+          groupId,
+          sessionId: data.sessionId,
+          reportedByMemberId: membership.id,
+        })
+        .onConflictDoNothing();
 
-    await tx
-      .update(group)
-      .set({ purchaseDataChangedAt: new Date() })
-      .where(eq(group.id, groupId));
-  });
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: failedAction("mark session as sold out") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -403,21 +444,25 @@ export async function unmarkSoldOut(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  await db.transaction(async (tx) => {
-    await tx
-      .delete(soldOutSession)
-      .where(
-        and(
-          eq(soldOutSession.groupId, groupId),
-          eq(soldOutSession.sessionId, data.sessionId)
-        )
-      );
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(soldOutSession)
+        .where(
+          and(
+            eq(soldOutSession.groupId, groupId),
+            eq(soldOutSession.sessionId, data.sessionId)
+          )
+        );
 
-    await tx
-      .update(group)
-      .set({ purchaseDataChangedAt: new Date() })
-      .where(eq(group.id, groupId));
-  });
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: failedAction("unmark session as sold out") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -433,21 +478,25 @@ export async function markAsOutOfBudget(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(outOfBudgetSession)
-      .values({
-        groupId,
-        memberId: membership.id,
-        sessionId: data.sessionId,
-      })
-      .onConflictDoNothing();
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(outOfBudgetSession)
+        .values({
+          groupId,
+          memberId: membership.id,
+          sessionId: data.sessionId,
+        })
+        .onConflictDoNothing();
 
-    await tx
-      .update(group)
-      .set({ purchaseDataChangedAt: new Date() })
-      .where(eq(group.id, groupId));
-  });
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: failedAction("mark session as out of budget") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -461,22 +510,26 @@ export async function unmarkOutOfBudget(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  await db.transaction(async (tx) => {
-    await tx
-      .delete(outOfBudgetSession)
-      .where(
-        and(
-          eq(outOfBudgetSession.groupId, groupId),
-          eq(outOfBudgetSession.memberId, membership.id),
-          eq(outOfBudgetSession.sessionId, data.sessionId)
-        )
-      );
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(outOfBudgetSession)
+        .where(
+          and(
+            eq(outOfBudgetSession.groupId, groupId),
+            eq(outOfBudgetSession.memberId, membership.id),
+            eq(outOfBudgetSession.sessionId, data.sessionId)
+          )
+        );
 
-    await tx
-      .update(group)
-      .set({ purchaseDataChangedAt: new Date() })
-      .where(eq(group.id, groupId));
-  });
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch {
+    return { error: failedAction("unmark session as out of budget") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -515,14 +568,18 @@ export async function reportSessionPrice(
   )
     return { error: "Min price cannot exceed max price." };
 
-  await db.insert(reportedPrice).values({
-    groupId,
-    sessionId: data.sessionId,
-    reportedByMemberId: membership.id,
-    minPrice: data.minPrice,
-    maxPrice: data.maxPrice,
-    comments: data.comments || null,
-  });
+  try {
+    await db.insert(reportedPrice).values({
+      groupId,
+      sessionId: data.sessionId,
+      reportedByMemberId: membership.id,
+      minPrice: data.minPrice,
+      maxPrice: data.maxPrice,
+      comments: data.comments || null,
+    });
+  } catch {
+    return { error: failedAction("report session price") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
@@ -536,27 +593,33 @@ export async function deleteOffScheduleSessionData(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  // Delete purchases made by this member for this session
-  await db
-    .delete(ticketPurchase)
-    .where(
-      and(
-        eq(ticketPurchase.groupId, groupId),
-        eq(ticketPurchase.sessionId, sessionId),
-        eq(ticketPurchase.purchasedByMemberId, membership.id)
-      )
-    );
+  try {
+    await db.transaction(async (tx) => {
+      // Delete purchases made by this member for this session
+      await tx
+        .delete(ticketPurchase)
+        .where(
+          and(
+            eq(ticketPurchase.groupId, groupId),
+            eq(ticketPurchase.sessionId, sessionId),
+            eq(ticketPurchase.purchasedByMemberId, membership.id)
+          )
+        );
 
-  // Delete reported prices by this member for this session
-  await db
-    .delete(reportedPrice)
-    .where(
-      and(
-        eq(reportedPrice.groupId, groupId),
-        eq(reportedPrice.sessionId, sessionId),
-        eq(reportedPrice.reportedByMemberId, membership.id)
-      )
-    );
+      // Delete reported prices by this member for this session
+      await tx
+        .delete(reportedPrice)
+        .where(
+          and(
+            eq(reportedPrice.groupId, groupId),
+            eq(reportedPrice.sessionId, sessionId),
+            eq(reportedPrice.reportedByMemberId, membership.id)
+          )
+        );
+    });
+  } catch {
+    return { error: failedAction("delete off-schedule session data") };
+  }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/purchase-tracker`);

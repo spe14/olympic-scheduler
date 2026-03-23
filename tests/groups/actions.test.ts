@@ -36,12 +36,23 @@ const mockUpdate = vi.fn(() => ({ set: mockSet }));
 const mockDeleteWhere = vi.fn(() => Promise.resolve());
 const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
 
+const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<unknown>) => {
+  const tx = {
+    insert: (...args: unknown[]) => mockInsert(...args),
+    select: (...args: unknown[]) => mockSelect(...args),
+    update: (...args: unknown[]) => mockUpdate(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
+  };
+  return cb(tx);
+});
+
 vi.mock("@/lib/db", () => ({
   db: {
     insert: (...args: unknown[]) => mockInsert(...args),
     select: (...args: unknown[]) => mockSelect(...args),
     update: (...args: unknown[]) => mockUpdate(...args),
     delete: (...args: unknown[]) => mockDelete(...args),
+    transaction: (...args: unknown[]) => mockTransaction(...(args as [never])),
   },
 }));
 

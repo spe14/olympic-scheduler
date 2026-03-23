@@ -69,17 +69,19 @@ export async function createGroup(
   }
 
   try {
-    const [newGroup] = await db
-      .insert(group)
-      .values(groupValues)
-      .returning({ id: group.id });
+    await db.transaction(async (tx) => {
+      const [newGroup] = await tx
+        .insert(group)
+        .values(groupValues)
+        .returning({ id: group.id });
 
-    await db.insert(member).values({
-      userId: user.id,
-      groupId: newGroup.id,
-      role: "owner",
-      status: "joined",
-      joinedAt: new Date(),
+      await tx.insert(member).values({
+        userId: user.id,
+        groupId: newGroup.id,
+        role: "owner",
+        status: "joined",
+        joinedAt: new Date(),
+      });
     });
   } catch {
     return { error: failedAction("create group") };
