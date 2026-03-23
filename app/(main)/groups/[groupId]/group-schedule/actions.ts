@@ -1,6 +1,6 @@
 "use server";
 
-import { getOwnerMembership, getMembership } from "@/lib/auth";
+import { requireOwnerMembership, requireMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   combo,
@@ -12,7 +12,14 @@ import {
 import { eq, and, inArray, notInArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types";
+import { failedAction } from "@/lib/messages";
 import type { AvatarColor } from "@/lib/constants";
+import type { BaseMemberInfo } from "@/lib/types";
+import {
+  getPurchaseDataForSessions,
+  type PurchaseData,
+  type ReportedPriceData,
+} from "../schedule/purchase-actions";
 
 export type GroupScheduleSession = {
   sessionCode: string;
@@ -23,13 +30,14 @@ export type GroupScheduleSession = {
   zone: string;
   startTime: string;
   endTime: string;
+  // Purchase data
+  purchases: PurchaseData[];
+  isSoldOut: boolean;
+  isOutOfBudget: boolean;
+  reportedPrices: ReportedPriceData[];
 };
 
-export type GroupScheduleMemberCombo = {
-  memberId: string;
-  firstName: string;
-  lastName: string;
-  avatarColor: AvatarColor;
+export type GroupScheduleMemberCombo = BaseMemberInfo & {
   day: string;
   rank: "primary" | "backup1" | "backup2";
   score: number;
@@ -40,10 +48,8 @@ export async function getGroupSchedule(groupId: string): Promise<{
   data?: GroupScheduleMemberCombo[];
   error?: string;
 }> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
   // Fetch all combos (P+B1+B2) for all active members
   const activeMembers = await db
@@ -110,6 +116,16 @@ export async function getGroupSchedule(groupId: string): Promise<{
 
   const memberMap = new Map(memberDetails.map((m) => [m.id, m]));
 
+  // Fetch purchase data for all sessions
+  const allSessionCodes = [
+    ...new Set(allComboSessions.map((cs) => cs.sessionCode)),
+  ];
+  const purchaseData = await getPurchaseDataForSessions(
+    groupId,
+    membership.id,
+    allSessionCodes
+  );
+
   const data: GroupScheduleMemberCombo[] = allCombos.map((c) => {
     const memberInfo = memberMap.get(c.memberId);
     const sessions = allComboSessions
@@ -123,6 +139,10 @@ export async function getGroupSchedule(groupId: string): Promise<{
         zone: cs.zone,
         startTime: cs.startTime,
         endTime: cs.endTime,
+        purchases: purchaseData.purchases.get(cs.sessionCode) ?? [],
+        isSoldOut: purchaseData.soldOutSessions.has(cs.sessionCode),
+        isOutOfBudget: purchaseData.outOfBudgetSessions.has(cs.sessionCode),
+        reportedPrices: purchaseData.reportedPrices.get(cs.sessionCode) ?? [],
       }))
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
@@ -145,10 +165,9 @@ export async function selectWindow(
   groupId: string,
   windowId: string
 ): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can select a window." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "select a window");
+  if (authError) return authError;
 
   try {
     await db.transaction(async (tx) => {
@@ -175,7 +194,7 @@ export async function selectWindow(
         );
     });
   } catch {
-    return { error: "Failed to select window. Please try again." };
+    return { error: failedAction("select window") };
   }
 
   revalidatePath(`/groups/${groupId}`);

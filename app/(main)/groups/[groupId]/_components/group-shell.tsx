@@ -91,12 +91,18 @@ export default function GroupShell({
       new Date(m.statusChangedAt) > new Date(group.scheduleGeneratedAt)
     );
   });
+  const hasPurchaseChanges = !!(
+    group.purchaseDataChangedAt &&
+    group.scheduleGeneratedAt &&
+    new Date(group.purchaseDataChangedAt) > new Date(group.scheduleGeneratedAt)
+  );
   const schedulesNeedAttention =
     hasUpdatedPrefs ||
     hasDepartedMembers ||
     hasAffectedBuddyMembers ||
     hasNewlyJoinedMembers ||
-    hasNoCombosNotUpdated;
+    hasNoCombosNotUpdated ||
+    hasPurchaseChanges;
 
   const navItems: NavItem[] = [
     {
@@ -165,6 +171,25 @@ export default function GroupShell({
             : inScheduleReview && group.windowRankings.length > 0
               ? { type: "complete" }
               : { type: "none" },
+    },
+    {
+      key: "purchase-tracker",
+      label: "Purchase Planner & Tracker",
+      href: `${basePath}/purchase-tracker`,
+      visible: inScheduleReview,
+      status: group.myTimeslot
+        ? group.myTimeslot.status === "completed"
+          ? { type: "complete" }
+          : group.myTimeslot.status === "in_progress"
+            ? {
+                type: "warning",
+                tooltip: "Your purchase timeslot is in progress.",
+              }
+            : { type: "complete" }
+        : {
+            type: "warning",
+            tooltip: "You haven't entered your purchase timeslot yet.",
+          },
     },
   ];
 
@@ -315,6 +340,8 @@ function GuardedLink({
   children: React.ReactNode;
 }) {
   const { guardNavigation } = useNavigationGuard();
+  const pathname = usePathname();
+  const router = useRouter();
 
   return (
     <Link
@@ -323,6 +350,12 @@ function GuardedLink({
       onClick={(e) => {
         if (!guardNavigation(href)) {
           e.preventDefault();
+          return;
+        }
+        // If already on this page, refresh to get fresh data
+        if (pathname === href) {
+          e.preventDefault();
+          router.refresh();
         }
       }}
     >

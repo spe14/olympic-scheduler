@@ -3,6 +3,7 @@
 import { resetPassword } from "../actions";
 import { useActionState, useState } from "react";
 import PasswordInput from "@/components/password-input";
+import ErrorAlert from "@/components/error-alert";
 import { resetPasswordSchema, passwordSchema } from "@/lib/validations";
 import { inputClass } from "@/lib/constants";
 
@@ -56,11 +57,7 @@ export default function ResetPasswordPage() {
         {/* Form card */}
         <div className="rounded-2xl border border-[#009de5]/10 bg-white p-8 shadow-xl shadow-[#009de5]/5 backdrop-blur-sm">
           {/* General error */}
-          {state?.error && (
-            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-              {state.error}
-            </div>
-          )}
+          <ErrorAlert message={state?.error} className="mb-6" />
 
           <form action={formAction} className="space-y-5">
             {/* Password */}

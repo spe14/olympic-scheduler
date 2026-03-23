@@ -15,6 +15,8 @@ export type MemberData = {
   hardBuddies: string[];
   softBuddies: string[];
   candidateSessions: CandidateSession[];
+  /** Session codes that are purchased and must be locked into primary combo */
+  lockedSessionCodes?: string[];
 };
 
 export type TravelEntry = {

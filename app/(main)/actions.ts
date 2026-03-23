@@ -14,6 +14,12 @@ import {
 import crypto from "crypto";
 import { MAX_GROUP_MEMBERS } from "@/lib/constants";
 import type { ActionResult } from "@/lib/types";
+import { parseOrError } from "@/lib/utils";
+import {
+  MSG_NOT_LOGGED_IN,
+  MSG_GROUP_FULL,
+  failedAction,
+} from "@/lib/messages";
 
 export type GroupActionResult = ActionResult & {
   code?: string;
@@ -25,16 +31,14 @@ export async function createGroup(
 ): Promise<GroupActionResult> {
   const user = await getCurrentUser();
   if (!user) {
-    return { error: "You must be logged in." };
+    return { error: MSG_NOT_LOGGED_IN };
   }
 
   const name = formData.get("name") as string;
   const dateMode = formData.get("dateMode") as string | null;
 
-  const nameResult = groupNameSchema.safeParse(name);
-  if (!nameResult.success) {
-    return { error: nameResult.error.issues[0].message };
-  }
+  const nameParsed = parseOrError(groupNameSchema, name);
+  if ("error" in nameParsed) return nameParsed.error;
 
   let groupValues: {
     name: string;
@@ -44,28 +48,24 @@ export async function createGroup(
     startDate?: string;
     endDate?: string;
   } = {
-    name: nameResult.data,
+    name: nameParsed.data,
     inviteCode: crypto.randomBytes(4).toString("hex"),
   };
 
   if (dateMode === "consecutive") {
     const days = formData.get("consecutiveDays") as string;
-    const daysResult = consecutiveDaysSchema.safeParse(days);
-    if (!daysResult.success) {
-      return { error: daysResult.error.issues[0].message };
-    }
+    const parsed = parseOrError(consecutiveDaysSchema, days);
+    if ("error" in parsed) return parsed.error;
     groupValues.dateMode = "consecutive";
-    groupValues.consecutiveDays = daysResult.data;
+    groupValues.consecutiveDays = parsed.data;
   } else if (dateMode === "specific") {
     const startDate = formData.get("startDate") as string;
     const endDate = formData.get("endDate") as string;
-    const rangeResult = dateRangeSchema.safeParse({ startDate, endDate });
-    if (!rangeResult.success) {
-      return { error: rangeResult.error.issues[0].message };
-    }
+    const parsed = parseOrError(dateRangeSchema, { startDate, endDate });
+    if ("error" in parsed) return parsed.error;
     groupValues.dateMode = "specific";
-    groupValues.startDate = rangeResult.data.startDate;
-    groupValues.endDate = rangeResult.data.endDate;
+    groupValues.startDate = parsed.data.startDate;
+    groupValues.endDate = parsed.data.endDate;
   }
 
   try {
@@ -82,7 +82,7 @@ export async function createGroup(
       joinedAt: new Date(),
     });
   } catch {
-    return { error: "Failed to create group. Please try again." };
+    return { error: failedAction("create group") };
   }
 
   revalidatePath("/");
@@ -95,19 +95,17 @@ export async function joinGroup(
 ): Promise<GroupActionResult> {
   const user = await getCurrentUser();
   if (!user) {
-    return { error: "You must be logged in." };
+    return { error: MSG_NOT_LOGGED_IN };
   }
 
   const code = (formData.get("inviteCode") as string)?.trim() ?? "";
-  const result = inviteCodeSchema.safeParse(code);
-  if (!result.success) {
-    return { error: result.error.issues[0].message };
-  }
+  const parsed = parseOrError(inviteCodeSchema, code);
+  if ("error" in parsed) return parsed.error;
 
   const matchingGroup = await db
     .select({ id: group.id })
     .from(group)
-    .where(eq(group.inviteCode, result.data))
+    .where(eq(group.inviteCode, parsed.data))
     .limit(1);
 
   if (matchingGroup.length === 0) {
@@ -148,7 +146,7 @@ export async function joinGroup(
     );
 
   if (activeCount >= MAX_GROUP_MEMBERS) {
-    return { error: "This group is full. Groups are limited to 12 members." };
+    return { error: MSG_GROUP_FULL };
   }
 
   if (existingMember.length > 0) {
@@ -159,7 +157,7 @@ export async function joinGroup(
         .set({ status: "pending_approval" })
         .where(eq(member.id, existingMember[0].id));
     } catch {
-      return { error: "Failed to join group. Please try again." };
+      return { error: failedAction("join group") };
     }
     revalidatePath("/");
     return { success: true };
@@ -173,7 +171,7 @@ export async function joinGroup(
       status: "pending_approval",
     });
   } catch {
-    return { error: "Failed to join group. Please try again." };
+    return { error: failedAction("join group") };
   }
 
   revalidatePath("/");
@@ -185,7 +183,7 @@ export async function removeMembership(
 ): Promise<GroupActionResult> {
   const user = await getCurrentUser();
   if (!user) {
-    return { error: "You must be logged in." };
+    return { error: MSG_NOT_LOGGED_IN };
   }
 
   const [membership] = await db
@@ -208,7 +206,7 @@ export async function removeMembership(
   try {
     await db.delete(member).where(eq(member.id, memberId));
   } catch {
-    return { error: "Failed to remove membership. Please try again." };
+    return { error: failedAction("remove membership") };
   }
 
   revalidatePath("/");

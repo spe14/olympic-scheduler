@@ -2,25 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { phaseLabels } from "@/lib/constants";
 import { getDateDisplay } from "@/lib/utils";
 import type { GroupDetail } from "@/lib/types";
 import { updateGroupName, leaveGroup } from "../actions";
+import { useNavigationGuard } from "./navigation-guard-context";
 import ConfirmMemberRemovalModal, {
   OwnerLeaveModal,
 } from "./confirm-member-removal-modal";
-
-const phaseBadgeStyles: Record<
-  string,
-  { backgroundColor: string; color: string }
-> = {
-  preferences: { backgroundColor: "rgba(250, 204, 21, 0.2)", color: "#d97706" },
-  schedule_review: {
-    backgroundColor: "rgba(250, 204, 21, 0.2)",
-    color: "#d97706",
-  },
-  completed: { backgroundColor: "rgba(16, 185, 129, 0.2)", color: "#059669" },
-};
+import Tooltip from "@/components/tooltip";
 
 export default function GroupHeader({
   group,
@@ -34,6 +23,7 @@ export default function GroupHeader({
   onNameSaved: () => void;
 }) {
   const router = useRouter();
+  const { guardNavigation } = useNavigationGuard();
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(group.name);
   const [saving, setSaving] = useState(false);
@@ -43,12 +33,13 @@ export default function GroupHeader({
   const [leaveLoading, setLeaveLoading] = useState(false);
   const [leaveError, setLeaveError] = useState("");
 
-  const badgeStyle =
-    phaseBadgeStyles[group.phase] ?? phaseBadgeStyles.preferences;
   const activeCount = group.members.filter(
     (m) => m.status !== "pending_approval"
   ).length;
   const dateDisplay = getDateDisplay(group);
+  const hasPurchaseData = group.membersWithPurchaseData.includes(
+    group.myMemberId
+  );
 
   async function handleSaveName() {
     setSaving(true);
@@ -146,7 +137,10 @@ export default function GroupHeader({
                   </>
                 )}
                 <button
-                  onClick={() => setShowLeaveModal(true)}
+                  onClick={() => {
+                    if (!guardNavigation("/")) return;
+                    setShowLeaveModal(true);
+                  }}
                   className="flex items-center gap-1 rounded-md p-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                   title="Leave group"
                 >
@@ -160,12 +154,6 @@ export default function GroupHeader({
         </div>
 
         <div className="flex items-center gap-2">
-          <span
-            className="rounded-full px-3 py-1 text-sm font-medium"
-            style={badgeStyle}
-          >
-            {phaseLabels[group.phase] ?? group.phase}
-          </span>
           <span className="rounded-full bg-[#009de5]/10 px-3 py-1 text-sm font-medium text-[#009de5]">
             {group.myRole === "owner" ? "Owner" : "Member"}
           </span>
@@ -173,7 +161,10 @@ export default function GroupHeader({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[15px] text-slate-500">
-        <span className="group/members relative flex items-center gap-1.5">
+        <Tooltip
+          label="Groups are limited to 12 members."
+          className="flex items-center gap-1.5"
+        >
           <svg
             className="h-4 w-4"
             fill="none"
@@ -188,10 +179,7 @@ export default function GroupHeader({
             />
           </svg>
           {activeCount} {activeCount === 1 ? "member" : "members"}
-          <span className="pointer-events-none absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover/members:opacity-100">
-            Groups are limited to 12 members.
-          </span>
-        </span>
+        </Tooltip>
         <Sep />
         <button
           onClick={handleCopyInviteCode}
@@ -213,7 +201,10 @@ export default function GroupHeader({
           {copied ? "Copied!" : `Invite Code: ${group.inviteCode}`}
         </button>
         <Sep />
-        <span className="group/date relative flex items-center gap-1.5">
+        <Tooltip
+          label={isOwner ? "Click the settings icon to update." : null}
+          className="flex items-center gap-1.5"
+        >
           <svg
             className="h-4 w-4"
             fill="none"
@@ -228,12 +219,47 @@ export default function GroupHeader({
             />
           </svg>
           {dateDisplay}
-          {isOwner && (
-            <span className="pointer-events-none absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover/date:opacity-100">
-              Click the settings icon to update.
+        </Tooltip>
+        {group.myTimeslot && (
+          <>
+            <Sep />
+            <span className="flex items-center gap-1.5">
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              My Timeslot:{" "}
+              {new Date(group.myTimeslot.timeslotStart).toLocaleString(
+                undefined,
+                {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                }
+              )}{" "}
+              &ndash;{" "}
+              {new Date(group.myTimeslot.timeslotEnd).toLocaleString(
+                undefined,
+                {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                }
+              )}
             </span>
-          )}
-        </span>
+          </>
+        )}
       </div>
 
       {showLeaveModal &&
@@ -245,6 +271,7 @@ export default function GroupHeader({
             groupPhase={group.phase}
             loading={leaveLoading}
             error={leaveError}
+            hasPurchaseData={hasPurchaseData}
             onConfirm={handleLeaveConfirm}
             onClose={() => {
               setShowLeaveModal(false);

@@ -78,6 +78,11 @@ export const dateModeEnum = pgEnum("date_mode_enum", [
   "specific",
 ]);
 
+export const purchaseTimeslotStatusEnum = pgEnum(
+  "purchase_timeslot_status_enum",
+  ["upcoming", "in_progress", "completed"]
+);
+
 export const preferenceStepEnum = pgEnum("preference_step_enum", [
   "buddies",
   "sport_rankings",
@@ -117,7 +122,6 @@ export const user = pgTable("users", {
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   avatarColor: avatarColorEnum("avatar_color").notNull().default("blue"),
-  budget: real("budget"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -140,6 +144,7 @@ export const group = pgTable("groups", {
   membersWithNoCombos: jsonb("members_with_no_combos")
     .$type<string[]>()
     .default([]),
+  purchaseDataChangedAt: timestamp("purchase_data_changed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -161,6 +166,9 @@ export const member = pgTable(
     joinedAt: timestamp("joined_at"),
     statusChangedAt: timestamp("status_changed_at"),
     scheduleWarningAckedAt: timestamp("schedule_warning_acked_at"),
+    excludedSessionCodes: jsonb("excluded_session_codes")
+      .$type<{ code: string; soldOut: boolean; outOfBudget: boolean }[]>()
+      .default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [unique().on(table.userId, table.groupId)]
@@ -190,7 +198,6 @@ export const sessionPreference = pgTable(
       .notNull()
       .references(() => member.id, { onDelete: "cascade" }),
     interest: interestEnum("interest").notNull(),
-    excluded: boolean("excluded").notNull().default(false),
   },
   (table) => [primaryKey({ columns: [table.sessionId, table.memberId] })]
 );
@@ -230,5 +237,134 @@ export const windowRanking = pgTable("window_ranking", {
   endDate: date("end_date").notNull(),
   score: real("score").notNull(),
   selected: boolean("selected").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ── Phase 2: Purchase tables ────────────────────────────────────────────────
+
+export const purchaseTimeslot = pgTable(
+  "purchase_timeslot",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => group.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    timeslotStart: timestamp("timeslot_start").notNull(),
+    timeslotEnd: timestamp("timeslot_end").notNull(),
+    status: purchaseTimeslotStatusEnum("status").notNull().default("upcoming"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.memberId, table.groupId)]
+);
+
+export const purchasePlanEntry = pgTable(
+  "purchase_plan_entry",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => group.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => session.sessionCode, { onDelete: "cascade" }),
+    assigneeMemberId: uuid("assignee_member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    priceCeiling: integer("price_ceiling"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique().on(table.memberId, table.sessionId, table.assigneeMemberId),
+  ]
+);
+
+export const ticketPurchase = pgTable("ticket_purchase", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  groupId: uuid("group_id")
+    .notNull()
+    .references(() => group.id, { onDelete: "cascade" }),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => session.sessionCode, { onDelete: "cascade" }),
+  purchasedByMemberId: uuid("purchased_by_member_id")
+    .notNull()
+    .references(() => member.id, { onDelete: "cascade" }),
+  pricePerTicket: integer("price_per_ticket").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const ticketPurchaseAssignee = pgTable(
+  "ticket_purchase_assignee",
+  {
+    ticketPurchaseId: uuid("ticket_purchase_id")
+      .notNull()
+      .references(() => ticketPurchase.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    pricePaid: integer("price_paid"),
+  },
+  (table) => [primaryKey({ columns: [table.ticketPurchaseId, table.memberId] })]
+);
+
+export const soldOutSession = pgTable(
+  "sold_out_session",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => group.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => session.sessionCode, { onDelete: "cascade" }),
+    reportedByMemberId: uuid("reported_by_member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.groupId, table.sessionId)]
+);
+
+export const outOfBudgetSession = pgTable(
+  "out_of_budget_session",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => group.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => session.sessionCode, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [unique().on(table.memberId, table.sessionId)]
+);
+
+export const reportedPrice = pgTable("reported_price", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  groupId: uuid("group_id")
+    .notNull()
+    .references(() => group.id, { onDelete: "cascade" }),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => session.sessionCode, { onDelete: "cascade" }),
+  reportedByMemberId: uuid("reported_by_member_id")
+    .notNull()
+    .references(() => member.id, { onDelete: "cascade" }),
+  minPrice: integer("min_price"),
+  maxPrice: integer("max_price"),
+  comments: text("comments"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useGroup } from "./group-context";
 import { generateSchedules } from "../actions";
 import GenerateScheduleModal from "./generate-schedule-modal";
+import Tooltip from "@/components/tooltip";
 
 export default function GenerateScheduleSection() {
   const group = useGroup();
@@ -59,8 +60,17 @@ export default function GenerateScheduleSection() {
   );
   const hasDepartedMembers = group.departedMembers.length > 0;
   const hasNoCombos = group.membersWithNoCombos.length > 0;
+  const hasPurchaseChanges = !!(
+    group.purchaseDataChangedAt &&
+    group.scheduleGeneratedAt &&
+    new Date(group.purchaseDataChangedAt) > new Date(group.scheduleGeneratedAt)
+  );
   const needsRegeneration =
-    !isRegenerate || hasUpdatedPrefs || hasDepartedMembers || hasNoCombos;
+    !isRegenerate ||
+    hasUpdatedPrefs ||
+    hasDepartedMembers ||
+    hasNoCombos ||
+    hasPurchaseChanges;
 
   async function handleGenerate() {
     setLoading(true);
@@ -78,24 +88,22 @@ export default function GenerateScheduleSection() {
 
   return (
     <section className="mt-8">
+      <h2 className="mb-4 text-lg font-semibold text-slate-900">
+        Generate Schedules
+      </h2>
       <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h3 className="text-base font-semibold text-slate-900">
-            Generate Schedules
-          </h3>
-          {isRegenerate && group.scheduleGeneratedAt && (
-            <span className="text-sm text-[#d97706]">
-              Schedules Last Updated On:{" "}
-              {new Date(group.scheduleGeneratedAt).toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-              })}
-            </span>
-          )}
-        </div>
+        {isRegenerate && group.scheduleGeneratedAt && (
+          <p className="mb-3 text-sm text-[#d97706]">
+            Schedules Last Updated On:{" "}
+            {new Date(group.scheduleGeneratedAt).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </p>
+        )}
 
         {group.phase === "preferences" && (
           <div className="mb-4 flex items-center gap-2 text-sm">
@@ -129,7 +137,18 @@ export default function GenerateScheduleSection() {
           </div>
         )}
 
-        <div className="group/generate relative inline-block">
+        <Tooltip
+          className="inline-block"
+          label={
+            !isOwner
+              ? "Only the owner can generate schedules."
+              : !allReady
+                ? "All members must set their preferences first."
+                : !needsRegeneration
+                  ? "Schedules are up to date."
+                  : null
+          }
+        >
           <button
             onClick={() => setShowModal(true)}
             disabled={!isOwner || !allReady || !needsRegeneration}
@@ -137,22 +156,7 @@ export default function GenerateScheduleSection() {
           >
             {isRegenerate ? "Generate New Schedules" : "Generate Schedules"}
           </button>
-          {!isOwner && (
-            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover/generate:opacity-100">
-              Only the owner can generate schedules.
-            </span>
-          )}
-          {isOwner && !allReady && (
-            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover/generate:opacity-100">
-              All members must set their preferences first.
-            </span>
-          )}
-          {isOwner && allReady && !needsRegeneration && (
-            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white opacity-0 shadow-lg transition-opacity group-hover/generate:opacity-100">
-              Schedules are up to date.
-            </span>
-          )}
-        </div>
+        </Tooltip>
       </div>
 
       {showModal && (

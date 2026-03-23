@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines the database schema for the LA 2028 Olympics Group Scheduler (Phase 1). Tables are organized into three categories: seed data (pre-loaded reference data), user/group data (user-generated), and algorithm output data (system-generated).
+This document defines the database schema for the LA 2028 Olympics Group Scheduler. Tables are organized into four categories: seed data (pre-loaded reference data), user/group data (user-generated), algorithm output data (system-generated), and purchase tracking data (Phase 2).
 
 **Database:** PostgreSQL
 
@@ -49,6 +49,10 @@ CREATE TYPE combo_rank_enum AS ENUM ('primary', 'backup1', 'backup2');
 CREATE TYPE date_mode_enum AS ENUM ('consecutive', 'specific');
 
 CREATE TYPE preference_step_enum AS ENUM ('buddies', 'sport_rankings', 'sessions');
+
+CREATE TYPE purchase_timeslot_status_enum AS ENUM (
+  'upcoming', 'in_progress', 'completed'
+);
 ```
 
 ---
@@ -79,8 +83,8 @@ Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap compu
 | ------------------ | ----------- | ----------- | ------------------------------------------------------------ |
 | `origin_zone`      | `zone_enum` | **PK**      | Origin zone                                                  |
 | `destination_zone` | `zone_enum` | **PK**      | Destination zone                                             |
-| `driving_minutes`  | `integer`   | NOT NULL    | Driving time in minutes                                      |
-| `transit_minutes`  | `integer`   |             | Transit time in minutes (NULL if no transit route available) |
+| `driving_minutes`  | `real`      | NOT NULL    | Driving time in minutes                                      |
+| `transit_minutes`  | `real`      |             | Transit time in minutes (NULL if no transit route available) |
 
 **Primary Key:** Composite (`origin_zone`, `destination_zone`)
 
@@ -101,22 +105,26 @@ Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap compu
 | `first_name`   | `text`              | NOT NULL                          | First name                                                |
 | `last_name`    | `text`              | NOT NULL                          | Last name                                                 |
 | `avatar_color` | `avatar_color_enum` | NOT NULL, DEFAULT 'blue'          | Avatar color for display                                  |
-| `budget`       | `real`              |                                   | User's global budget (in dollars). Set in user settings.  |
 | `created_at`   | `timestamp`         | DEFAULT now()                     | Account creation time                                     |
 
 ### `group`
 
-| Column             | Type               | Constraints                       | Description                                                          |
-| ------------------ | ------------------ | --------------------------------- | -------------------------------------------------------------------- |
-| `id`               | `uuid`             | **PK**, DEFAULT gen_random_uuid() | Unique group ID                                                      |
-| `name`             | `text`             | NOT NULL                          | Group display name                                                   |
-| `phase`            | `group_phase_enum` | NOT NULL, DEFAULT 'preferences'   | Current phase of the group workflow                                  |
-| `invite_code`      | `text`             | UNIQUE, NOT NULL                  | Human-readable invite code (e.g., "OLYMP-X7K2")                      |
-| `date_mode`        | `date_mode_enum`   |                                   | 'consecutive' or 'specific' (NULL if deferred during group creation) |
-| `consecutive_days` | `integer`          |                                   | Number of consecutive days (if date_mode = 'consecutive')            |
-| `start_date`       | `date`             |                                   | Start date (if date_mode = 'specific')                               |
-| `end_date`         | `date`             |                                   | End date (if date_mode = 'specific')                                 |
-| `created_at`       | `timestamp`        | DEFAULT now()                     | Group creation time                                                  |
+| Column                     | Type               | Constraints                       | Description                                                                             |
+| -------------------------- | ------------------ | --------------------------------- | --------------------------------------------------------------------------------------- |
+| `id`                       | `uuid`             | **PK**, DEFAULT gen_random_uuid() | Unique group ID                                                                         |
+| `name`                     | `text`             | NOT NULL                          | Group display name                                                                      |
+| `phase`                    | `group_phase_enum` | NOT NULL, DEFAULT 'preferences'   | Current phase of the group workflow                                                     |
+| `invite_code`              | `text`             | UNIQUE, NOT NULL                  | Human-readable invite code (e.g., "OLYMP-X7K2")                                         |
+| `date_mode`                | `date_mode_enum`   |                                   | 'consecutive' or 'specific' (NULL if deferred during group creation)                    |
+| `consecutive_days`         | `integer`          |                                   | Number of consecutive days (if date_mode = 'consecutive')                               |
+| `start_date`               | `date`             |                                   | Start date (if date_mode = 'specific')                                                  |
+| `end_date`                 | `date`             |                                   | End date (if date_mode = 'specific')                                                    |
+| `schedule_generated_at`    | `timestamp`        |                                   | When the algorithm last ran (NULL if never generated)                                   |
+| `departed_members`         | `jsonb`            | DEFAULT '[]'                      | Array of `{ name, departedAt, rejoinedAt? }` tracking members who left after generation |
+| `affected_buddy_members`   | `jsonb`            | DEFAULT '{}'                      | Map of `memberId → string[]` tracking members affected by buddy departures              |
+| `members_with_no_combos`   | `jsonb`            | DEFAULT '[]'                      | Array of member IDs that received no combos in the last generation                      |
+| `purchase_data_changed_at` | `timestamp`        |                                   | When purchase data last changed (for regeneration notification). Reset on generation.   |
+| `created_at`               | `timestamp`        | DEFAULT now()                     | Group creation time                                                                     |
 
 **Notes:**
 
@@ -128,18 +136,21 @@ Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap compu
 
 The join table between `user` and `group`. Each row represents one user's membership in one group.
 
-| Column            | Type                   | Constraints                          | Description                                                         |
-| ----------------- | ---------------------- | ------------------------------------ | ------------------------------------------------------------------- |
-| `id`              | `uuid`                 | **PK**, DEFAULT gen_random_uuid()    | Unique member ID                                                    |
-| `user_id`         | `uuid`                 | FK → `user.id`, NOT NULL             | The user                                                            |
-| `group_id`        | `uuid`                 | FK → `group.id`, NOT NULL            | The group                                                           |
-| `role`            | `member_role_enum`     | NOT NULL, DEFAULT 'member'           | Owner or member. Group creator is owner.                            |
-| `min_buddies`     | `integer`              | NOT NULL, DEFAULT 0                  | Minimum other members required at each session                      |
-| `sport_rankings`  | `jsonb`                |                                      | Ordered list of sports, e.g., `["Gymnastics", "Swimming", "Track"]` |
-| `status`          | `member_status_enum`   | NOT NULL, DEFAULT 'pending_approval' | Member's current status in the workflow                             |
-| `preference_step` | `preference_step_enum` |                                      | Which wizard step the user last completed. NULL if not started.     |
-| `joined_at`       | `timestamp`            |                                      | When the member was approved to join                                |
-| `created_at`      | `timestamp`            | DEFAULT now()                        | When user joined the group                                          |
+| Column                      | Type                   | Constraints                          | Description                                                                              |
+| --------------------------- | ---------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `id`                        | `uuid`                 | **PK**, DEFAULT gen_random_uuid()    | Unique member ID                                                                         |
+| `user_id`                   | `uuid`                 | FK → `user.id`, NOT NULL             | The user                                                                                 |
+| `group_id`                  | `uuid`                 | FK → `group.id`, NOT NULL            | The group                                                                                |
+| `role`                      | `member_role_enum`     | NOT NULL, DEFAULT 'member'           | Owner or member. Group creator is owner.                                                 |
+| `min_buddies`               | `integer`              | NOT NULL, DEFAULT 0                  | Minimum other members required at each session                                           |
+| `sport_rankings`            | `jsonb`                |                                      | Ordered list of sports, e.g., `["Gymnastics", "Swimming", "Track"]`                      |
+| `status`                    | `member_status_enum`   | NOT NULL, DEFAULT 'pending_approval' | Member's current status in the workflow                                                  |
+| `preference_step`           | `preference_step_enum` |                                      | Which wizard step the user last completed. NULL if not started.                          |
+| `joined_at`                 | `timestamp`            |                                      | When the member was approved to join                                                     |
+| `status_changed_at`         | `timestamp`            |                                      | When the member's status or preferences last changed                                     |
+| `schedule_warning_acked_at` | `timestamp`            |                                      | When the member acknowledged the "preferences changed" warning                           |
+| `excluded_session_codes`    | `jsonb`                | DEFAULT '[]'                         | Snapshot of `{ code, soldOut, outOfBudget }[]` at generation time (for excluded section) |
+| `created_at`                | `timestamp`            | DEFAULT now()                        | When user joined the group                                                               |
 
 **Unique Constraint:** (`user_id`, `group_id`) — a user can only be a member of a group once.
 
@@ -159,20 +170,17 @@ Stores hard and soft buddy relationships between members within a group.
 
 Stores a member's interest for a specific session. Only rows where the user explicitly opted in (interest ≠ None) are stored.
 
-| Column       | Type            | Constraints                         | Description                                                       |
-| ------------ | --------------- | ----------------------------------- | ----------------------------------------------------------------- |
-| `session_id` | `text`          | **PK**, FK → `session.session_code` | The session                                                       |
-| `member_id`  | `uuid`          | **PK**, FK → `member.id`            | The member                                                        |
-| `interest`   | `interest_enum` | NOT NULL                            | Interest level (low, medium, high)                                |
-| `excluded`   | `boolean`       | NOT NULL, DEFAULT false             | If true, session is excluded from combo generation (soft removal) |
+| Column       | Type            | Constraints                         | Description                        |
+| ------------ | --------------- | ----------------------------------- | ---------------------------------- |
+| `session_id` | `text`          | **PK**, FK → `session.session_code` | The session                        |
+| `member_id`  | `uuid`          | **PK**, FK → `member.id`            | The member                         |
+| `interest`   | `interest_enum` | NOT NULL                            | Interest level (low, medium, high) |
 
 **Primary Key:** Composite (`session_id`, `member_id`)
 
 **Design Decision:** Sessions default to "not interested" — we only store opt-in rows. This reduces noise (no rows for 765 × N sessions where most are unselected) and makes the query "all members interested in session X" straightforward.
 
-**Design Decision:** `excluded` flags persist across re-generations (sessions a user chose to exclude stay excluded). The `hardBuddyOverride` and `minBuddyOverride` columns were removed — the post-generation convergence loop makes per-session overrides unnecessary. Users adjust constraints directly (hard→soft buddy, lower minBuddies).
-
-**Important:** Excluded sessions must be treated as "not interested" for all algorithm purposes: they are filtered out during combo generation (Step 4), do not count toward other users' soft buddy bonuses, and do not count toward min_buddies checks.
+**Design Decision:** Session exclusion (sold-out, out-of-budget) is handled at algorithm generation time by filtering candidate sessions, not by a column on this table. The per-member `excluded_session_codes` JSONB on the `member` table stores a snapshot of which sessions were excluded at generation time for display in the Purchase Tracker's excluded sessions section.
 
 ---
 
@@ -191,7 +199,7 @@ A day combo is a set of sessions a member could attend on a specific day. Each m
 | `member_id` | `uuid`            | FK → `member.id`, NOT NULL        | The member this combo belongs to                               |
 | `day`       | `date`            | NOT NULL                          | The date this combo is for                                     |
 | `rank`      | `combo_rank_enum` | NOT NULL                          | Primary, backup1, or backup2                                   |
-| `score`     | `decimal`         | NOT NULL                          | Combo score (sum of session scores)                            |
+| `score`     | `real`            | NOT NULL                          | Combo score (sum of session scores)                            |
 
 **Unique Constraint:** (`member_id`, `day`, `rank`) — a member can only have one primary combo per day, one backup1 per day, etc.
 
@@ -216,7 +224,7 @@ Scored N-day windows for the group. Regenerated when N-days changes or the algor
 | `group_id`   | `uuid`      | FK → `group.id`, NOT NULL         | The group                                                  |
 | `start_date` | `date`      | NOT NULL                          | Window start date                                          |
 | `end_date`   | `date`      | NOT NULL                          | Window end date                                            |
-| `score`      | `decimal`   | NOT NULL                          | Group window score (total satisfaction - fairness penalty) |
+| `score`      | `real`      | NOT NULL                          | Group window score (total satisfaction - fairness penalty) |
 | `selected`   | `boolean`   | NOT NULL, DEFAULT false           | Whether this window is currently selected                  |
 | `created_at` | `timestamp` | DEFAULT now()                     | When ranking was computed                                  |
 
@@ -225,6 +233,113 @@ Scored N-day windows for the group. Regenerated when N-days changes or the algor
 - When window rankings are generated, the top-scoring window is automatically marked as `selected = true`.
 - Users can change the selected window without re-running the algorithm.
 - Only one window per group should have `selected = true` at a time.
+
+---
+
+## Phase 2: Purchase Tracking Tables
+
+### `purchase_timeslot`
+
+A member's declared purchase window — when they plan to buy tickets.
+
+| Column           | Type                            | Constraints                       | Description                         |
+| ---------------- | ------------------------------- | --------------------------------- | ----------------------------------- |
+| `id`             | `uuid`                          | **PK**, DEFAULT gen_random_uuid() | Unique timeslot ID                  |
+| `group_id`       | `uuid`                          | FK → `group.id`, NOT NULL         | The group                           |
+| `member_id`      | `uuid`                          | FK → `member.id`, NOT NULL        | The member                          |
+| `timeslot_start` | `timestamp`                     | NOT NULL                          | Start of purchase window            |
+| `timeslot_end`   | `timestamp`                     | NOT NULL                          | End of purchase window              |
+| `status`         | `purchase_timeslot_status_enum` | NOT NULL, DEFAULT 'upcoming'      | upcoming, in_progress, or completed |
+| `created_at`     | `timestamp`                     | DEFAULT now()                     | When the timeslot was created       |
+| `updated_at`     | `timestamp`                     | DEFAULT now()                     | Last update time                    |
+
+**Unique Constraint:** (`member_id`, `group_id`) — one timeslot per member per group.
+
+### `purchase_plan_entry`
+
+A planned purchase for a specific session + assignee member, with an optional price ceiling.
+
+| Column               | Type        | Constraints                           | Description                                    |
+| -------------------- | ----------- | ------------------------------------- | ---------------------------------------------- |
+| `id`                 | `uuid`      | **PK**, DEFAULT gen_random_uuid()     | Unique entry ID                                |
+| `group_id`           | `uuid`      | FK → `group.id`, NOT NULL             | The group                                      |
+| `member_id`          | `uuid`      | FK → `member.id`, NOT NULL            | The member who created the plan entry          |
+| `session_id`         | `text`      | FK → `session.session_code`, NOT NULL | The session                                    |
+| `assignee_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | The member the ticket is planned for           |
+| `price_ceiling`      | `integer`   |                                       | Maximum price willing to pay (NULL = no limit) |
+| `created_at`         | `timestamp` | DEFAULT now()                         | When the entry was created                     |
+| `updated_at`         | `timestamp` | DEFAULT now()                         | Last update time                               |
+
+**Unique Constraint:** (`member_id`, `session_id`, `assignee_member_id`) — one plan entry per member-session-assignee triple.
+
+### `ticket_purchase`
+
+A recorded ticket purchase.
+
+| Column                   | Type        | Constraints                           | Description                      |
+| ------------------------ | ----------- | ------------------------------------- | -------------------------------- |
+| `id`                     | `uuid`      | **PK**, DEFAULT gen_random_uuid()     | Unique purchase ID               |
+| `group_id`               | `uuid`      | FK → `group.id`, NOT NULL             | The group                        |
+| `session_id`             | `text`      | FK → `session.session_code`, NOT NULL | The session                      |
+| `purchased_by_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | The member who bought the ticket |
+| `price_per_ticket`       | `integer`   | NOT NULL                              | Price paid per ticket            |
+| `created_at`             | `timestamp` | DEFAULT now()                         | When the purchase was recorded   |
+| `updated_at`             | `timestamp` | DEFAULT now()                         | Last update time                 |
+
+### `ticket_purchase_assignee`
+
+Who the purchased tickets are for. One row per member assigned a ticket.
+
+| Column               | Type      | Constraints                       | Description                  |
+| -------------------- | --------- | --------------------------------- | ---------------------------- |
+| `ticket_purchase_id` | `uuid`    | **PK**, FK → `ticket_purchase.id` | The purchase                 |
+| `member_id`          | `uuid`    | **PK**, FK → `member.id`          | The member the ticket is for |
+| `price_paid`         | `integer` |                                   | Per-member price (nullable)  |
+
+**Primary Key:** Composite (`ticket_purchase_id`, `member_id`)
+
+### `sold_out_session`
+
+Group-scoped tracking of sold-out sessions.
+
+| Column                  | Type        | Constraints                           | Description                 |
+| ----------------------- | ----------- | ------------------------------------- | --------------------------- |
+| `id`                    | `uuid`      | **PK**, DEFAULT gen_random_uuid()     | Unique ID                   |
+| `group_id`              | `uuid`      | FK → `group.id`, NOT NULL             | The group                   |
+| `session_id`            | `text`      | FK → `session.session_code`, NOT NULL | The session                 |
+| `reported_by_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | Who reported it as sold out |
+| `created_at`            | `timestamp` | DEFAULT now()                         | When it was reported        |
+
+**Unique Constraint:** (`group_id`, `session_id`)
+
+### `out_of_budget_session`
+
+Per-member tracking of sessions that are out of their budget.
+
+| Column       | Type        | Constraints                           | Description        |
+| ------------ | ----------- | ------------------------------------- | ------------------ |
+| `id`         | `uuid`      | **PK**, DEFAULT gen_random_uuid()     | Unique ID          |
+| `group_id`   | `uuid`      | FK → `group.id`, NOT NULL             | The group          |
+| `member_id`  | `uuid`      | FK → `member.id`, NOT NULL            | The member         |
+| `session_id` | `text`      | FK → `session.session_code`, NOT NULL | The session        |
+| `created_at` | `timestamp` | DEFAULT now()                         | When it was marked |
+
+**Unique Constraint:** (`member_id`, `session_id`)
+
+### `reported_price`
+
+Price reports for sessions. Members can report multiple prices over time (no unique constraint per member+session).
+
+| Column                  | Type        | Constraints                           | Description                               |
+| ----------------------- | ----------- | ------------------------------------- | ----------------------------------------- |
+| `id`                    | `uuid`      | **PK**, DEFAULT gen_random_uuid()     | Unique ID                                 |
+| `group_id`              | `uuid`      | FK → `group.id`, NOT NULL             | The group                                 |
+| `session_id`            | `text`      | FK → `session.session_code`, NOT NULL | The session                               |
+| `reported_by_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | Who reported the price                    |
+| `min_price`             | `integer`   |                                       | Minimum price seen (nullable)             |
+| `max_price`             | `integer`   |                                       | Maximum price seen (nullable)             |
+| `comments`              | `text`      |                                       | Optional comments (200 char limit in app) |
+| `created_at`            | `timestamp` | DEFAULT now()                         | When the price was reported               |
 
 ---
 
@@ -239,7 +354,15 @@ group ──────► member ◄──── buddy_constraint
               │   │
               │   ├──► session_preference ──► session
               │   │
-              │   └──► combo ──► combo_session ──► session
+              │   ├──► combo ──► combo_session ──► session
+              │   │
+              │   ├──► purchase_timeslot
+              │   ├──► purchase_plan_entry ──► session
+              │   ├──► ticket_purchase ──► ticket_purchase_assignee
+              │   │         └──► session
+              │   ├──► sold_out_session ──► session
+              │   ├──► out_of_budget_session ──► session
+              │   └──► reported_price ──► session
               │
               └──► window_ranking
 
@@ -254,39 +377,42 @@ These notes document conditional updates and cascading effects that the applicat
 
 ### When a Member Joins (After Owner Approval)
 
-If the group is still in `'preferences'` phase and no algorithm has run:
+Regardless of group phase, the new member is added with status = `'joined'`. Algorithm outputs are **not** deleted — the system displays a notification that the new member needs to enter preferences and schedules should be regenerated.
 
-- No cascading effects — member is simply added with status = `'joined'`
-
-If the group is past `'preferences'` phase (algorithm has run):
-
-| Action                   | Tables Affected                                                                               |
-| ------------------------ | --------------------------------------------------------------------------------------------- |
-| Set new member status    | `member` — status = `'joined'`                                                                |
-| Reset group for re-run   | `group` — phase → `'preferences'`                                                             |
-| Reset existing members   | `member` — all existing members' statuses → `'preferences_set'` (preserves their preferences) |
-| Delete algorithm outputs | `combo`, `combo_session`, `window_ranking` — delete all rows for this group                   |
+| Action                | Tables Affected                                                                 |
+| --------------------- | ------------------------------------------------------------------------------- |
+| Set new member status | `member` — status = `'joined'`, `joined_at` = now()                             |
+| Track rejoin          | `group.departed_members` — if member was previously departed, mark `rejoinedAt` |
 
 ### When a Member Leaves
 
-If the group is past `'preferences'` phase (algorithm has run):
+Behavior is determined by `wasPartOfSchedule` (`joinedAt <= scheduleGeneratedAt`), not the current phase.
 
-| Action                                     | Tables Affected                                                                                                |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| Delete member data                         | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member                           |
-| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member                                  |
-| Flag affected members                      | `member` — members who had the leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies'` |
-| Set unaffected members                     | `member` — members with no buddy connection to leaving member: status → `'preferences_set'`                    |
-| Reset group for re-run                     | `group` — phase → `'preferences'`                                                                              |
-| Delete algorithm outputs                   | `combo`, `combo_session`, `window_ranking` — delete all rows for this group                                    |
+**Always (regardless of phase):**
 
-If the group is still in `'preferences'` phase (no algorithm has run):
+| Action                                     | Tables Affected                                                                                        |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Delete member data                         | `buddy_constraint`, `session_preference` — delete all rows for this member                             |
+| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member                          |
+| Track affected buddies                     | `group.affected_buddy_members` — add departing member's name to entries for each affected buddy member |
+| Delete member row                          | `member` — delete the departing member                                                                 |
 
-| Action                                     | Tables Affected                                                                                                |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| Delete member data                         | `member`, `buddy_constraint`, `session_preference` — delete all rows for this member                           |
-| Auto-remove from others' buddy constraints | `buddy_constraint` — delete any rows where `buddy_member_id` = leaving member                                  |
-| Flag affected members                      | `member` — members who had the leaving member as a buddy: status → `'joined'`, `preference_step` → `'buddies'` |
+**If `wasPartOfSchedule` is true (algorithm ran and member was included):**
+
+| Action                             | Tables Affected                                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Reset all remaining active members | `member` — all remaining active members → `'preferences_set'` (regardless of buddy connection) |
+| Record departure                   | `group.departed_members` — append `{ name, departedAt }`                                       |
+| Reset group for re-run             | `group` — phase → `'preferences'`, `members_with_no_combos` → `[]`                             |
+| Delete algorithm outputs           | `combo`, `combo_session`, `window_ranking` — delete all rows for this group                    |
+
+**If `wasPartOfSchedule` is false (member joined after last generation):**
+
+| Action                 | Tables Affected                             |
+| ---------------------- | ------------------------------------------- |
+| No group/phase changes | Algorithm outputs and group phase preserved |
+
+**Note:** Affected buddy members are NOT reset to `joined` status. Instead, they are tracked via the `affected_buddy_members` JSONB field on the group table. Generation is blocked until all affected members have reviewed their preferences (by saving buddies, completing sessions, or acknowledging the review).
 
 ### When Owner Transfers Ownership
 
@@ -300,12 +426,13 @@ No impact on algorithm outputs or group phase.
 
 Triggered when the owner generates schedules.
 
-| Action                                     | Tables Affected                                                                 |
-| ------------------------------------------ | ------------------------------------------------------------------------------- |
-| Delete all algorithm outputs for the group | `combo`, `combo_session`, `window_ranking`                                      |
-| Update member statuses                     | `member` — all members remain at `'preferences_set'`; `statusChangedAt` updated |
-| Update group phase                         | `group` — set `phase` to `'schedule_review'`                                    |
-| Compute window rankings                    | `window_ranking` — generate and insert ranked windows; auto-select top window   |
+| Action                                     | Tables Affected                                                                                                                                                                                       |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Delete all algorithm outputs for the group | `combo`, `combo_session`, `window_ranking`                                                                                                                                                            |
+| Member statuses                            | `member` — all members remain at `'preferences_set'` (no status change)                                                                                                                               |
+| Store excluded session snapshots           | `member.excluded_session_codes` — updated per member with sold-out/OOB sessions excluded from this generation                                                                                         |
+| Update group                               | `group` — `phase` → `'schedule_review'`, `schedule_generated_at` → now(), `purchase_data_changed_at` → null, `departed_members` → [], `affected_buddy_members` → {}, `members_with_no_combos` updated |
+| Compute window rankings                    | `window_ranking` — generate and insert ranked windows; auto-select top window (if date config is set)                                                                                                 |
 
 ### When N-Days or Date Range Changes
 
@@ -336,19 +463,19 @@ These values are derived from stored data and computed when rendering the UI, no
 
 ## Key Design Decisions Summary
 
-| Decision                                   | Choice                                                                    | Rationale                                                                                                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No separate setup phase                    | Group starts in `preferences` on creation                                 | Members can immediately join and enter preferences; owner gates generation, which is the real checkpoint                                             |
-| Group owner role                           | `member_role_enum` on member table                                        | Owner gates destructive/group-wide actions (join approval, generation, date config changes, deletion)                                                |
-| Date config                                | Set at creation or deferred; required before generation; owner-only edits | Encourages early agreement on dates without blocking preference input; generation validates date config exists                                       |
-| Join flow                                  | Request/approve with `'pending_approval'` status                          | Prevents unexpected members joining mid-process; owner confirms group composition                                                                    |
-| Budget at user level                       | `budget` on `users` table (global, not per-group)                         | Mirrors the 12-ticket limit: a global setting. Set in user settings, editable anytime.                                                               |
-| Buddy storage                              | Join table, not JSON                                                      | Referential integrity + efficient reverse lookups                                                                                                    |
-| Session preferences                        | Opt-in rows only, interest only (no willingness)                          | Reduces noise, explicit user intent. Price ceilings move to Phase 2 purchase plan.                                                                   |
-| Sport rankings                             | JSON array on member                                                      | Simple ordered list of strings, no relational queries needed                                                                                         |
-| Travel data                                | Raw minutes, not computed gaps                                            | Allows gap rule adjustments without re-seeding DB                                                                                                    |
-| Combo sessions                             | Join table, not JSON                                                      | Need to query "which combos contain session X?"                                                                                                      |
-| Simplified state machine                   | `preferences` → `schedule_review`                                         | No confirmation step or `completed` phase. Members implicitly accept schedules; window rankings computed at generation, not after all confirmations. |
-| Window selection                           | `selected` boolean on window_ranking                                      | Simple, users can switch without re-running algorithm                                                                                                |
-| Algorithm re-run                           | Delete + regenerate all outputs                                           | Clean slate approach, no versioning complexity                                                                                                       |
-| Override persistence across re-generations | `excluded` flag preserved; override columns removed                       | Convergence loop makes per-session overrides unnecessary. Users adjust constraints directly.                                                         |
+| Decision                 | Choice                                                                    | Rationale                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No separate setup phase  | Group starts in `preferences` on creation                                 | Members can immediately join and enter preferences; owner gates generation, which is the real checkpoint                                             |
+| Group owner role         | `member_role_enum` on member table                                        | Owner gates destructive/group-wide actions (join approval, generation, date config changes, deletion)                                                |
+| Date config              | Set at creation or deferred; required before generation; owner-only edits | Encourages early agreement on dates without blocking preference input; generation validates date config exists                                       |
+| Join flow                | Request/approve with `'pending_approval'` status                          | Prevents unexpected members joining mid-process; owner confirms group composition                                                                    |
+| Budget                   | Removed (may revisit in a future phase)                                   | Budget tracking was dropped from Phase 2 scope. May be reintroduced later.                                                                           |
+| Buddy storage            | Join table, not JSON                                                      | Referential integrity + efficient reverse lookups                                                                                                    |
+| Session preferences      | Opt-in rows only, interest only (no willingness)                          | Reduces noise, explicit user intent. Price ceilings move to Phase 2 purchase plan.                                                                   |
+| Sport rankings           | JSON array on member                                                      | Simple ordered list of strings, no relational queries needed                                                                                         |
+| Travel data              | Raw minutes, not computed gaps                                            | Allows gap rule adjustments without re-seeding DB                                                                                                    |
+| Combo sessions           | Join table, not JSON                                                      | Need to query "which combos contain session X?"                                                                                                      |
+| Simplified state machine | `preferences` → `schedule_review`                                         | No confirmation step or `completed` phase. Members implicitly accept schedules; window rankings computed at generation, not after all confirmations. |
+| Window selection         | `selected` boolean on window_ranking                                      | Simple, users can switch without re-running algorithm                                                                                                |
+| Algorithm re-run         | Delete + regenerate all outputs                                           | Clean slate approach, no versioning complexity                                                                                                       |
+| Session exclusion        | Handled at generation time via sold-out/out-of-budget filtering           | No `excluded` column on session_preference. Exclusion snapshot stored in `member.excluded_session_codes` JSONB for display purposes.                 |

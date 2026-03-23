@@ -24,6 +24,24 @@ vi.mock("@/lib/auth", () => ({
   getCurrentUser: (...args: unknown[]) => mockGetCurrentUser(...args),
   getMembership: (...args: unknown[]) => mockGetMembership(...args),
   getOwnerMembership: (...args: unknown[]) => mockGetOwnerMembership(...args),
+  requireMembership: async (groupId: string) => {
+    const membership = await mockGetMembership(groupId);
+    if (!membership)
+      return {
+        membership: null,
+        error: { error: "You are not an active member of this group." },
+      };
+    return { membership, error: null };
+  },
+  requireOwnerMembership: async (groupId: string, action: string) => {
+    const membership = await mockGetOwnerMembership(groupId);
+    if (!membership)
+      return {
+        membership: null,
+        error: { error: `Only the group owner can ${action}.` },
+      };
+    return { membership, error: null };
+  },
 }));
 
 // Mock DB
@@ -58,6 +76,11 @@ const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
     from: vi.fn(() => ({
       where: vi.fn(() => ({
         limit: vi.fn(() => []),
+        for: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r([]);
+          },
+        })),
         then(r: (v: unknown) => void) {
           r([]);
         },
@@ -118,7 +141,6 @@ vi.mock("@/lib/db/schema", () => ({
     memberId: "member_id",
     sessionId: "session_id",
     interest: "interest",
-    excluded: "excluded",
   },
   session: {
     sessionCode: "session_code",
@@ -144,6 +166,23 @@ vi.mock("@/lib/db/schema", () => ({
   },
   comboSession: { comboId: "combo_id" },
   windowRanking: { groupId: "group_id" },
+  ticketPurchase: { id: "id", groupId: "group_id", sessionId: "session_id" },
+  ticketPurchaseAssignee: {
+    ticketPurchaseId: "ticket_purchase_id",
+    memberId: "member_id",
+  },
+  soldOutSession: { groupId: "group_id", sessionId: "session_id" },
+  outOfBudgetSession: {
+    groupId: "group_id",
+    memberId: "member_id",
+    sessionId: "session_id",
+  },
+  purchaseTimeslot: { groupId: "group_id", memberId: "member_id" },
+  purchasePlanEntry: { groupId: "group_id", memberId: "member_id" },
+  reportedPrice: {
+    groupId: "group_id",
+    reportedByMemberId: "reported_by_member_id",
+  },
 }));
 
 // Mock algorithm runner
@@ -381,28 +420,65 @@ describe("approveMember", () => {
     ]);
     directWhereResults.push([{ count: 5 }]);
     mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
-    mockLimit.mockResolvedValueOnce([
-      {
-        departedMembers: [
-          { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
-          { name: "Bob Smith", departedAt: "2028-01-11T12:00:00Z" },
-        ],
-      },
-    ]);
+
+    // Group data is now fetched inside a transaction with .for("update")
+    const txSetCalls: Record<string, unknown>[] = [];
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([
+                    {
+                      departedMembers: [
+                        {
+                          name: "Jane Doe",
+                          departedAt: "2028-01-10T12:00:00Z",
+                        },
+                        {
+                          name: "Bob Smith",
+                          departedAt: "2028-01-11T12:00:00Z",
+                        },
+                      ],
+                    },
+                  ]);
+                },
+              })),
+              then(r: (v: unknown) => void) {
+                r([
+                  {
+                    departedMembers: [
+                      { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
+                      { name: "Bob Smith", departedAt: "2028-01-11T12:00:00Z" },
+                    ],
+                  },
+                ]);
+              },
+            })),
+          })),
+        })),
+        update: vi.fn(() => ({
+          set: vi.fn((vals: Record<string, unknown>) => {
+            txSetCalls.push(vals);
+            return { where: vi.fn(() => Promise.resolve()) };
+          }),
+        })),
+      };
+      return cb(tx);
+    });
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
     // Should update group with rejoinedAt set on Jane Doe, Bob Smith unchanged
-    const groupUpdateCall = mockSet.mock.calls.find(
-      (call: unknown[]) =>
-        call[0] &&
-        typeof call[0] === "object" &&
-        "departedMembers" in (call[0] as Record<string, unknown>)
+    const groupUpdateCall = txSetCalls.find(
+      (call) => call && typeof call === "object" && "departedMembers" in call
     );
     expect(groupUpdateCall).toBeDefined();
     const updated = (
-      groupUpdateCall![0] as {
+      groupUpdateCall as {
         departedMembers: {
           name: string;
           departedAt: string;
@@ -424,26 +500,59 @@ describe("approveMember", () => {
     ]);
     directWhereResults.push([{ count: 5 }]);
     mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
-    mockLimit.mockResolvedValueOnce([
-      {
-        departedMembers: [
-          { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
-        ],
-      },
-    ]);
+
+    // Group data is now fetched inside a transaction with .for("update")
+    const txSetCalls: Record<string, unknown>[] = [];
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([
+                    {
+                      departedMembers: [
+                        {
+                          name: "Jane Doe",
+                          departedAt: "2028-01-10T12:00:00Z",
+                        },
+                      ],
+                    },
+                  ]);
+                },
+              })),
+              then(r: (v: unknown) => void) {
+                r([
+                  {
+                    departedMembers: [
+                      { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
+                    ],
+                  },
+                ]);
+              },
+            })),
+          })),
+        })),
+        update: vi.fn(() => ({
+          set: vi.fn((vals: Record<string, unknown>) => {
+            txSetCalls.push(vals);
+            return { where: vi.fn(() => Promise.resolve()) };
+          }),
+        })),
+      };
+      return cb(tx);
+    });
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
     // Should only update departedMembers (with rejoinedAt), NOT affectedBuddyMembers
-    const groupUpdateCall = mockSet.mock.calls.find(
-      (call: unknown[]) =>
-        call[0] &&
-        typeof call[0] === "object" &&
-        "departedMembers" in (call[0] as Record<string, unknown>)
+    const groupUpdateCall = txSetCalls.find(
+      (call) => call && typeof call === "object" && "departedMembers" in call
     );
     expect(groupUpdateCall).toBeDefined();
-    expect(groupUpdateCall![0]).not.toHaveProperty("affectedBuddyMembers");
+    expect(groupUpdateCall).not.toHaveProperty("affectedBuddyMembers");
   });
 
   it("departed member rejoins — affected members still have entries in affectedBuddyMembers", async () => {
@@ -453,28 +562,60 @@ describe("approveMember", () => {
     ]);
     directWhereResults.push([{ count: 5 }]);
     mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
-    mockLimit.mockResolvedValueOnce([
-      {
-        departedMembers: [
-          { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
-        ],
-      },
-    ]);
+
+    // Group data is now fetched inside a transaction with .for("update")
+    const txSetCalls: Record<string, unknown>[] = [];
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([
+                    {
+                      departedMembers: [
+                        {
+                          name: "Jane Doe",
+                          departedAt: "2028-01-10T12:00:00Z",
+                        },
+                      ],
+                    },
+                  ]);
+                },
+              })),
+              then(r: (v: unknown) => void) {
+                r([
+                  {
+                    departedMembers: [
+                      { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
+                    ],
+                  },
+                ]);
+              },
+            })),
+          })),
+        })),
+        update: vi.fn(() => ({
+          set: vi.fn((vals: Record<string, unknown>) => {
+            txSetCalls.push(vals);
+            return { where: vi.fn(() => Promise.resolve()) };
+          }),
+        })),
+      };
+      return cb(tx);
+    });
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
     // The group update should only contain departedMembers
     // affectedBuddyMembers entries for member-3 and member-4 are preserved
-    const setCalls = mockSet.mock.calls;
-    const groupUpdate = setCalls.find(
-      (call: unknown[]) =>
-        call[0] &&
-        typeof call[0] === "object" &&
-        "departedMembers" in (call[0] as Record<string, unknown>)
+    const groupUpdate = txSetCalls.find(
+      (call) => call && typeof call === "object" && "departedMembers" in call
     );
     expect(groupUpdate).toBeDefined();
-    expect(groupUpdate![0]).not.toHaveProperty("affectedBuddyMembers");
+    expect(groupUpdate).not.toHaveProperty("affectedBuddyMembers");
   });
 
   it("does not update group when approved member is not in departedMembers", async () => {
@@ -604,16 +745,29 @@ function mockActiveOwner() {
 function makeThenableWhere(resultOrQueue: unknown[] | (() => unknown[]) = []) {
   const getResult =
     typeof resultOrQueue === "function" ? resultOrQueue : () => resultOrQueue;
-  return () => ({
-    limit: vi.fn(() => ({
+  return () => {
+    const thenable = {
+      limit: vi.fn(() => ({
+        then(r: (v: unknown) => void) {
+          r(getResult());
+        },
+        for: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r(getResult());
+          },
+        })),
+      })),
+      for: vi.fn(() => ({
+        then(r: (v: unknown) => void) {
+          r(getResult());
+        },
+      })),
       then(r: (v: unknown) => void) {
         r(getResult());
       },
-    })),
-    then(r: (v: unknown) => void) {
-      r(getResult());
-    },
-  });
+    };
+    return thenable;
+  };
 }
 
 /**
@@ -819,16 +973,29 @@ describe("leaveGroup", () => {
     ];
     let qIdx = 0;
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeWhere = () => ({
-        limit: vi.fn(() => ({
+      const makeWhere = () => {
+        const res = () => queryQueue[qIdx++] ?? [];
+        return {
+          limit: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
+          })),
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          })),
           then(r: (v: unknown) => void) {
-            r(queryQueue[qIdx++] ?? []);
+            r(res());
           },
-        })),
-        then(r: (v: unknown) => void) {
-          r(queryQueue[qIdx++] ?? []);
-        },
-      });
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
@@ -915,16 +1082,29 @@ describe("leaveGroup", () => {
     ];
     let qIdx = 0;
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeWhere = () => ({
-        limit: vi.fn(() => ({
+      const makeWhere = () => {
+        const res = () => queryQueue[qIdx++] ?? [];
+        return {
+          limit: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
+          })),
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          })),
           then(r: (v: unknown) => void) {
-            r(queryQueue[qIdx++] ?? []);
+            r(res());
           },
-        })),
-        then(r: (v: unknown) => void) {
-          r(queryQueue[qIdx++] ?? []);
-        },
-      });
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
@@ -1141,16 +1321,29 @@ describe("removeMember", () => {
     ];
     let qIdx = 0;
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeWhere = () => ({
-        limit: vi.fn(() => ({
+      const makeWhere = () => {
+        const res = () => queryQueue[qIdx++] ?? [];
+        return {
+          limit: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
+          })),
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          })),
           then(r: (v: unknown) => void) {
-            r(queryQueue[qIdx++] ?? []);
+            r(res());
           },
-        })),
-        then(r: (v: unknown) => void) {
-          r(queryQueue[qIdx++] ?? []);
-        },
-      });
+        };
+      };
       const tx = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
@@ -1405,6 +1598,11 @@ describe("deleteGroup", () => {
       const txSelect = vi.fn(() => ({
         from: vi.fn(() => ({
           where: vi.fn(() => ({
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r([]);
+              },
+            })),
             then(r: (v: unknown) => void) {
               r([]);
             },
@@ -1455,6 +1653,11 @@ describe("deleteGroup", () => {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
             where: vi.fn(() => ({
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([]);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r([]);
               },
@@ -1473,8 +1676,11 @@ describe("deleteGroup", () => {
 
     expect(result.success).toBe(true);
     // Should delete: combo_session, combo, window_ranking,
-    // session_preference, buddy_constraint, member, group
-    expect(deleteCount).toBe(7);
+    // session_preference, buddy_constraint,
+    // ticket_purchase_assignee, ticket_purchase, purchase_plan_entry,
+    // purchase_timeslot, sold_out_session, out_of_budget_session,
+    // reported_price, member, group
+    expect(deleteCount).toBe(14);
   });
 
   it("returns error when transaction fails", async () => {
@@ -1500,6 +1706,11 @@ describe("updateDateConfig", () => {
         from: vi.fn(() => ({
           where: vi.fn(() => ({
             limit: vi.fn(() => []),
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r([]);
+              },
+            })),
             then(r: (v: unknown) => void) {
               r([]);
             },
@@ -1766,15 +1977,22 @@ describe("updateDateConfig", () => {
     ]);
 
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeThenableWhere = () => ({
-        limit: vi.fn(() => {
-          const res = txQueryQueue[qIdx++] ?? [];
-          return res;
-        }),
-        then(r: (v: unknown) => void) {
-          r(txQueryQueue[qIdx++] ?? []);
-        },
-      });
+      const makeThenableWhere = () => {
+        const res = () => txQueryQueue[qIdx++] ?? [];
+        return {
+          limit: vi.fn(() => {
+            return res();
+          }),
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          })),
+          then(r: (v: unknown) => void) {
+            r(res());
+          },
+        };
+      };
       const tx = {
         update: vi.fn(() => ({
           set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
@@ -1826,14 +2044,22 @@ describe("updateDateConfig", () => {
     let qIdx = 0;
 
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeThenableWhere = () => ({
-        limit: vi.fn(() => {
-          return txQueryQueue[qIdx++] ?? [];
-        }),
-        then(r: (v: unknown) => void) {
-          r(txQueryQueue[qIdx++] ?? []);
-        },
-      });
+      const makeThenableWhere = () => {
+        const res = () => txQueryQueue[qIdx++] ?? [];
+        return {
+          limit: vi.fn(() => {
+            return res();
+          }),
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          })),
+          then(r: (v: unknown) => void) {
+            r(res());
+          },
+        };
+      };
       const tx = {
         update: vi.fn(() => ({
           set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
@@ -1893,16 +2119,29 @@ describe("removeMember — departure tracking", () => {
     const txDeleteWhere = vi.fn(() => Promise.resolve());
     const txUpdateWhere = vi.fn(() => Promise.resolve());
 
-    const makeThenableWhere = () => ({
-      limit: vi.fn(() => ({
+    const makeThenableWhere = () => {
+      const res = () => txQueryResults[queryIndex++] ?? [];
+      return {
+        limit: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r(res());
+          },
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          })),
+        })),
+        for: vi.fn(() => ({
+          then(r: (v: unknown) => void) {
+            r(res());
+          },
+        })),
         then(r: (v: unknown) => void) {
-          r(txQueryResults[queryIndex++] ?? []);
+          r(res());
         },
-      })),
-      then(r: (v: unknown) => void) {
-        r(txQueryResults[queryIndex++] ?? []);
-      },
-    });
+      };
+    };
 
     const txFrom = vi.fn(() => ({
       where: vi.fn(makeThenableWhere),
@@ -2737,16 +2976,29 @@ describe("leaveGroup — departure tracking", () => {
     ];
 
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeThenableWhere = () => ({
-        limit: vi.fn(() => ({
+      const makeThenableWhere = () => {
+        const res = () => txQueryResults[queryIndex++] ?? [];
+        return {
+          limit: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
+          })),
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          })),
           then(r: (v: unknown) => void) {
-            r(txQueryResults[queryIndex++] ?? []);
+            r(res());
           },
-        })),
-        then(r: (v: unknown) => void) {
-          r(txQueryResults[queryIndex++] ?? []);
-        },
-      });
+        };
+      };
       const txFrom = vi.fn(() => ({
         where: vi.fn(makeThenableWhere),
         innerJoin: vi.fn(() => ({ where: vi.fn(makeThenableWhere) })),
@@ -2912,6 +3164,15 @@ describe("generateSchedules", () => {
       },
     ]);
 
+    // 6. soldOutSessions (via directWhereResults)
+    directWhereResults.push([]);
+
+    // 7. outOfBudgetSessions (via directWhereResults)
+    directWhereResults.push([]);
+
+    // 8. purchaseAssignees (innerJoin path — via directWhereResults)
+    directWhereResults.push([]);
+
     // Mock algorithm result
     mockRunScheduleGeneration.mockReturnValue({
       combos: [
@@ -2958,6 +3219,11 @@ describe("generateSchedules", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => txQueryQueue[qIdx++] ?? []),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },
@@ -3018,6 +3284,15 @@ describe("generateSchedules", () => {
     // 5. travelEntries (no where)
     directFromResults.push([]);
 
+    // 6. soldOutSessions
+    directWhereResults.push([]);
+
+    // 7. outOfBudgetSessions
+    directWhereResults.push([]);
+
+    // 8. purchaseAssignees (innerJoin)
+    directWhereResults.push([]);
+
     // Algorithm returns some members with no combos
     mockRunScheduleGeneration.mockReturnValue({
       combos: [
@@ -3041,6 +3316,11 @@ describe("generateSchedules", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => []),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([]);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r([]);
               },
@@ -3109,5 +3389,297 @@ describe("generateSchedules", () => {
     expect(result.error).toBe(
       "Failed to generate schedules. Please try again."
     );
+  });
+
+  it("filters sold-out and out-of-budget sessions, injects locked sessions, and tracks excluded sessions", async () => {
+    mockOwner();
+    // 1. Group data
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers
+    directWhereResults.push([
+      {
+        id: "m1",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: ["Swimming"],
+      },
+    ]);
+
+    // 3. buddies — one hard, one soft
+    directWhereResults.push([
+      { memberId: "m1", buddyMemberId: "m2", type: "hard" },
+      { memberId: "m1", buddyMemberId: "m3", type: "soft" },
+    ]);
+
+    // 4. sessionPrefs — S001 is normal, S002 will be sold-out, S003 will be OOB
+    directWhereResults.push([
+      {
+        memberId: "m1",
+        sessionCode: "S001",
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-12",
+        startTime: "09:00",
+        endTime: "12:00",
+        interest: "high",
+      },
+      {
+        memberId: "m1",
+        sessionCode: "S002",
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-12",
+        startTime: "13:00",
+        endTime: "15:00",
+        interest: "medium",
+      },
+      {
+        memberId: "m1",
+        sessionCode: "S003",
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-13",
+        startTime: "09:00",
+        endTime: "12:00",
+        interest: "low",
+      },
+    ]);
+
+    // 5. travelEntries (no where — directFromResults)
+    directFromResults.push([]);
+
+    // 6. soldOutSessions — S002 is sold out
+    directWhereResults.push([{ sessionId: "S002" }]);
+
+    // 7. oobSessions — S003 is out of budget for m1
+    directWhereResults.push([{ memberId: "m1", sessionId: "S003" }]);
+
+    // 8. purchaseAssignees — m1 purchased S-LOCKED (not in preferences)
+    directWhereResults.push([{ memberId: "m1", sessionId: "S-LOCKED" }]);
+
+    // 9. missingLockedSessions query (for S-LOCKED, which is not in sessionPrefs)
+    directWhereResults.push([
+      {
+        sessionCode: "S-LOCKED",
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-14",
+        startTime: "10:00",
+        endTime: "12:00",
+      },
+    ]);
+
+    // Mock algorithm
+    mockRunScheduleGeneration.mockImplementation((membersData: unknown[]) => {
+      // Verify membersData was assembled correctly
+      const m = membersData as {
+        memberId: string;
+        hardBuddies: string[];
+        softBuddies: string[];
+        candidateSessions: { sessionCode: string }[];
+        lockedSessionCodes?: string[];
+      }[];
+      const member = m[0];
+      // Should have hard buddy m2 and soft buddy m3
+      expect(member.hardBuddies).toEqual(["m2"]);
+      expect(member.softBuddies).toEqual(["m3"]);
+      // S002 (sold out) and S003 (OOB) should be excluded; S001 + S-LOCKED should remain
+      const codes = member.candidateSessions.map((s) => s.sessionCode);
+      expect(codes).toContain("S001");
+      expect(codes).toContain("S-LOCKED");
+      expect(codes).not.toContain("S002");
+      expect(codes).not.toContain("S003");
+      // lockedSessionCodes should include S-LOCKED
+      expect(member.lockedSessionCodes).toEqual(["S-LOCKED"]);
+
+      return {
+        combos: [
+          {
+            memberId: "m1",
+            day: "2028-07-12",
+            rank: "primary",
+            score: 100,
+            sessionCodes: ["S001"],
+          },
+        ],
+        membersWithNoCombos: [],
+        convergence: { iterations: 1, converged: true, violations: [] },
+      };
+    });
+
+    mockComputeWindowRankings.mockReturnValue([]);
+
+    // Transaction mock
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [
+                {
+                  dateMode: "consecutive",
+                  consecutiveDays: 3,
+                  startDate: null,
+                  endDate: null,
+                },
+              ]),
+              then(r: (v: unknown) => void) {
+                r([]);
+              },
+            })),
+            then(r: (v: unknown) => void) {
+              r([]);
+            },
+          })),
+        })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => ({
+            returning: vi.fn(() => [{ id: "combo-1" }]),
+          })),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.success).toBe(true);
+    expect(mockRunScheduleGeneration).toHaveBeenCalledTimes(1);
+  });
+
+  it("computes window rankings with backup1 and backup2 combo scores", async () => {
+    mockOwner();
+    // 1. Group data
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers
+    directWhereResults.push([
+      {
+        id: "m1",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: ["Swimming"],
+      },
+    ]);
+
+    // 3. buddies
+    directWhereResults.push([]);
+    // 4. sessionPrefs
+    directWhereResults.push([
+      {
+        memberId: "m1",
+        sessionCode: "S001",
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-12",
+        startTime: "09:00",
+        endTime: "12:00",
+        interest: "high",
+      },
+    ]);
+    // 5. travel
+    directFromResults.push([]);
+    // 6. soldOut
+    directWhereResults.push([]);
+    // 7. oob
+    directWhereResults.push([]);
+    // 8. purchaseAssignees
+    directWhereResults.push([]);
+
+    // Algorithm returns combos with backup1 and backup2 ranks
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "primary",
+          score: 100,
+          sessionCodes: ["S001"],
+        },
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "backup1",
+          score: 80,
+          sessionCodes: ["S001"],
+        },
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "backup2",
+          score: 60,
+          sessionCodes: ["S001"],
+        },
+      ],
+      membersWithNoCombos: [],
+      convergence: { iterations: 1, converged: true, violations: [] },
+    });
+
+    // Window rankings mock
+    mockComputeWindowRankings.mockReturnValue([
+      { startDate: "2028-07-12", endDate: "2028-07-14", score: 240 },
+    ]);
+
+    // Transaction mock
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const txQueryQueue: unknown[][] = [
+        [
+          {
+            dateMode: "consecutive",
+            consecutiveDays: 3,
+            startDate: null,
+            endDate: null,
+          },
+        ],
+      ];
+      let qIdx = 0;
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => txQueryQueue[qIdx++] ?? []),
+              then(r: (v: unknown) => void) {
+                r(txQueryQueue[qIdx++] ?? []);
+              },
+            })),
+            then(r: (v: unknown) => void) {
+              r(txQueryQueue[qIdx++] ?? []);
+            },
+          })),
+        })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => ({
+            returning: vi.fn(() => [{ id: "combo-1" }]),
+          })),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.success).toBe(true);
+    expect(mockComputeWindowRankings).toHaveBeenCalledTimes(1);
+    // Verify that memberScores were built with backup scores
+    const call = mockComputeWindowRankings.mock.calls[0][0];
+    const scores = call.memberScores[0];
+    expect(scores.dailyScores.get("2028-07-12")).toBe(100);
+    expect(scores.dailyBackupScores.get("2028-07-12")).toEqual({
+      b1: 80,
+      b2: 60,
+    });
   });
 });

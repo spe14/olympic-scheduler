@@ -19,6 +19,15 @@ vi.mock("@/lib/auth", () => ({
   getCurrentUser: (...args: unknown[]) => mockGetCurrentUser(...args),
   getMembership: (...args: unknown[]) => mockGetMembership(...args),
   getOwnerMembership: vi.fn(),
+  requireMembership: async (groupId: string) => {
+    const membership = await mockGetMembership(groupId);
+    if (!membership)
+      return {
+        membership: null,
+        error: { error: "You are not an active member of this group." },
+      };
+    return { membership, error: null };
+  },
 }));
 
 // Mock DB
@@ -66,6 +75,11 @@ const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
       from: vi.fn(() => ({
         where: vi.fn(() => ({
           limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+          for: vi.fn(() => ({
+            then(r: (v: unknown) => void) {
+              r([{ affectedBuddyMembers: {} }]);
+            },
+          })),
         })),
       })),
     })),
@@ -111,7 +125,6 @@ vi.mock("@/lib/db/schema", () => ({
     sessionId: "session_id",
     memberId: "member_id",
     interest: "interest",
-    excluded: "excluded",
   },
 }));
 
@@ -159,6 +172,11 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -361,6 +379,11 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -411,6 +434,11 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -442,6 +470,11 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -472,6 +505,11 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -502,6 +540,11 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -533,6 +576,11 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -568,14 +616,16 @@ describe("saveBuddies", () => {
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
     const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
-    const txSelectLimit = vi.fn(() => [
-      {
-        affectedBuddyMembers: {
-          "member-1": ["Bob Jones"],
-          "member-2": ["Charlie Brown"],
-        },
+    const affectedData = {
+      "member-1": ["Bob Jones"],
+      "member-2": ["Charlie Brown"],
+    };
+    const txSelectLimit = vi.fn(() => [{ affectedBuddyMembers: affectedData }]);
+    const txSelectFor = vi.fn(() => ({
+      then(r: (v: unknown) => void) {
+        r([{ affectedBuddyMembers: affectedData }]);
       },
-    ]);
+    }));
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
       cb({
         update: txUpdateMock,
@@ -585,6 +635,7 @@ describe("saveBuddies", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: txSelectLimit,
+              for: txSelectFor,
             })),
           })),
         })),
@@ -883,6 +934,11 @@ describe("saveSessionPreferences", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -1016,6 +1072,11 @@ describe("saveSessionPreferences", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -1070,6 +1131,11 @@ describe("saveSessionPreferences", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
             })),
           })),
         })),
@@ -1105,11 +1171,13 @@ describe("saveSessionPreferences", () => {
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
     const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
-    const txSelectLimit = vi.fn(() => [
-      {
-        affectedBuddyMembers: { "member-1": ["Alice"], "member-2": ["Bob"] },
+    const affectedData = { "member-1": ["Alice"], "member-2": ["Bob"] };
+    const txSelectLimit = vi.fn(() => [{ affectedBuddyMembers: affectedData }]);
+    const txSelectFor = vi.fn(() => ({
+      then(r: (v: unknown) => void) {
+        r([{ affectedBuddyMembers: affectedData }]);
       },
-    ]);
+    }));
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
       cb({
         delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
@@ -1119,6 +1187,7 @@ describe("saveSessionPreferences", () => {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
               limit: txSelectLimit,
+              for: txSelectFor,
             })),
           })),
         })),
@@ -1184,6 +1253,7 @@ describe("confirmAffectedBuddyReview", () => {
     vi.clearAllMocks();
     mockLimit.mockReset();
     mockUpdateWhere.mockReset();
+    mockTransaction.mockClear();
     directWhereResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
   });
@@ -1196,39 +1266,87 @@ describe("confirmAffectedBuddyReview", () => {
 
   it("succeeds as no-op when member has no affectedBuddyMembers entry", async () => {
     mockActiveMember();
-    mockLimit.mockResolvedValueOnce([{ affectedBuddyMembers: {} }]);
+    const txUpdateMock = vi.fn(() => ({
+      set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+    }));
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: {} }]);
+                },
+              })),
+            })),
+          })),
+        })),
+        update: txUpdateMock,
+      })
+    );
     const result = await confirmAffectedBuddyReview("group-1");
     expect(result.success).toBe(true);
     // Should NOT call update since there's nothing to clear
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(txUpdateMock).not.toHaveBeenCalled();
   });
 
   it("clears member entry from affectedBuddyMembers", async () => {
     mockActiveMember();
-    mockLimit.mockResolvedValueOnce([
-      {
-        affectedBuddyMembers: { "member-1": ["Bob Jones"] },
-      },
-    ]);
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([{ affectedBuddyMembers: { "member-1": ["Bob Jones"] } }]);
+                },
+              })),
+            })),
+          })),
+        })),
+        update: txUpdateMock,
+      })
+    );
     const result = await confirmAffectedBuddyReview("group-1");
     expect(result.success).toBe(true);
-    expect(mockUpdate).toHaveBeenCalled();
-    expect(mockSet).toHaveBeenCalledWith({ affectedBuddyMembers: {} });
+    expect(txUpdateMock).toHaveBeenCalled();
+    expect(txSetMock).toHaveBeenCalledWith({ affectedBuddyMembers: {} });
   });
 
   it("preserves other members entries in affectedBuddyMembers", async () => {
     mockActiveMember();
-    mockLimit.mockResolvedValueOnce([
-      {
-        affectedBuddyMembers: {
-          "member-1": ["Bob Jones"],
-          "member-2": ["Charlie Brown"],
-        },
-      },
-    ]);
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
+      cb({
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([
+                    {
+                      affectedBuddyMembers: {
+                        "member-1": ["Bob Jones"],
+                        "member-2": ["Charlie Brown"],
+                      },
+                    },
+                  ]);
+                },
+              })),
+            })),
+          })),
+        })),
+        update: txUpdateMock,
+      })
+    );
     const result = await confirmAffectedBuddyReview("group-1");
     expect(result.success).toBe(true);
-    expect(mockSet).toHaveBeenCalledWith({
+    expect(txSetMock).toHaveBeenCalledWith({
       affectedBuddyMembers: { "member-2": ["Charlie Brown"] },
     });
   });

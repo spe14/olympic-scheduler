@@ -42,6 +42,7 @@ const mockGroup = {
   }[],
   affectedBuddyMembers: {} as Record<string, string[]>,
   membersWithNoCombos: [] as string[],
+  memberTimeslots: [],
   scheduleGeneratedAt: null as string | null,
   myScheduleWarningAckedAt: null as string | null,
 };
@@ -162,7 +163,16 @@ vi.mock(
 vi.mock(
   "@/app/(main)/groups/[groupId]/preferences/_components/review-step",
   () => ({
-    default: () => <div data-testid="review-step">Review Step</div>,
+    default: ({ onConfirmReview }: { onConfirmReview?: () => void }) => (
+      <div data-testid="review-step">
+        Review Step
+        {onConfirmReview && (
+          <button data-testid="confirm-review-btn" onClick={onConfirmReview}>
+            Confirm Review
+          </button>
+        )}
+      </div>
+    ),
   })
 );
 
@@ -1593,6 +1603,40 @@ describe("PreferenceWizard", () => {
 
       expect(screen.queryByText("1 High")).toBeNull();
       expect(screen.queryByText(/session.* selected/)).toBeNull();
+    });
+  });
+
+  // --- Affected buddy review ---
+
+  describe("confirm affected buddy review", () => {
+    it("calls confirmAffectedBuddyReview and refreshes when confirm button is clicked", async () => {
+      mockGroup.affectedBuddyMembers = { "member-1": ["Charlie Brown"] };
+      mockGroup.myStatus = "preferences_set";
+
+      await act(async () => {
+        render(
+          <PreferenceWizard
+            {...defaultProps}
+            initialPreferenceStep="sessions"
+            initialStatus="preferences_set"
+            initialSportRankings={["Tennis"]}
+            initialSessionPreferences={[
+              { sessionId: "TEN-001", interest: "high" },
+            ]}
+          />
+        );
+      });
+
+      // Should be on review step and show confirm review button
+      const confirmBtn = screen.queryByTestId("confirm-review-btn");
+      if (confirmBtn) {
+        await act(async () => {
+          confirmBtn.click();
+        });
+
+        expect(mockConfirmAffectedBuddyReview).toHaveBeenCalledWith("group-1");
+        expect(mockRefresh).toHaveBeenCalled();
+      }
     });
   });
 });

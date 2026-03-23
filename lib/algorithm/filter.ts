@@ -34,6 +34,16 @@ export function filterCandidateSessions(
   allMembersData: MemberData[],
   sessionInterestCounts: Map<string, number>
 ): CandidateSession[] {
+  // Locked (purchased) sessions bypass all constraint filters — they must
+  // always appear on the member's schedule regardless of buddy/minBuddies.
+  const lockedCodes = new Set(memberData.lockedSessionCodes ?? []);
+  const locked = memberData.candidateSessions.filter((s) =>
+    lockedCodes.has(s.sessionCode)
+  );
+  const unlocked = memberData.candidateSessions.filter(
+    (s) => !lockedCodes.has(s.sessionCode)
+  );
+
   const hardBuddySessionSets = new Map<string, Set<string>>();
   for (const buddyId of memberData.hardBuddies) {
     const buddy = allMembersData.find((m) => m.memberId === buddyId);
@@ -45,15 +55,12 @@ export function filterCandidateSessions(
     }
   }
 
-  let filtered = applyHardBuddyFilter(
-    memberData.candidateSessions,
-    hardBuddySessionSets
-  );
+  let filtered = applyHardBuddyFilter(unlocked, hardBuddySessionSets);
   filtered = applyMinBuddiesFilter(
     filtered,
     memberData.minBuddies,
     sessionInterestCounts
   );
 
-  return filtered;
+  return [...locked, ...filtered];
 }

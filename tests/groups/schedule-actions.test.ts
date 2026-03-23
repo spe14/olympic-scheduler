@@ -1,10 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getMySchedule } from "@/app/(main)/groups/[groupId]/schedule/actions";
+import { createPurchaseDataMock } from "@/tests/helpers";
 
 // Mock auth
 const mockGetMembership = vi.fn();
 vi.mock("@/lib/auth", () => ({
   getMembership: (...args: unknown[]) => mockGetMembership(...args),
+  requireMembership: async (groupId: string) => {
+    const membership = await mockGetMembership(groupId);
+    if (!membership)
+      return {
+        membership: null,
+        error: { error: "You are not an active member of this group." },
+      };
+    return { membership, error: null };
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -35,7 +45,9 @@ const mockWhere = vi.fn(function (this: { _result: unknown[] }) {
   return {
     _result: self._result,
     orderBy: mockOrderBy.bind({ _result: self._result }),
-    limit: vi.fn(),
+    limit: vi.fn(() => ({
+      then: (resolve: (v: unknown) => void) => resolve(self._result),
+    })),
     then: (resolve: (v: unknown) => void) => resolve(self._result),
   };
 });
@@ -91,7 +103,6 @@ vi.mock("@/lib/db/schema", () => ({
     memberId: "member_id",
     sessionId: "session_id",
     interest: "interest",
-    excluded: "excluded",
   },
   user: {
     id: "id",
@@ -100,6 +111,11 @@ vi.mock("@/lib/db/schema", () => ({
     username: "username",
     avatarColor: "avatar_color",
   },
+  purchaseTimeslot: {
+    id: "id",
+    groupId: "group_id",
+    memberId: "member_id",
+  },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -107,6 +123,13 @@ vi.mock("drizzle-orm", () => ({
   and: vi.fn(),
   inArray: vi.fn(),
   ne: vi.fn(),
+}));
+
+// Mock purchase actions
+const mockGetPurchaseDataForSessions = createPurchaseDataMock();
+vi.mock("@/app/(main)/groups/[groupId]/schedule/purchase-actions", () => ({
+  getPurchaseDataForSessions: (...args: unknown[]) =>
+    mockGetPurchaseDataForSessions(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -220,6 +243,7 @@ describe("getMySchedule", () => {
     const interestedRows = [
       {
         sessionId: "SES-001",
+        memberId: "member-alice",
         firstName: "Alice",
         lastName: "Smith",
         username: "alice",
@@ -231,6 +255,7 @@ describe("getMySchedule", () => {
     const scheduledRows = [
       {
         sessionId: "SES-001",
+        memberId: "member-bob",
         rank: "backup1",
         firstName: "Bob",
         lastName: "Jones",
@@ -245,6 +270,7 @@ describe("getMySchedule", () => {
       prefs,
       interestedRows,
       scheduledRows,
+      [], // purchaseTimeslot query
     ];
 
     const result = await getMySchedule("group-1");
@@ -266,6 +292,7 @@ describe("getMySchedule", () => {
     expect(day1.combos[0].sessions[0].interest).toBe("high");
     expect(day1.combos[0].sessions[0].interestedMembers).toEqual([
       {
+        memberId: "member-alice",
         firstName: "Alice",
         lastName: "Smith",
         username: "alice",
@@ -274,11 +301,12 @@ describe("getMySchedule", () => {
     ]);
     expect(day1.combos[0].sessions[0].scheduledMembers).toEqual([
       {
+        memberId: "member-bob",
         firstName: "Bob",
         lastName: "Jones",
         username: "bob",
         avatarColor: "pink",
-        rank: "backup1",
+        ranks: ["backup1"],
       },
     ]);
     expect(day1.combos[0].sessions[1].sessionCode).toBe("SES-002");
@@ -314,6 +342,7 @@ describe("getMySchedule", () => {
     const scheduledRows = [
       {
         sessionId: "SES-001",
+        memberId: "member-bob",
         rank: "backup1",
         firstName: "Bob",
         lastName: "Jones",
@@ -322,6 +351,7 @@ describe("getMySchedule", () => {
       },
       {
         sessionId: "SES-001",
+        memberId: "member-bob",
         rank: "primary",
         firstName: "Bob",
         lastName: "Jones",
@@ -336,17 +366,18 @@ describe("getMySchedule", () => {
       prefs,
       interestedRows,
       scheduledRows,
+      [], // purchaseTimeslot query
     ];
 
     const result = await getMySchedule("group-1");
 
     expect(result.data).toBeDefined();
     const session = result.data![0].combos[0].sessions[0];
-    // Should have only one entry for bob
+    // Should have only one entry for bob with both ranks collected
     expect(session.scheduledMembers.length).toBe(1);
-    // Should keep the best rank (primary < backup1 in rank order)
     expect(session.scheduledMembers[0].username).toBe("bob");
-    expect(session.scheduledMembers[0].rank).toBe("primary");
+    expect(session.scheduledMembers[0].ranks).toContain("primary");
+    expect(session.scheduledMembers[0].ranks).toContain("backup1");
   });
 
   it("defaults interest to medium when preference not found", async () => {
@@ -377,6 +408,7 @@ describe("getMySchedule", () => {
       prefs,
       interestedRows,
       scheduledRows,
+      [], // purchaseTimeslot query
     ];
 
     const result = await getMySchedule("group-1");
@@ -385,5 +417,93 @@ describe("getMySchedule", () => {
     const session = result.data![0].combos[0].sessions[0];
     // Should default to "medium" when no preference found
     expect(session.interest).toBe("medium");
+  });
+
+  it("returns timeslot data when user has a timeslot", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    const combos = [
+      { comboId: "combo-1", day: "2026-08-01", rank: "primary", score: 90 },
+    ];
+    const comboSessions = [
+      makeSession({ comboId: "combo-1", sessionCode: "SES-001" }),
+    ];
+    const prefs = [{ sessionId: "SES-001", interest: "high" }];
+    const timeslotData = {
+      id: "ts-1",
+      timeslotStart: new Date("2028-07-15T10:00:00Z"),
+      timeslotEnd: new Date("2028-07-15T12:00:00Z"),
+      status: "upcoming",
+    };
+
+    queryResults = [
+      combos,
+      comboSessions,
+      prefs,
+      [], // interestedRows
+      [], // scheduledRows
+      [timeslotData], // purchaseTimeslot — found
+    ];
+
+    const result = await getMySchedule("group-1");
+
+    expect(result.data).toBeDefined();
+    expect(result.timeslot).toBeDefined();
+    expect(result.timeslot!.id).toBe("ts-1");
+    expect(result.timeslot!.status).toBe("upcoming");
+  });
+
+  it("returns null timeslot when no timeslot exists", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    const combos = [
+      { comboId: "combo-1", day: "2026-08-01", rank: "primary", score: 90 },
+    ];
+    const comboSessions = [
+      makeSession({ comboId: "combo-1", sessionCode: "SES-001" }),
+    ];
+    const prefs = [{ sessionId: "SES-001", interest: "high" }];
+
+    queryResults = [
+      combos,
+      comboSessions,
+      prefs,
+      [], // interestedRows
+      [], // scheduledRows
+      [], // purchaseTimeslot — empty
+    ];
+
+    const result = await getMySchedule("group-1");
+
+    expect(result.data).toBeDefined();
+    expect(result.timeslot).toBeNull();
+  });
+
+  it("computes primaryScore from the primary combo", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    const combos = [
+      { comboId: "combo-1", day: "2026-08-01", rank: "primary", score: 95 },
+      { comboId: "combo-2", day: "2026-08-01", rank: "backup1", score: 80 },
+    ];
+    const comboSessions = [
+      makeSession({ comboId: "combo-1", sessionCode: "SES-001" }),
+      makeSession({ comboId: "combo-2", sessionCode: "SES-002" }),
+    ];
+
+    queryResults = [
+      combos,
+      comboSessions,
+      [], // prefs
+      [], // interestedRows
+      [], // scheduledRows
+      [], // purchaseTimeslot
+    ];
+
+    const result = await getMySchedule("group-1");
+
+    expect(result.data).toBeDefined();
+    expect(result.data![0].primaryScore).toBe(95);
+    expect(result.data![0].combos).toHaveLength(2);
   });
 });

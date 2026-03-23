@@ -75,6 +75,7 @@ const mockGroup: GroupDetail = {
     },
   ],
   membersWithNoCombos: [],
+  memberTimeslots: [],
   departedMembers: [],
   affectedBuddyMembers: {},
   windowRankings: [],

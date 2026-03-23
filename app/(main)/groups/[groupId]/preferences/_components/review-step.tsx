@@ -4,7 +4,12 @@ import { useState } from "react";
 import { useGroup } from "../../_components/group-context";
 import UserAvatar from "@/components/user-avatar";
 import Modal from "@/components/modal";
-import { type AvatarColor, SPORT_COLORS } from "@/lib/constants";
+import {
+  type AvatarColor,
+  SPORT_COLORS,
+  INTEREST_COLORS,
+} from "@/lib/constants";
+import { formatSessionDate } from "@/lib/utils";
 import SessionCard, { formatTime } from "./session-card";
 import type { SessionData, SessionPreferenceData } from "./preference-wizard";
 
@@ -21,21 +26,6 @@ type Props = {
   isNoCombos?: boolean;
   loading?: boolean;
 };
-
-const INTEREST_COLORS: Record<string, { bg: string; text: string }> = {
-  low: { bg: "rgba(255, 0, 128, 0.15)", text: "#ff0080" },
-  medium: { bg: "rgba(250, 204, 21, 0.2)", text: "#d97706" },
-  high: { bg: "rgba(0, 157, 229, 0.2)", text: "#009de5" },
-};
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export default function ReviewStep({
   minBuddies,
@@ -258,7 +248,7 @@ export default function ReviewStep({
               ([date, dateSessions]) => (
                 <div key={date}>
                   <p className="mb-2 text-sm font-medium text-slate-500">
-                    {formatDate(date)}
+                    {formatSessionDate(date)}
                   </p>
                   <div className="space-y-1.5">
                     {dateSessions.map((session) => {
@@ -346,7 +336,7 @@ export default function ReviewStep({
                   </span>
                 </div>
                 <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                  <span>{formatDate(modalSession.sessionDate)}</span>
+                  <span>{formatSessionDate(modalSession.sessionDate)}</span>
                   <span style={{ color: accent }}>|</span>
                   <span>
                     {formatTime(modalSession.startTime)} &ndash;{" "}

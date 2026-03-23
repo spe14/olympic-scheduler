@@ -47,6 +47,16 @@ export const inputClass =
 export const disabledInputClass =
   "w-full rounded-lg border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-slate-500 cursor-not-allowed";
 
+// Shared button class strings
+export const btnPrimaryClass =
+  "rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50";
+
+export const btnSecondaryClass =
+  "rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50";
+
+export const btnDangerClass =
+  "rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50";
+
 // Shared sport color palette – max 10 sports allowed per group.
 // Each entry has a solid bg for calendar blocks, a border/accent, and a text color.
 export const SPORT_COLORS = [
@@ -96,3 +106,24 @@ export const statusLabels: Record<string, string> = {
   joined: "Joined",
   preferences_set: "Entered Preferences",
 };
+
+// ── Interest level styling ──────────────────────────────────────────────────
+
+export const INTEREST_COLORS: Record<
+  string,
+  { bg: string; text: string; border: string }
+> = {
+  low: { bg: "rgba(255, 0, 128, 0.15)", text: "#ff0080", border: "#ff0080" },
+  medium: {
+    bg: "rgba(250, 204, 21, 0.2)",
+    text: "#d97706",
+    border: "#d97706",
+  },
+  high: { bg: "rgba(0, 157, 229, 0.2)", text: "#009de5", border: "#009de5" },
+};
+
+export const INTEREST_LEVELS = [
+  { value: "low" as const, label: "Low" },
+  { value: "medium" as const, label: "Medium" },
+  { value: "high" as const, label: "High" },
+];

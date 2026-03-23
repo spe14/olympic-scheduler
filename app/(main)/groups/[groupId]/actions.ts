@@ -1,6 +1,6 @@
 "use server";
 
-import { getMembership, getOwnerMembership } from "@/lib/auth";
+import { requireMembership, requireOwnerMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   group,
@@ -13,6 +13,13 @@ import {
   combo,
   comboSession,
   windowRanking,
+  ticketPurchase,
+  ticketPurchaseAssignee,
+  soldOutSession,
+  outOfBudgetSession,
+  purchaseTimeslot,
+  purchasePlanEntry,
+  reportedPrice,
 } from "@/lib/db/schema";
 import { eq, and, or, notInArray, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -26,29 +33,34 @@ import type { ActionResult } from "@/lib/types";
 import { runScheduleGeneration } from "@/lib/algorithm/runner";
 import { computeWindowRankings } from "@/lib/algorithm/window-ranking";
 import type { MemberData, TravelEntry } from "@/lib/algorithm/types";
+import { groupBy, parseOrError } from "@/lib/utils";
+import {
+  MSG_GROUP_FULL,
+  MSG_GROUP_NOT_FOUND,
+  MSG_MEMBER_NOT_FOUND,
+  MSG_MEMBER_NOT_PENDING,
+  failedAction,
+} from "@/lib/messages";
 
 export async function updateGroupName(
   groupId: string,
   formData: FormData
 ): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can rename the group." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "rename the group");
+  if (authError) return authError;
 
   const name = formData.get("name") as string;
-  const result = groupNameSchema.safeParse(name);
-  if (!result.success) {
-    return { error: result.error.issues[0].message };
-  }
+  const parsed = parseOrError(groupNameSchema, name);
+  if ("error" in parsed) return parsed.error;
 
   try {
     await db
       .update(group)
-      .set({ name: result.data })
+      .set({ name: parsed.data })
       .where(eq(group.id, groupId));
   } catch {
-    return { error: "Failed to update group name. Please try again." };
+    return { error: failedAction("update group name") };
   }
 
   revalidatePath(`/groups/${groupId}`);
@@ -59,10 +71,9 @@ export async function approveMember(
   groupId: string,
   memberId: string
 ): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can approve members." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "approve members");
+  if (authError) return authError;
 
   const [target] = await db
     .select({ id: member.id, status: member.status })
@@ -71,7 +82,7 @@ export async function approveMember(
     .limit(1);
 
   if (!target || target.status !== "pending_approval") {
-    return { error: "Member is not pending approval." };
+    return { error: MSG_MEMBER_NOT_PENDING };
   }
 
   const [{ count: activeCount }] = await db
@@ -85,7 +96,7 @@ export async function approveMember(
     );
 
   if (activeCount >= MAX_GROUP_MEMBERS) {
-    return { error: "This group is full. Groups are limited to 12 members." };
+    return { error: MSG_GROUP_FULL };
   }
 
   try {
@@ -103,35 +114,39 @@ export async function approveMember(
 
     if (approvedUser) {
       const name = `${approvedUser.firstName} ${approvedUser.lastName}`;
-      const [grpData] = await db
-        .select({
-          departedMembers: group.departedMembers,
-        })
-        .from(group)
-        .where(eq(group.id, groupId))
-        .limit(1);
+      await db.transaction(async (tx) => {
+        const [grpData] = await tx
+          .select({
+            departedMembers: group.departedMembers,
+          })
+          .from(group)
+          .where(eq(group.id, groupId))
+          .for("update");
 
-      const departed =
-        (grpData?.departedMembers as {
-          name: string;
-          departedAt: string;
-          rejoinedAt?: string;
-        }[]) ?? [];
-      const departedIdx = departed.findIndex((d) => d.name === name);
+        const departed =
+          (grpData?.departedMembers as {
+            name: string;
+            departedAt: string;
+            rejoinedAt?: string;
+          }[]) ?? [];
+        const departedIdx = departed.findIndex((d) => d.name === name);
 
-      if (departedIdx !== -1) {
-        const updated = departed.map((d, i) =>
-          i === departedIdx ? { ...d, rejoinedAt: new Date().toISOString() } : d
-        );
-        await db
-          .update(group)
-          .set({ departedMembers: updated })
-          .where(eq(group.id, groupId));
-      }
+        if (departedIdx !== -1) {
+          const updated = departed.map((d, i) =>
+            i === departedIdx
+              ? { ...d, rejoinedAt: new Date().toISOString() }
+              : d
+          );
+          await tx
+            .update(group)
+            .set({ departedMembers: updated })
+            .where(eq(group.id, groupId));
+        }
+      });
     }
   } catch {
     return {
-      error: "Failed to approve member's join request. Please try again.",
+      error: failedAction("approve member's join request"),
     };
   }
 
@@ -143,10 +158,9 @@ export async function denyMember(
   groupId: string,
   memberId: string
 ): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can deny members." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "deny members");
+  if (authError) return authError;
 
   const [target] = await db
     .select({ id: member.id, status: member.status })
@@ -155,7 +169,7 @@ export async function denyMember(
     .limit(1);
 
   if (!target || target.status !== "pending_approval") {
-    return { error: "Member is not pending approval." };
+    return { error: MSG_MEMBER_NOT_PENDING };
   }
 
   try {
@@ -164,11 +178,44 @@ export async function denyMember(
       .set({ status: "denied" })
       .where(eq(member.id, memberId));
   } catch {
-    return { error: "Failed to deny member's join request. Please try again." };
+    return { error: failedAction("deny member's join request") };
   }
 
   revalidatePath(`/groups/${groupId}`);
   return { success: true };
+}
+
+async function memberHasPurchaseData(
+  groupId: string,
+  memberId: string
+): Promise<boolean> {
+  const [asBuyer] = await db
+    .select({ id: ticketPurchase.id })
+    .from(ticketPurchase)
+    .where(
+      and(
+        eq(ticketPurchase.groupId, groupId),
+        eq(ticketPurchase.purchasedByMemberId, memberId)
+      )
+    )
+    .limit(1);
+  if (asBuyer) return true;
+
+  const [asAssignee] = await db
+    .select({ memberId: ticketPurchaseAssignee.memberId })
+    .from(ticketPurchaseAssignee)
+    .innerJoin(
+      ticketPurchase,
+      eq(ticketPurchaseAssignee.ticketPurchaseId, ticketPurchase.id)
+    )
+    .where(
+      and(
+        eq(ticketPurchase.groupId, groupId),
+        eq(ticketPurchaseAssignee.memberId, memberId)
+      )
+    )
+    .limit(1);
+  return !!asAssignee;
 }
 
 async function removeMemberTransaction(
@@ -209,7 +256,7 @@ async function removeMemberTransaction(
     })
     .from(group)
     .where(eq(group.id, groupId))
-    .limit(1);
+    .for("update");
 
   // Always fetch departing user data and build affected buddy map,
   // regardless of whether schedules have been generated.
@@ -314,10 +361,8 @@ async function removeMemberTransaction(
 }
 
 export async function leaveGroup(groupId: string): Promise<ActionResult> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
   if (membership.role === "owner") {
     return {
@@ -333,13 +378,13 @@ export async function leaveGroup(groupId: string): Promise<ActionResult> {
       .where(eq(group.id, groupId))
       .limit(1);
 
-    if (!grp) return { error: "Group not found." };
+    if (!grp) return { error: MSG_GROUP_NOT_FOUND };
 
     await db.transaction(async (tx) => {
       await removeMemberTransaction(tx, groupId, membership.id);
     });
   } catch {
-    return { error: "Failed to leave group. Please try again." };
+    return { error: failedAction("leave group") };
   }
 
   revalidatePath(`/groups/${groupId}`);
@@ -351,10 +396,9 @@ export async function removeMember(
   groupId: string,
   targetMemberId: string
 ): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can remove members." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "remove members");
+  if (authError) return authError;
 
   const [target] = await db
     .select({
@@ -368,7 +412,7 @@ export async function removeMember(
     .limit(1);
 
   if (!target) {
-    return { error: "Member not found." };
+    return { error: MSG_MEMBER_NOT_FOUND };
   }
 
   if (target.role === "owner") {
@@ -386,13 +430,13 @@ export async function removeMember(
       .where(eq(group.id, groupId))
       .limit(1);
 
-    if (!grp) return { error: "Group not found." };
+    if (!grp) return { error: MSG_GROUP_NOT_FOUND };
 
     await db.transaction(async (tx) => {
       await removeMemberTransaction(tx, groupId, targetMemberId);
     });
   } catch {
-    return { error: "Failed to remove member. Please try again." };
+    return { error: failedAction("remove member") };
   }
 
   revalidatePath(`/groups/${groupId}`);
@@ -403,10 +447,9 @@ export async function updateDateConfig(
   groupId: string,
   formData: FormData
 ): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can update date configuration." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "update date configuration");
+  if (authError) return authError;
 
   const dateMode = formData.get("dateMode") as string;
 
@@ -417,22 +460,18 @@ export async function updateDateConfig(
 
   if (dateMode === "consecutive") {
     const days = formData.get("consecutiveDays") as string;
-    const daysResult = consecutiveDaysSchema.safeParse(days);
-    if (!daysResult.success) {
-      return { error: daysResult.error.issues[0].message };
-    }
+    const parsed = parseOrError(consecutiveDaysSchema, days);
+    if ("error" in parsed) return parsed.error;
     newDateMode = "consecutive";
-    newConsecutiveDays = daysResult.data;
+    newConsecutiveDays = parsed.data;
   } else if (dateMode === "specific") {
     const startDate = formData.get("startDate") as string;
     const endDate = formData.get("endDate") as string;
-    const rangeResult = dateRangeSchema.safeParse({ startDate, endDate });
-    if (!rangeResult.success) {
-      return { error: rangeResult.error.issues[0].message };
-    }
+    const parsed = parseOrError(dateRangeSchema, { startDate, endDate });
+    if ("error" in parsed) return parsed.error;
     newDateMode = "specific";
-    newStartDate = rangeResult.data.startDate;
-    newEndDate = rangeResult.data.endDate;
+    newStartDate = parsed.data.startDate;
+    newEndDate = parsed.data.endDate;
   } else {
     return { error: "Invalid date mode." };
   }
@@ -533,7 +572,7 @@ export async function updateDateConfig(
     });
   } catch {
     return {
-      error: "Failed to update date configuration. Please try again.",
+      error: failedAction("update date configuration"),
     };
   }
 
@@ -542,10 +581,9 @@ export async function updateDateConfig(
 }
 
 export async function deleteGroup(groupId: string): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can delete the group." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "delete the group");
+  if (authError) return authError;
 
   try {
     await db.transaction(async (tx) => {
@@ -585,14 +623,39 @@ export async function deleteGroup(groupId: string): Promise<ActionResult> {
           )
         );
 
-      // 10. Delete members
+      // 10. Delete purchase data (dependency order: assignees → purchases → rest)
+      const purchaseIds = tx
+        .select({ id: ticketPurchase.id })
+        .from(ticketPurchase)
+        .where(eq(ticketPurchase.groupId, groupId));
+      await tx
+        .delete(ticketPurchaseAssignee)
+        .where(inArray(ticketPurchaseAssignee.ticketPurchaseId, purchaseIds));
+      await tx
+        .delete(ticketPurchase)
+        .where(eq(ticketPurchase.groupId, groupId));
+      await tx
+        .delete(purchasePlanEntry)
+        .where(eq(purchasePlanEntry.groupId, groupId));
+      await tx
+        .delete(purchaseTimeslot)
+        .where(eq(purchaseTimeslot.groupId, groupId));
+      await tx
+        .delete(soldOutSession)
+        .where(eq(soldOutSession.groupId, groupId));
+      await tx
+        .delete(outOfBudgetSession)
+        .where(eq(outOfBudgetSession.groupId, groupId));
+      await tx.delete(reportedPrice).where(eq(reportedPrice.groupId, groupId));
+
+      // 11. Delete members
       await tx.delete(member).where(eq(member.groupId, groupId));
 
       // 11. Delete group
       await tx.delete(group).where(eq(group.id, groupId));
     });
   } catch {
-    return { error: "Failed to delete group. Please try again." };
+    return { error: failedAction("delete group") };
   }
 
   revalidatePath("/");
@@ -603,10 +666,9 @@ export async function transferOwnership(
   groupId: string,
   targetMemberId: string
 ): Promise<ActionResult> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can transfer ownership." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "transfer ownership");
+  if (authError) return authError;
 
   if (ownership.id === targetMemberId) {
     return { error: "You are already the owner." };
@@ -624,7 +686,7 @@ export async function transferOwnership(
     .limit(1);
 
   if (!target) {
-    return { error: "Member not found." };
+    return { error: MSG_MEMBER_NOT_FOUND };
   }
 
   if (target.status === "pending_approval" || target.status === "denied") {
@@ -645,7 +707,7 @@ export async function transferOwnership(
         .where(eq(member.id, targetMemberId));
     });
   } catch {
-    return { error: "Failed to transfer ownership. Please try again." };
+    return { error: failedAction("transfer ownership") };
   }
 
   revalidatePath(`/groups/${groupId}`);
@@ -655,10 +717,9 @@ export async function transferOwnership(
 export async function generateSchedules(
   groupId: string
 ): Promise<ActionResult & { membersWithNoCombos?: string[] }> {
-  const ownership = await getOwnerMembership(groupId);
-  if (!ownership) {
-    return { error: "Only the group owner can generate schedules." };
-  }
+  const { membership: ownership, error: authError } =
+    await requireOwnerMembership(groupId, "generate schedules");
+  if (authError) return authError;
 
   // Check group phase
   const [grp] = await db
@@ -670,7 +731,7 @@ export async function generateSchedules(
     .where(eq(group.id, groupId))
     .limit(1);
 
-  if (!grp) return { error: "Group not found." };
+  if (!grp) return { error: MSG_GROUP_NOT_FOUND };
   if (grp.phase !== "preferences" && grp.phase !== "schedule_review") {
     return {
       error:
@@ -753,7 +814,79 @@ export async function generateSchedules(
       })
       .from(travelTime);
 
-    // Assemble MemberData
+    // Fetch sold-out sessions for this group
+    const soldOutRows = await db
+      .select({ sessionId: soldOutSession.sessionId })
+      .from(soldOutSession)
+      .where(eq(soldOutSession.groupId, groupId));
+    const soldOutCodes = new Set(soldOutRows.map((r) => r.sessionId));
+
+    // Fetch out-of-budget sessions per member
+    const oobRows = await db
+      .select({
+        memberId: outOfBudgetSession.memberId,
+        sessionId: outOfBudgetSession.sessionId,
+      })
+      .from(outOfBudgetSession)
+      .where(eq(outOfBudgetSession.groupId, groupId));
+    const oobByMember = new Map<string, Set<string>>();
+    for (const row of oobRows) {
+      const set = oobByMember.get(row.memberId) ?? new Set();
+      set.add(row.sessionId);
+      oobByMember.set(row.memberId, set);
+    }
+
+    // Fetch purchased sessions per assignee (locked sessions)
+    const purchaseAssigneeRows = await db
+      .select({
+        memberId: ticketPurchaseAssignee.memberId,
+        sessionId: ticketPurchase.sessionId,
+      })
+      .from(ticketPurchaseAssignee)
+      .innerJoin(
+        ticketPurchase,
+        eq(ticketPurchaseAssignee.ticketPurchaseId, ticketPurchase.id)
+      )
+      .where(eq(ticketPurchase.groupId, groupId));
+    const lockedByMember = groupBy(
+      purchaseAssigneeRows,
+      (r) => r.memberId,
+      (r) => r.sessionId
+    );
+
+    // Fetch session metadata for locked codes missing from any member's preferences
+    // (off-schedule purchases where the member never expressed interest)
+    const allLockedCodes = new Set<string>();
+    for (const codes of lockedByMember.values()) {
+      for (const code of codes) allLockedCodes.add(code);
+    }
+    const prefSessionCodes = new Set(sessionPrefs.map((sp) => sp.sessionCode));
+    const missingLockedCodes = [...allLockedCodes].filter(
+      (c) => !prefSessionCodes.has(c)
+    );
+    const missingLockedSessions =
+      missingLockedCodes.length > 0
+        ? await db
+            .select({
+              sessionCode: session.sessionCode,
+              sport: session.sport,
+              zone: session.zone,
+              sessionDate: session.sessionDate,
+              startTime: session.startTime,
+              endTime: session.endTime,
+            })
+            .from(session)
+            .where(inArray(session.sessionCode, missingLockedCodes))
+        : [];
+    const missingLockedMap = new Map(
+      missingLockedSessions.map((s) => [s.sessionCode, s])
+    );
+
+    // Assemble MemberData + track excluded sessions per member
+    const excludedByMember = new Map<
+      string,
+      { code: string; soldOut: boolean; outOfBudget: boolean }[]
+    >();
     const membersData: MemberData[] = activeMembers.map((m) => {
       const memberBuddies = buddies.filter((b) => b.memberId === m.id);
       const hardBuddies = memberBuddies
@@ -762,8 +895,21 @@ export async function generateSchedules(
       const softBuddies = memberBuddies
         .filter((b) => b.type === "soft")
         .map((b) => b.buddyMemberId);
-      const candidateSessions = sessionPrefs
-        .filter((sp) => sp.memberId === m.id)
+      const memberOob = oobByMember.get(m.id);
+      const memberLocked = new Set(lockedByMember.get(m.id) ?? []);
+      const memberPrefs = sessionPrefs.filter((sp) => sp.memberId === m.id);
+      const candidateSessions = memberPrefs
+        // Exclude sold-out sessions — but NOT if this member has purchased tickets
+        .filter(
+          (sp) =>
+            !soldOutCodes.has(sp.sessionCode) ||
+            memberLocked.has(sp.sessionCode)
+        )
+        // Exclude out-of-budget sessions (for this member) — but NOT if purchased
+        .filter(
+          (sp) =>
+            !memberOob?.has(sp.sessionCode) || memberLocked.has(sp.sessionCode)
+        )
         .map((sp) => ({
           sessionCode: sp.sessionCode,
           sport: sp.sport,
@@ -774,6 +920,38 @@ export async function generateSchedules(
           interest: sp.interest,
         }));
 
+      // Inject locked sessions missing from preferences (off-schedule purchases)
+      const memberLockedCodes = lockedByMember.get(m.id) ?? [];
+      for (const code of memberLockedCodes) {
+        if (!candidateSessions.some((cs) => cs.sessionCode === code)) {
+          const sData = missingLockedMap.get(code);
+          if (sData) {
+            candidateSessions.push({
+              sessionCode: sData.sessionCode,
+              sport: sData.sport,
+              zone: sData.zone,
+              sessionDate: sData.sessionDate,
+              startTime: sData.startTime,
+              endTime: sData.endTime,
+              interest: "high",
+            });
+          }
+        }
+      }
+
+      // Sessions excluded due to sold-out or out-of-budget — store the reason
+      const candidateCodes = new Set(
+        candidateSessions.map((s) => s.sessionCode)
+      );
+      const excluded = memberPrefs
+        .filter((sp) => !candidateCodes.has(sp.sessionCode))
+        .map((sp) => ({
+          code: sp.sessionCode,
+          soldOut: soldOutCodes.has(sp.sessionCode),
+          outOfBudget: !!memberOob?.has(sp.sessionCode),
+        }));
+      excludedByMember.set(m.id, excluded);
+
       return {
         memberId: m.id,
         sportRankings: (m.sportRankings as string[]) ?? [],
@@ -781,12 +959,13 @@ export async function generateSchedules(
         hardBuddies,
         softBuddies,
         candidateSessions,
+        lockedSessionCodes: lockedByMember.get(m.id),
       };
     });
 
     // All 19 Olympic days: Jul 12 - Jul 30, 2028
     const days: string[] = [];
-    const start = new Date("2028-07-12");
+    const start = new Date("2028-07-12T12:00:00");
     for (let i = 0; i < 19; i++) {
       const d = new Date(start);
       d.setDate(d.getDate() + i);
@@ -852,11 +1031,20 @@ export async function generateSchedules(
         .set({
           phase: newPhase,
           scheduleGeneratedAt: new Date(),
+          purchaseDataChangedAt: null,
           departedMembers: [],
           affectedBuddyMembers: {},
           membersWithNoCombos: result.membersWithNoCombos,
         })
         .where(eq(group.id, groupId));
+
+      // Store excluded session codes per member
+      for (const [memberId, codes] of excludedByMember) {
+        await tx
+          .update(member)
+          .set({ excludedSessionCodes: codes })
+          .where(eq(member.id, memberId));
+      }
 
       // Compute window rankings if date config is set and schedule was successful
       if (newPhase === "schedule_review") {
@@ -935,6 +1123,6 @@ export async function generateSchedules(
           : undefined,
     };
   } catch {
-    return { error: "Failed to generate schedules. Please try again." };
+    return { error: failedAction("generate schedules") };
   }
 }

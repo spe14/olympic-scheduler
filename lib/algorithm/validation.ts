@@ -28,14 +28,27 @@ export function validatePostGeneration(
   const memberMap = new Map(members.map((m) => [m.memberId, m]));
   const violations: ConstraintViolation[] = [];
 
+  // Build locked session codes per member for skipping validation
+  const lockedByMember = new Map<string, Set<string>>();
+  for (const m of members) {
+    if (m.lockedSessionCodes?.length) {
+      lockedByMember.set(m.memberId, new Set(m.lockedSessionCodes));
+    }
+  }
+
   // Check each member's PRIMARY combo sessions
   const primaryCombos = combos.filter((c) => c.rank === "primary");
 
   for (const combo of primaryCombos) {
     const memberData = memberMap.get(combo.memberId);
     if (!memberData) continue;
+    const lockedCodes = lockedByMember.get(combo.memberId);
 
     for (const sessionCode of combo.sessionCodes) {
+      // Skip constraint checks on locked (purchased) sessions — they must
+      // appear regardless of buddy/minBuddies constraints.
+      if (lockedCodes?.has(sessionCode)) continue;
+
       const key = `${sessionCode}:${combo.day}`;
       const attendees = attendance.get(key) ?? new Set();
 

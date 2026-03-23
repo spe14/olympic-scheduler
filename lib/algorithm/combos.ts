@@ -35,19 +35,49 @@ export function generateDayCombos(
   travelMatrix: Map<string, number>,
   memberData: MemberData,
   softBuddyInterestMap: Map<string, number>,
-  maxPerDay: number = 3
+  maxPerDay: number = 3,
+  lockedCodes?: Set<string>
 ): ScoredCombo[] {
-  const subsets = generateSubsets(daySessions, maxPerDay);
-  const feasible = subsets.filter((subset) =>
+  // If there are locked sessions, they must be in every combo
+  const locked = lockedCodes
+    ? daySessions.filter((s) => lockedCodes.has(s.sessionCode))
+    : [];
+  const unlocked = lockedCodes
+    ? daySessions.filter((s) => !lockedCodes.has(s.sessionCode))
+    : daySessions;
+
+  const remainingSlots = maxPerDay - locked.length;
+
+  let subsets: CandidateSession[][];
+  if (remainingSlots <= 0) {
+    // All slots are locked, only one possible combo
+    subsets = [locked];
+  } else {
+    // Generate subsets from unlocked sessions, then prepend locked
+    const unlockedSubsets = generateSubsets(unlocked, remainingSlots);
+    subsets = unlockedSubsets.map((subset) => [...locked, ...subset]);
+    // Also include the locked-only combo (if locked sessions exist)
+    if (locked.length > 0) {
+      subsets.push([...locked]);
+    }
+  }
+
+  // Filter by travel feasibility — locked sessions are still checked so that
+  // unlocked sessions paired with them must be reachable. If nothing is
+  // feasible alongside the locked sessions, fall back to locked-only.
+  let feasible = subsets.filter((subset) =>
     isTravelFeasible(subset, travelMatrix)
   );
+  if (feasible.length === 0 && locked.length > 0) {
+    feasible = [[...locked]];
+  }
 
   const scored = feasible.map((subset) =>
     scoreCombo(subset, memberData, softBuddyInterestMap)
   );
 
   scored.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
+    if (Math.abs(b.score - a.score) > 1e-9) return b.score - a.score;
     if (b.sessionCount !== a.sessionCount)
       return b.sessionCount - a.sessionCount;
     if (b.sportMultiplierSum !== a.sportMultiplierSum)
@@ -144,14 +174,31 @@ export function generateAllMemberCombos(
     sessionsByDay.set(day, existing);
   }
 
+  // Build a set of locked session codes for this member
+  const lockedSet = memberData.lockedSessionCodes
+    ? new Set(memberData.lockedSessionCodes)
+    : undefined;
+
   const allCombos: DayComboResult[] = [];
 
   for (const [day, daySessions] of sessionsByDay) {
+    // Determine which locked sessions fall on this day
+    const dayLockedCodes = lockedSet
+      ? new Set(
+          daySessions
+            .filter((s) => lockedSet.has(s.sessionCode))
+            .map((s) => s.sessionCode)
+        )
+      : undefined;
+    const hasLocked = dayLockedCodes && dayLockedCodes.size > 0;
+
     const scored = generateDayCombos(
       daySessions,
       travelMatrix,
       memberData,
-      softBuddyInterestMap
+      softBuddyInterestMap,
+      3,
+      hasLocked ? dayLockedCodes : undefined
     );
     const ranked = assignRankedCombos(scored, memberData.memberId, day);
     allCombos.push(...ranked);

@@ -15,7 +15,11 @@ import {
   ackScheduleWarning,
 } from "../actions";
 import { useNavigationGuard } from "../../_components/navigation-guard-context";
-import { isStatusAtLeast } from "@/lib/constants";
+import {
+  isStatusAtLeast,
+  btnSecondaryClass,
+  INTEREST_COLORS,
+} from "@/lib/constants";
 import ConfirmModal from "@/components/confirm-modal";
 
 type BuddySelection = { memberId: string; type: "hard" | "soft" };
@@ -653,7 +657,7 @@ export default function PreferenceWizard({
                 type="button"
                 onClick={handleBack}
                 disabled={saving}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                className={btnSecondaryClass}
               >
                 Back
               </button>
@@ -669,16 +673,16 @@ export default function PreferenceWizard({
                       if (count === 0) return null;
                       const styles = {
                         high: {
-                          backgroundColor: "rgba(0, 157, 229, 0.2)",
-                          color: "#009de5",
+                          backgroundColor: INTEREST_COLORS.high.bg,
+                          color: INTEREST_COLORS.high.text,
                         },
                         medium: {
-                          backgroundColor: "rgba(250, 204, 21, 0.2)",
-                          color: "#d97706",
+                          backgroundColor: INTEREST_COLORS.medium.bg,
+                          color: INTEREST_COLORS.medium.text,
                         },
                         low: {
-                          backgroundColor: "rgba(255, 0, 128, 0.15)",
-                          color: "#ff0080",
+                          backgroundColor: INTEREST_COLORS.low.bg,
+                          color: INTEREST_COLORS.low.text,
                         },
                       };
                       return (

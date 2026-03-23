@@ -57,6 +57,7 @@ function baseGroup(overrides: Record<string, unknown> = {}) {
       },
     ],
     membersWithNoCombos: [],
+    memberTimeslots: [],
     departedMembers: [],
     affectedBuddyMembers: {},
     ...overrides,
@@ -363,6 +364,64 @@ describe("GenerateScheduleSection", () => {
     render(<GenerateScheduleSection />);
     const btn = screen.getByRole("button", { name: /Generate New Schedules/ });
     expect(btn).not.toBeDisabled();
+  });
+
+  it("enables regenerate button when purchase data has changed since last generation", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      purchaseDataChangedAt: "2028-01-05T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          statusChangedAt: "2027-12-01T00:00:00Z",
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "preferences_set",
+          statusChangedAt: "2027-12-01T00:00:00Z",
+        },
+      ],
+    });
+    render(<GenerateScheduleSection />);
+    const btn = screen.getByRole("button", { name: /Generate New Schedules/ });
+    expect(btn).not.toBeDisabled();
+  });
+
+  it("disables regenerate when purchaseDataChangedAt is before scheduleGeneratedAt", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-10T00:00:00Z",
+      purchaseDataChangedAt: "2028-01-05T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          statusChangedAt: "2027-12-01T00:00:00Z",
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "preferences_set",
+          statusChangedAt: "2027-12-01T00:00:00Z",
+        },
+      ],
+    });
+    render(<GenerateScheduleSection />);
+    const btn = screen.getByRole("button", { name: /Generate New Schedules/ });
+    expect(btn).toBeDisabled();
   });
 
   // --- Tooltip messages ---

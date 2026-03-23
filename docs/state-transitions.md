@@ -48,15 +48,17 @@ pending_approval → joined → preferences_set
 | 2   | `joined`           | `preferences_set` | Member saves sessions step (`preference_step = 'sessions'`) | Group phase must be `preferences`                                                | None                                                                                    |
 | 3   | `preferences_set`  | `preferences_set` | Owner triggers algorithm generation                         | All members must be `preferences_set`, no pending join requests, date config set | Members stay at `preferences_set`. Group → `schedule_review`. Window rankings computed. |
 
-### Re-enter Preferences (from schedule_review phase)
+### In-Place Preference Editing (during schedule_review)
 
-| #   | From              | To       | Trigger                              | Condition                        | Group Phase Effect                                           |
-| --- | ----------------- | -------- | ------------------------------------ | -------------------------------- | ------------------------------------------------------------ |
-| 4   | `preferences_set` | `joined` | Member wants to re-enter preferences | Group phase is `schedule_review` | Group → `preferences`, all OTHER members → `preferences_set` |
+There is no explicit "re-enter preferences" action. Members can edit preferences directly during `schedule_review` phase without any status or phase change.
 
-**Note:** Re-entering preferences from `schedule_review` triggers the same effect: the member goes back to `joined` with `preference_step` set to `'buddies'` (the wizard opens on the buddies step, though sport rankings and session preferences are preserved and the user can skip to any step they want to change), all other members are reset to `preferences_set` (their preferences are preserved), and algorithm outputs are preserved until the owner triggers a new generation.
+| #   | From              | To                | Trigger                                           | Condition                        | Group Phase Effect |
+| --- | ----------------- | ----------------- | ------------------------------------------------- | -------------------------------- | ------------------ |
+| 4   | `preferences_set` | `preferences_set` | Member edits preferences during `schedule_review` | Group phase is `schedule_review` | None               |
 
-**Preferences edits during schedule_review (without re-entering):** If a member edits preferences while in `schedule_review` phase, their status remains `preferences_set` and only `statusChangedAt` is updated. Updated preferences are detected by comparing `statusChangedAt > scheduleGeneratedAt`. `shouldResetStatus` always returns false — there is no status reset on preference edits.
+**How it works:** Members navigate to the Preferences tab and edit any step (buddies, sport rankings, sessions). Their status remains `preferences_set` — only `statusChangedAt` is updated. The system detects updated preferences by comparing `statusChangedAt > scheduleGeneratedAt`. A warning is shown before saving: "Schedules have already been generated. If you update preferences now, the owner will need to re-generate schedules for all group members."
+
+**`shouldResetStatus` always returns false** — there is no status reset on preference edits. The owner sees a notification on the Overview page that preferences have changed and can regenerate schedules.
 
 ---
 
@@ -87,21 +89,21 @@ The group phase is determined by the collective state of its members:
                              │ owner approves (#1)
                              ▼
                     ┌─────────┐
-              ┌────►│ joined  │                               preferences
-              │     └────┬────┘
-              │          │ submit preferences (#2)
-              │          ▼
-              │     ┌─────────────────┐
-              │     │ preferences_set │                       preferences
-              │     └────────┬────────┘
-              │              │ owner generates (#3)
-              │              │ (status unchanged;
-              │              │  window rankings computed)
-              │              ▼
-   re-enter   │     ┌─────────────────┐
-   prefs      │     │ preferences_set │                       schedule_review
-   (#4)       └─────┤                 │
-                    └─────────────────┘
+                    │ joined  │                               preferences
+                    └────┬────┘
+                         │ submit preferences (#2)
+                         ▼
+                    ┌─────────────────┐
+                    │ preferences_set │                       preferences
+                    └────────┬────────┘
+                             │ owner generates (#3)
+                             │ (status unchanged;
+                             │  window rankings computed)
+                             ▼
+                    ┌─────────────────┐
+                    │ preferences_set │◄─── edit prefs (#4)   schedule_review
+                    │                 │     (status unchanged;
+                    └─────────────────┘      statusChangedAt updated)
 ```
 
 ---
@@ -127,44 +129,54 @@ These transitions affect ALL members simultaneously:
 | ------------------------- | ------------------------------------------------------------------------------------------- |
 | Owner triggers generation | ALL members stay at `preferences_set`. Group → `schedule_review`. Window rankings computed. |
 
-### Re-enter Preferences (Any Member, from schedule_review)
+### In-Place Preference Editing (Any Member, during schedule_review)
 
-| Effect                      | Details                                                                                                                   |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Triggering member           | → `joined`, `preference_step` → `'buddies'` (sport rankings and session preferences preserved; user can skip to any step) |
-| All other members           | → `preferences_set` (preferences preserved)                                                                               |
-| Group phase                 | → `preferences`                                                                                                           |
-| Algorithm outputs           | Preserved until owner triggers new generation                                                                             |
-| Override and excluded flags | Reset to `false` for all members (previously excluded sessions reconsidered on re-generation)                             |
+| Effect                    | Details                                                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| Editing member            | Status stays `preferences_set`; `statusChangedAt` updated                                      |
+| All other members         | No change                                                                                      |
+| Group phase               | No change (stays `schedule_review`)                                                            |
+| Algorithm outputs         | Preserved until owner triggers new generation                                                  |
+| Regeneration notification | System detects `statusChangedAt > scheduleGeneratedAt` and shows notification on Overview page |
 
 ### Member Leaves Group
 
 When a member leaves during `preferences` phase (no schedule generated):
 
-| Effect                                  | Details                                                                                                     |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                    |
-| Members who had leaving member as buddy | → `joined` with `preference_step = 'buddies'` (buddy constraints auto-removed, other preferences preserved) |
-| `affectedBuddyMembers`                  | Updated with departing member's name for affected buddies (tracked even without a schedule)                 |
+| Effect                                  | Details                                                                                                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                                        |
+| Members who had leaving member as buddy | Status unchanged; buddy constraints auto-removed; tracked in `affectedBuddyMembers` JSONB on group with departing member's name |
+| `affectedBuddyMembers`                  | Updated with departing member's name for affected buddies (tracked even without a schedule)                                     |
 
 When a member leaves after algorithm has run and `wasPartOfSchedule` is true (`joinedAt <= scheduleGeneratedAt`):
 
-| Effect                                  | Details                                                                                                     |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                    |
-| Members who had leaving member as buddy | → `joined` with `preference_step = 'buddies'` (buddy constraints auto-removed, other preferences preserved) |
-| Members with no buddy connection        | → `preferences_set`                                                                                         |
-| Group phase                             | → `preferences`                                                                                             |
-| Algorithm outputs                       | Deleted                                                                                                     |
-| Override and excluded flags             | Reset to `false` for all remaining members                                                                  |
+| Effect                                  | Details                                                                                                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                                                 |
+| All remaining active members            | → `preferences_set` (regardless of buddy connection)                                                                                     |
+| Members who had leaving member as buddy | Tracked in `affectedBuddyMembers` JSONB on group; buddy constraints auto-removed; generation blocked until they review their preferences |
+| Group phase                             | → `preferences`                                                                                                                          |
+| Algorithm outputs                       | Deleted                                                                                                                                  |
+| `departedMembers`                       | Updated with departing member's name and timestamp                                                                                       |
 
 When a member leaves after algorithm has run but `wasPartOfSchedule` is false (`joinedAt > scheduleGeneratedAt`):
 
-| Effect                                  | Details                                                                                                     |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                                    |
-| Members who had leaving member as buddy | → `joined` with `preference_step = 'buddies'` (buddy constraints auto-removed, other preferences preserved) |
-| Algorithm outputs                       | Preserved                                                                                                   |
-| Group phase                             | Preserved                                                                                                   |
+| Effect                                  | Details                                                                                            |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Leaving member                          | Deleted (member, buddy constraints, session preferences)                                           |
+| Members who had leaving member as buddy | Status unchanged; buddy constraints auto-removed; tracked in `affectedBuddyMembers` JSONB on group |
+| Algorithm outputs                       | Preserved                                                                                          |
+| Group phase                             | Preserved                                                                                          |
 
 **Note:** The behavior is determined by `wasPartOfSchedule`, not the phase itself.
+
+### Affected Buddy Members Resolution
+
+Members tracked in `affectedBuddyMembers` must review their preferences before the owner can regenerate schedules. Their entry is cleared when they:
+
+1. Save buddy preferences (the departing buddy's constraint is already auto-removed)
+2. Complete session preferences
+3. Explicitly acknowledge the affected buddy review via the Preferences page
+
+All entries are also cleared when the owner successfully generates schedules (`affectedBuddyMembers` reset to `{}`).

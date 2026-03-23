@@ -26,6 +26,12 @@ const mockResponseCookies = {
   delete: vi.fn((name: string) => {
     deletedCookies.add(name);
   }),
+  getAll: vi.fn(() =>
+    Array.from(responseCookiesMap.entries()).map(([name, { value }]) => ({
+      name,
+      value,
+    }))
+  ),
 };
 const mockNextResponse = {
   cookies: mockResponseCookies,

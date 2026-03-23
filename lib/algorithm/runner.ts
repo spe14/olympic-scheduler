@@ -110,13 +110,18 @@ export function runScheduleGeneration(
       toPrune.add(`${v.memberId}:${v.sessionCode}`);
     }
 
-    // Prune violating sessions from candidates
-    currentMembers = currentMembers.map((m) => ({
-      ...m,
-      candidateSessions: m.candidateSessions.filter(
-        (s) => !toPrune.has(`${m.memberId}:${s.sessionCode}`)
-      ),
-    }));
+    // Prune violating sessions from candidates (never prune locked sessions)
+    currentMembers = currentMembers.map((m) => {
+      const lockedCodes = new Set(m.lockedSessionCodes ?? []);
+      return {
+        ...m,
+        candidateSessions: m.candidateSessions.filter(
+          (s) =>
+            lockedCodes.has(s.sessionCode) ||
+            !toPrune.has(`${m.memberId}:${s.sessionCode}`)
+        ),
+      };
+    });
   }
 
   // Shouldn't reach here, but satisfy TypeScript

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { updatePassword } from "../actions";
 import PasswordInput from "@/components/password-input";
+import ErrorAlert from "@/components/error-alert";
 import { updatePasswordSchema, passwordSchema } from "@/lib/validations";
 import { inputClass } from "@/lib/constants";
 
@@ -43,11 +44,7 @@ export default function PasswordSection() {
         Change Password
       </h2>
 
-      {passwordState?.error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-          {passwordState.error}
-        </div>
-      )}
+      <ErrorAlert message={passwordState?.error} />
       {passwordState?.success && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-600">
           Password updated successfully.

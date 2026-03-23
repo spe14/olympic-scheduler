@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "purchase_data_changed_at" timestamp;

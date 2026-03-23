@@ -1,0 +1,1 @@
+ALTER TABLE "member" ADD COLUMN "excluded_session_codes" jsonb DEFAULT '[]'::jsonb;

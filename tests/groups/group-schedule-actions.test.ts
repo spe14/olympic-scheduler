@@ -3,6 +3,7 @@ import {
   getGroupSchedule,
   selectWindow,
 } from "@/app/(main)/groups/[groupId]/group-schedule/actions";
+import { createPurchaseDataMock } from "@/tests/helpers";
 
 // Mock next/cache
 vi.mock("next/cache", () => ({
@@ -15,6 +16,24 @@ const mockGetOwnerMembership = vi.fn();
 vi.mock("@/lib/auth", () => ({
   getMembership: (...args: unknown[]) => mockGetMembership(...args),
   getOwnerMembership: (...args: unknown[]) => mockGetOwnerMembership(...args),
+  requireMembership: async (groupId: string) => {
+    const membership = await mockGetMembership(groupId);
+    if (!membership)
+      return {
+        membership: null,
+        error: { error: "You are not an active member of this group." },
+      };
+    return { membership, error: null };
+  },
+  requireOwnerMembership: async (groupId: string, action: string) => {
+    const membership = await mockGetOwnerMembership(groupId);
+    if (!membership)
+      return {
+        membership: null,
+        error: { error: `Only the group owner can ${action}.` },
+      };
+    return { membership, error: null };
+  },
 }));
 
 // Mock DB
@@ -60,6 +79,13 @@ vi.mock("@/lib/db", () => ({
     delete: (...args: unknown[]) => mockDelete(...args),
     transaction: (...args: unknown[]) => mockTransaction(...(args as [never])),
   },
+}));
+
+// Mock purchase actions
+const mockGetPurchaseDataForSessions = createPurchaseDataMock();
+vi.mock("@/app/(main)/groups/[groupId]/schedule/purchase-actions", () => ({
+  getPurchaseDataForSessions: (...args: unknown[]) =>
+    mockGetPurchaseDataForSessions(...args),
 }));
 
 vi.mock("@/lib/db/schema", () => ({

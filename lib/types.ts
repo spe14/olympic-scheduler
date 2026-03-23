@@ -5,6 +5,14 @@ export type ActionResult = {
   success?: boolean;
 };
 
+/** Base member info shared across schedule, group-schedule, and purchase-tracker types. */
+export type BaseMemberInfo = {
+  memberId: string;
+  firstName: string;
+  lastName: string;
+  avatarColor: AvatarColor;
+};
+
 export type GroupMember = {
   firstName: string;
   lastName: string;
@@ -57,12 +65,21 @@ export type GroupDetail = {
   startDate: string | null;
   endDate: string | null;
   scheduleGeneratedAt: Date | string | null;
+  purchaseDataChangedAt: Date | string | null;
   myScheduleWarningAckedAt: Date | string | null;
   createdAt: Date | string;
   myRole: string;
   myStatus: string;
   myMemberId: string;
+  myTimeslot: {
+    timeslotStart: Date | string;
+    timeslotEnd: Date | string;
+    status: "upcoming" | "in_progress" | "completed";
+  } | null;
   members: GroupDetailMember[];
+  memberTimeslots: string[];
+  membersPurchased: string[];
+  membersWithPurchaseData: string[];
   membersWithNoCombos: string[];
   departedMembers: { name: string; departedAt: string; rejoinedAt?: string }[];
   affectedBuddyMembers: Record<string, string[]>;

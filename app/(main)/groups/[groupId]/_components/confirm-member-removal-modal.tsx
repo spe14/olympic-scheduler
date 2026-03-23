@@ -1,6 +1,11 @@
 "use client";
 
 import Modal from "@/components/modal";
+import {
+  btnPrimaryClass,
+  btnSecondaryClass,
+  btnDangerClass,
+} from "@/lib/constants";
 
 const warningMessages = {
   leave: {
@@ -35,6 +40,7 @@ export default function ConfirmMemberRemovalModal({
   groupPhase,
   loading,
   error,
+  hasPurchaseData,
   onConfirm,
   onClose,
 }: {
@@ -43,6 +49,7 @@ export default function ConfirmMemberRemovalModal({
   groupPhase: string;
   loading: boolean;
   error?: string;
+  hasPurchaseData?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -57,16 +64,37 @@ export default function ConfirmMemberRemovalModal({
       <p className="mb-2 text-[15px] font-medium text-slate-900">
         {heading.replace("{name}", name)}
       </p>
-      <p className="mb-6 text-sm leading-relaxed text-slate-500">
+      <p className="mb-4 text-sm leading-relaxed text-slate-500">
         {detail.replace("{name}", name)}
       </p>
+      {hasPurchaseData && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600">
+          <p className="font-medium">
+            {type === "leave" ? "You have" : `${name} has`} ticket purchase
+            records. This action will:
+          </p>
+          <ul className="mt-1 list-disc pl-5 text-xs leading-relaxed">
+            <li>
+              Delete all purchases {type === "leave" ? "you" : "they"} recorded
+              (including tickets bought for other members)
+            </li>
+            <li>
+              Remove {type === "leave" ? "your" : "their"} ticket assignments
+              from purchases made by other members
+            </li>
+          </ul>
+          <p className="mt-1.5 text-sm font-medium">
+            This action cannot be undone.
+          </p>
+        </div>
+      )}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       <div className="flex justify-end gap-3">
         <button
           type="button"
           onClick={onClose}
           disabled={loading}
-          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          className={btnSecondaryClass}
         >
           Cancel
         </button>
@@ -74,7 +102,7 @@ export default function ConfirmMemberRemovalModal({
           type="button"
           onClick={onConfirm}
           disabled={loading}
-          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+          className={btnDangerClass}
         >
           {loading
             ? type === "leave"
@@ -97,11 +125,7 @@ export function OwnerLeaveModal({ onClose }: { onClose: () => void }) {
         transfer ownership.
       </p>
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9]"
-        >
+        <button type="button" onClick={onClose} className={btnPrimaryClass}>
           OK
         </button>
       </div>

@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { joinGroup } from "../actions";
 import { inviteCodeSchema } from "@/lib/validations";
+import { btnSecondaryClass } from "@/lib/constants";
 import Modal from "@/components/modal";
 
 export default function JoinGroupModal({
@@ -73,7 +74,7 @@ export default function JoinGroupModal({
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className={btnSecondaryClass}
           >
             Cancel
           </button>

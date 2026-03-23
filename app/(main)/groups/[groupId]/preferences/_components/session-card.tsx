@@ -1,12 +1,7 @@
 import type { SessionData } from "./preference-wizard";
+import { formatSessionTime } from "@/lib/utils";
 
-export function formatTime(timeStr: string): string {
-  const [hours, minutes] = timeStr.split(":");
-  const h = parseInt(hours, 10);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${h12}:${minutes} ${ampm}`;
-}
+export { formatSessionTime as formatTime } from "@/lib/utils";
 
 type SessionCardProps = {
   session: SessionData;
@@ -84,8 +79,9 @@ export default function SessionCard({
           </p>
         )}
         <p className="mt-0.5 text-sm text-slate-400">
-          {formatTime(session.startTime)} &ndash; {formatTime(session.endTime)}{" "}
-          &middot; {session.venue} &middot; {session.zone}
+          {formatSessionTime(session.startTime)} &ndash;{" "}
+          {formatSessionTime(session.endTime)} &middot; {session.venue} &middot;{" "}
+          {session.zone}
         </p>
       </div>
 

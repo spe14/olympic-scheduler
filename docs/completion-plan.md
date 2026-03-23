@@ -40,24 +40,24 @@ Validate algorithm correctness before building more on top.
 
 **Reference:** `lib/algorithm/*.ts`, `tests/algorithm/viable-configs.test.ts` (follow existing patterns)
 
-### 1B. Re-enter Preferences Flow
+### 1B. In-Place Preference Editing (COMPLETED)
 
-There is no explicit schedule confirmation step. Members implicitly accept the schedule.
+There is no explicit "re-enter preferences" action or schedule confirmation step. Members implicitly accept the schedule and can edit preferences in-place during `schedule_review`.
 
-**Modify:**
+**How it works:**
 
-- `schedule/actions.ts` — Add `reenterPreferences(groupId)`:
-  1. Verify group phase is `schedule_review`
-  2. Set triggering member status -> `joined`, `preference_step` -> `buddies`
-  3. Set all other members' statuses -> `preferences_set`
-  4. Set group phase -> `preferences`
-  5. Frontend warning: "This will reset the generated schedules for all members. Discuss with your group before proceeding."
+- Members navigate to the Preferences tab and edit any step (buddies, sport rankings, sessions)
+- Their status remains `preferences_set` — only `statusChangedAt` is updated
+- `shouldResetStatus` always returns `false`
+- The system detects updated preferences by comparing `statusChangedAt > scheduleGeneratedAt`
+- A warning is shown before saving: "Schedules have already been generated. If you update preferences now, the owner will need to re-generate schedules for all group members."
+- The owner sees a regeneration notification on the Overview page and can regenerate from `schedule_review`
 
 ### 1C. Window Ranking
 
 **New files:**
 
-- `lib/algorithm/window-ranking.ts` — Sliding window scoring (fairness_weight=0.25)
+- `lib/algorithm/window-ranking.ts` — Sliding window scoring (fairness_weight=0.5)
 - `tests/algorithm/window-ranking.test.ts`
 
 **New files (UI):**
@@ -119,15 +119,17 @@ Already functionally complete in `generate-schedule-section.tsx`. Verify styling
 - Remove budget input from preference wizard
 - Add budget input to user settings (global, not per-group — mirrors 12-ticket limit)
 
-### 1G. Schema Changes (Phase 1)
+### 1G. Schema Changes (Phase 1) (COMPLETED)
 
-**Modify `lib/db/schema.ts`:**
+**Applied to `lib/db/schema.ts`:**
 
-1. Remove `maxWillingness` from `sessionPreference` table
-2. Remove `conflict`-related tables/columns if any exist
-3. Remove `schedule_review_pending`, `schedule_review_confirmed` from member status enum (members stay at `preferences_set` through schedule_review phase)
-4. Remove `conflict_resolution` and `completed` from group phase enum
-5. Move `budget` from `member` table to `users` table (user-level, not per-group)
+1. Removed `maxWillingness` from `sessionPreference` table
+2. Removed `conflict`-related tables/columns
+3. Removed `schedule_review_pending`, `schedule_review_confirmed` from member status enum — members stay at `preferences_set` through schedule_review phase
+4. Removed `conflict_resolution` and `completed` from group phase enum — simplified to `preferences` → `schedule_review`
+5. Removed `budget` entirely (dropped from scope — may revisit in a future phase)
+6. Removed `excluded` from `sessionPreference` — exclusion handled at generation time via sold-out/out-of-budget filtering
+7. Added `excluded_session_codes` JSONB on `member` for generation-time exclusion snapshots
 
 ---
 
@@ -148,20 +150,25 @@ PHASE 2 ADDS:
   - Window narrowing: valid windows reduce as purchases accumulate
 ```
 
-### 2A. Schema Changes (Phase 2)
+### 2A. Schema Changes (Phase 2) (COMPLETED)
 
-**Modify `lib/db/schema.ts`:**
+**Applied to `lib/db/schema.ts`:**
 
-1. **New table: `purchase_plan_entry`** — A buyer's plan for a specific session:
+1. **New table: `purchase_plan_entry`** — A planned purchase per session per assignee:
    ```
-   id (UUID PK), groupId (FK), memberId (FK -> member who has the timeslot),
-   sessionId (FK -> session),
+   id (UUID PK), groupId (FK), memberId (FK), sessionId (FK),
+   assigneeMemberId (FK -> member the ticket is planned for),
    priceCeiling (integer, nullable — null = no limit),
-   buyForMemberIds (uuid[] — array of member IDs to buy tickets for),
    createdAt, updatedAt
-   Unique: (memberId, groupId, sessionId)
+   Unique: (memberId, sessionId, assigneeMemberId)
    ```
-   No separate assignee table — `buyForMemberIds` array is sufficient since the buyer sets one ceiling per session that applies to all tickets for that session.
+   Normalized design: one row per member-session-assignee triple (instead of a `buyForMemberIds` array).
+2. **New table: `purchase_timeslot`** — Member's declared purchase window
+3. **New table: `ticket_purchase`** — Recorded purchases (no `quantity` column — uses assignee rows instead)
+4. **New table: `ticket_purchase_assignee`** — Per-member ticket assignments with optional `pricePaid`
+5. **New table: `sold_out_session`** — Group-scoped sold-out tracking
+6. **New table: `out_of_budget_session`** — Per-member out-of-budget tracking
+7. **New table: `reported_price`** — Price reports with min/max/comments (no unique constraint per member+session)
 
 ### 2B. Purchase Plan UI
 
@@ -238,35 +245,15 @@ PHASE 3 ADDS:
   - Re-generation with locks: purchased sessions fixed, algorithm re-optimizes the rest
 ```
 
-### 3A. Schema Changes (Phase 3)
+### 3A. Schema Changes (Phase 3) (COMPLETED — merged into Phase 2)
 
-**Modify `lib/db/schema.ts`:**
+The purchase tracking tables originally planned for Phase 3 were implemented as part of Phase 2. See 2A above for the final schema. Key differences from original plan:
 
-1. **New table: `ticket_purchase`** — A purchase record created by a buyer:
-
-   ```
-   id (UUID PK), groupId (FK), sessionId (FK -> session),
-   purchasedByMemberId (FK -> member),
-   pricePerTicket (integer), quantity (integer),
-   createdAt, updatedAt
-   ```
-
-2. **New table: `ticket_purchase_assignee`** — Who the tickets are for:
-
-   ```
-   ticketPurchaseId (FK -> ticket_purchase), memberId (FK -> member)
-   PK: (ticketPurchaseId, memberId)
-   ```
-
-3. **New table: `sold_out_session`** — Group-scoped sold-out tracking:
-
-   ```
-   id (UUID PK), groupId (FK), sessionId (FK -> session),
-   reportedByMemberId (FK -> member), createdAt
-   Unique: (groupId, sessionId)
-   ```
-
-4. _(Removed: `purchased_travel_conflict` — handled as a UI warning, not tracked in DB)_
+- `ticket_purchase` has no `quantity` column — individual `ticket_purchase_assignee` rows track per-member assignments
+- `ticket_purchase_assignee` has an additional `pricePaid` column for per-member pricing
+- Added `out_of_budget_session` table (not in original Phase 3 plan)
+- Added `reported_price` table with `minPrice`/`maxPrice`/`comments` (not in original plan)
+- _(Removed: `purchased_travel_conflict` — handled as a UI warning, not tracked in DB)_
 
 ### 3B. Purchased Tickets Tab (Group-Level)
 

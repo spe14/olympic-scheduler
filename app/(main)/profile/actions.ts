@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { profileFieldSchemas, updatePasswordSchema } from "@/lib/validations";
 import { parseFieldErrors } from "@/lib/utils";
 import type { AvatarColor } from "@/lib/constants";
+import { MSG_NOT_LOGGED_IN, MSG_USERNAME_TAKEN } from "@/lib/messages";
 
 export type ProfileResult = {
   success?: boolean;
@@ -32,7 +33,7 @@ export async function updateProfileField(
 ): Promise<ProfileResult> {
   const currentUser = await getCurrentUser();
   if (!currentUser) {
-    return { error: "You must be logged in." };
+    return { error: MSG_NOT_LOGGED_IN };
   }
 
   const field = formData.get("field") as string;
@@ -58,7 +59,7 @@ export async function updateProfileField(
       .limit(1);
 
     if (existing.length > 0) {
-      return { error: "This username is already taken." };
+      return { error: MSG_USERNAME_TAKEN };
     }
   }
 
@@ -83,7 +84,7 @@ export async function updatePassword(
 ): Promise<PasswordResult> {
   const currentUser = await getCurrentUser();
   if (!currentUser) {
-    return { error: "You must be logged in." };
+    return { error: MSG_NOT_LOGGED_IN };
   }
 
   const raw = {
@@ -129,7 +130,7 @@ export async function updateAvatarColor(
 ): Promise<{ success?: boolean; error?: string }> {
   const currentUser = await getCurrentUser();
   if (!currentUser) {
-    return { error: "You must be logged in." };
+    return { error: MSG_NOT_LOGGED_IN };
   }
 
   if (!validAvatarColors.includes(color)) {

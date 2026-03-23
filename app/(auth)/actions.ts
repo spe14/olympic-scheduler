@@ -13,6 +13,7 @@ import {
   emailSchema,
 } from "@/lib/validations";
 import { parseFieldErrors } from "@/lib/utils";
+import { MSG_USERNAME_TAKEN } from "@/lib/messages";
 
 export type AuthResult = {
   error?: string;
@@ -49,7 +50,7 @@ export async function signUp(
 
   if (existingUser.length > 0) {
     return {
-      error: "This username is already taken. Please enter a different one.",
+      error: MSG_USERNAME_TAKEN,
       values: raw,
     };
   }

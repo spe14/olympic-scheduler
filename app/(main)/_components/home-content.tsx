@@ -16,7 +16,7 @@ export default function HomeContent({
   const [showJoinModal, setShowJoinModal] = useState(false);
 
   return (
-    <main className="mx-auto max-w-[1060px] px-6 py-10">
+    <main className="px-6 py-10">
       {groups.length > 0 && (
         <div className="mb-8 flex items-center justify-between">
           <h1 className="text-3xl font-bold text-slate-900">My Groups</h1>
@@ -35,6 +35,15 @@ export default function HomeContent({
             </button>
           </div>
         </div>
+      )}
+
+      {groups.length > 0 && (
+        <p className="-mt-4 mb-8 text-sm text-slate-500">
+          View, create, and join groups here. It is recommended to only join 1
+          group because optimal schedule generation and purchase
+          planning/tracking takes place at the group level and will not be
+          shared across groups.
+        </p>
       )}
 
       {groups.length === 0 ? (
@@ -136,7 +145,7 @@ function GroupsList({
           <h2 className="mb-3 text-base font-semibold text-slate-500">
             Groups You Own
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {owned.map((g) => (
               <GroupCard key={g.id} group={g} onRemoved={onRefresh} />
             ))}
@@ -148,7 +157,7 @@ function GroupsList({
           <h2 className="mb-3 text-base font-semibold text-slate-500">
             Joined Groups
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {joined.map((g) => (
               <GroupCard key={g.id} group={g} onRemoved={onRefresh} />
             ))}
@@ -160,7 +169,7 @@ function GroupsList({
           <h2 className="mb-3 text-base font-semibold text-slate-500">
             Pending Requests
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {pending.map((g) => (
               <GroupCard key={g.id} group={g} onRemoved={onRefresh} />
             ))}

@@ -1,6 +1,7 @@
 "use client";
 
 import Modal from "@/components/modal";
+import { btnPrimaryClass, btnSecondaryClass } from "@/lib/constants";
 
 export default function GenerateScheduleModal({
   loading,
@@ -33,7 +34,7 @@ export default function GenerateScheduleModal({
           type="button"
           onClick={onClose}
           disabled={loading}
-          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          className={btnSecondaryClass}
         >
           Cancel
         </button>
@@ -41,7 +42,7 @@ export default function GenerateScheduleModal({
           type="button"
           onClick={onConfirm}
           disabled={loading}
-          className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
+          className={btnPrimaryClass}
         >
           {loading
             ? "Generating..."

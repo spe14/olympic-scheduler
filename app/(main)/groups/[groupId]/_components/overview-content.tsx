@@ -4,15 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MAX_GROUP_MEMBERS, avatarColors } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
-import type { GroupDetailMember } from "@/lib/types";
+import type { GroupDetail, GroupDetailMember } from "@/lib/types";
 import { useGroup } from "./group-context";
 import { approveMember, denyMember, removeMember } from "../actions";
 import ConfirmMemberRemovalModal from "./confirm-member-removal-modal";
 import NotificationsSection from "./notifications-section";
 import GenerateScheduleSection from "./generate-schedule-section";
+import TimeslotForm from "../schedule/_components/timeslot-form";
+import { Clock } from "lucide-react";
 
 export default function OverviewContent() {
   const group = useGroup();
+  const router = useRouter();
   const isOwner = group.myRole === "owner";
 
   const activeMembers = group.members
@@ -41,6 +44,10 @@ export default function OverviewContent() {
     })
   );
 
+  const timeslotMemberIds = new Set(group.memberTimeslots);
+  const purchasedMemberIds = new Set(group.membersPurchased);
+  const purchaseDataMemberIds = new Set(group.membersWithPurchaseData);
+
   return (
     <section>
       <h2 className="mb-4 text-lg font-semibold text-slate-900">
@@ -49,10 +56,16 @@ export default function OverviewContent() {
 
       <div className="rounded-xl border border-slate-200 bg-white">
         {/* Header */}
-        <div className="grid grid-cols-[1fr_100px] items-center border-b border-slate-100 px-5 py-3">
+        <div className="grid grid-cols-[1fr_110px_110px_110px] items-center border-b border-slate-100 px-5 py-3">
           <span className="text-sm font-medium text-slate-500">Member</span>
           <span className="text-center text-sm font-medium text-slate-500">
-            Entered Preferences
+            Entered Preferences?
+          </span>
+          <span className="text-center text-sm font-medium text-slate-500">
+            Timeslot Assigned?
+          </span>
+          <span className="text-center text-sm font-medium text-slate-500">
+            Purchased Tickets?
           </span>
         </div>
 
@@ -70,6 +83,12 @@ export default function OverviewContent() {
             }
             isAffectedBuddy={affectedBuddyIds.has(m.id)}
             isNoCombosNotUpdated={noCombosNotUpdatedIds.has(m.id)}
+            hasTimeslot={timeslotMemberIds.has(m.id)}
+            hasPurchased={
+              timeslotMemberIds.has(m.id) && purchasedMemberIds.has(m.id)
+            }
+            hasPurchaseData={purchaseDataMemberIds.has(m.id)}
+            myTimeslot={m.id === group.myMemberId ? group.myTimeslot : null}
           />
         ))}
 
@@ -110,6 +129,10 @@ function ActiveMemberRow({
   isLast,
   isAffectedBuddy,
   isNoCombosNotUpdated,
+  hasTimeslot,
+  hasPurchased,
+  hasPurchaseData,
+  myTimeslot,
 }: {
   member: GroupDetailMember;
   groupId: string;
@@ -119,8 +142,13 @@ function ActiveMemberRow({
   isLast: boolean;
   isAffectedBuddy: boolean;
   isNoCombosNotUpdated: boolean;
+  hasTimeslot: boolean;
+  hasPurchased: boolean;
+  hasPurchaseData: boolean;
+  myTimeslot: GroupDetail["myTimeslot"];
 }) {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showTimeslot, setShowTimeslot] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -140,7 +168,7 @@ function ActiveMemberRow({
 
   return (
     <div
-      className={`grid grid-cols-[1fr_100px] items-center px-5 py-3 ${
+      className={`grid grid-cols-[1fr_110px_110px_110px] items-center px-5 py-3 ${
         !isLast ? "border-b border-slate-100" : ""
       }`}
       style={
@@ -166,10 +194,10 @@ function ActiveMemberRow({
           </span>
           <span className="text-xs text-slate-400">@{m.username}</span>
           <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+            className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
               m.role === "owner"
-                ? "bg-[#009de5]/10 text-[#009de5]"
-                : "bg-slate-100 text-slate-500"
+                ? "border-[#009de5]/30 bg-[#009de5]/10 text-[#009de5]"
+                : "border-slate-300 bg-slate-100 text-slate-500"
             }`}
           >
             {m.role === "owner" ? "Owner" : "Member"}
@@ -183,29 +211,28 @@ function ActiveMemberRow({
               <TrashIcon />
             </button>
           )}
+          {isCurrentUser && !hasTimeslot && (
+            <button
+              onClick={() => setShowTimeslot(true)}
+              className="rounded-lg bg-[#009de5] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[#0088c9]"
+            >
+              Enter Purchase Timeslot
+            </button>
+          )}
+          {isCurrentUser && hasTimeslot && (
+            <button
+              onClick={() => setShowTimeslot(true)}
+              className="rounded-lg bg-[#009de5] px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-[#0088c9]"
+            >
+              Edit Purchase Timeslot
+            </button>
+          )}
         </div>
       </div>
-      {/* Entered Preferences column */}
+      {/* Entered Preferences? column */}
       <div className="flex justify-center">
         {m.status !== "joined" && !isAffectedBuddy && !isNoCombosNotUpdated ? (
-          <span
-            className="flex h-5 w-5 items-center justify-center rounded-full"
-            style={{ backgroundColor: "rgba(16, 185, 129, 0.2)" }}
-          >
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="#059669"
-              strokeWidth={3}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4.5 12.75l6 6 9-13.5"
-              />
-            </svg>
-          </span>
+          <CheckMark />
         ) : m.status !== "joined" &&
           (isAffectedBuddy || isNoCombosNotUpdated) ? (
           <span className="group/prefwarn relative">
@@ -229,9 +256,24 @@ function ActiveMemberRow({
             </span>
           </span>
         ) : (
-          <span className="h-5 w-5 rounded-full border-2 border-slate-200" />
+          <EmptyCircle />
         )}
       </div>
+      {/* Timeslot Assigned? column */}
+      <div className="flex justify-center">
+        {hasTimeslot ? <CheckMark /> : <EmptyCircle />}
+      </div>
+      {/* Purchased Tickets? column */}
+      <div className="flex justify-center">
+        {hasPurchased ? <CheckMark /> : <EmptyCircle />}
+      </div>
+      {showTimeslot && (
+        <TimeslotModal
+          groupId={groupId}
+          myTimeslot={myTimeslot}
+          onClose={() => setShowTimeslot(false)}
+        />
+      )}
       {showConfirm && (
         <ConfirmMemberRemovalModal
           type="remove"
@@ -239,6 +281,7 @@ function ActiveMemberRow({
           groupPhase={groupPhase}
           loading={loading}
           error={error}
+          hasPurchaseData={hasPurchaseData}
           onConfirm={handleRemoveConfirm}
           onClose={() => {
             setShowConfirm(false);
@@ -248,6 +291,33 @@ function ActiveMemberRow({
       )}
     </div>
   );
+}
+
+function CheckMark() {
+  return (
+    <span
+      className="flex h-5 w-5 items-center justify-center rounded-full"
+      style={{ backgroundColor: "rgba(16, 185, 129, 0.2)" }}
+    >
+      <svg
+        className="h-3 w-3"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="#059669"
+        strokeWidth={3}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M4.5 12.75l6 6 9-13.5"
+        />
+      </svg>
+    </span>
+  );
+}
+
+function EmptyCircle() {
+  return <span className="h-5 w-5 rounded-full border-2 border-slate-200" />;
 }
 
 function TrashIcon() {
@@ -356,6 +426,67 @@ function PendingMemberRow({
         )}
       </div>
       {error && <p className="mt-2 text-right text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function TimeslotModal({
+  groupId,
+  myTimeslot,
+  onClose,
+}: {
+  groupId: string;
+  myTimeslot: GroupDetail["myTimeslot"];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+
+  const timeslotForForm = myTimeslot
+    ? {
+        id: "",
+        timeslotStart: new Date(myTimeslot.timeslotStart),
+        timeslotEnd: new Date(myTimeslot.timeslotEnd),
+        status: myTimeslot.status,
+      }
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-xl bg-white p-8 shadow-xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+            <Clock size={20} />
+            {myTimeslot ? "Edit Purchase Timeslot" : "Enter Purchase Timeslot"}
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <TimeslotForm
+          groupId={groupId}
+          timeslot={timeslotForForm}
+          onSaved={() => {
+            onClose();
+            router.refresh();
+          }}
+        />
+      </div>
     </div>
   );
 }

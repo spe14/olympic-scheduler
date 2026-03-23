@@ -159,7 +159,7 @@ These are the high-level principles that guide the algorithm design:
 
 ---
 
-## Decision 9: Fixed Fairness Weight (0.25)
+## Decision 9: Fixed Fairness Weight (0.5)
 
 **The Question:** Should users be able to adjust how much fairness matters in window scoring?
 
@@ -168,11 +168,11 @@ These are the high-level principles that guide the algorithm design:
 1. User-configurable fairness weight (0 to 1)
 2. Fixed fairness weight
 
-**We Chose:** Fixed at 0.25
+**We Chose:** Fixed at 0.5
 
 **Why:**
 
-- At 0.25, the algorithm prefers equal distribution when one user would otherwise have a significantly worse experience
+- At 0.5, the algorithm meaningfully penalizes unequal distributions — preventing scenarios where one user has a significantly worse experience
 - Avoids overwhelming users with settings they may not understand
 - If users are unsatisfied with results, the issue is likely their constraints or preferences, not the fairness weight
 - Simplifies the UX
@@ -218,18 +218,17 @@ These are the high-level principles that guide the algorithm design:
 
 ---
 
-## Decision 12: Session-Level Buddy Constraint Override
+## Decision 12: No Session-Level Buddy Constraint Override
 
 **The Question:** Can users override their buddy constraints for specific sessions?
 
-**We Chose:** Yes, allow session-level overrides
+**We Chose:** No — removed per-session overrides (`hardBuddyOverride`, `minBuddyOverride` columns)
 
 **Why:**
 
-- Circumstances change - user might decide "I originally wanted to go with Alice, but I'll go alone for this one"
-- Avoids forcing a full re-run just to relax a constraint for one session
-- Override applies to that session only; other sessions still respect original constraint
-- Overrides are cleared on algorithm re-run (preference changes should be explicit)
+- The post-generation convergence loop handles constraint satisfaction by iteratively pruning sessions that violate buddy constraints, making per-session overrides unnecessary
+- Users adjust constraints directly instead: switching hard buddies to soft, or lowering minBuddies
+- Simpler mental model — constraints are set once in the preference wizard, not tweaked per-session after generation
 
 ---
 
@@ -284,10 +283,10 @@ These are the high-level principles that guide the algorithm design:
 
 ---
 
-## Decisions Deferred to Phase 2
+## Decisions Deferred to Future Phases
 
-1. **What happens when buyer exceeds budget mid-purchase?**
-2. **How to handle sessions selling out during a buying window?**
+1. **Budget tracking** — Removed from current scope. May revisit in a future phase.
+2. **12-ticket global limit** — Removed from current scope. May revisit in a future phase.
 3. **How to coordinate between multiple timeslot holders?**
 4. **Minimum tickets based on buyer's buddy constraints**
 
@@ -295,14 +294,14 @@ These are the high-level principles that guide the algorithm design:
 
 ## Phase 1 vs Phase 2 Summary
 
-| Aspect     | Phase 1 (Schedule Optimization) | Phase 2 (Buying Plan)            |
-| ---------- | ------------------------------- | -------------------------------- |
-| **Goal**   | What's OPTIMAL                  | What's FEASIBLE                  |
-| **Budget** | Shown, not filtered             | Actively constrains purchases    |
-| **Output** | Aspirational schedule           | Executable purchase instructions |
+| Aspect        | Phase 1 (Schedule Optimization)   | Phase 2 (Purchase Tracking)                                        |
+| ------------- | --------------------------------- | ------------------------------------------------------------------ |
+| **Goal**      | What's OPTIMAL                    | Track what's PURCHASED                                             |
+| **Output**    | P/B1/B2 combos + window rankings  | Purchase records, price reports, sold-out/OOB tracking             |
+| **Algorithm** | Generates combos from preferences | Re-generates with purchased sessions locked, sold-out/OOB excluded |
 
 Phase 1 output feeds into Phase 2:
 
 - Backup combos provide fallback options
 - Ranked windows allow pivoting if primary window fails
-- Budget impact warnings help users prepare
+- Purchase tracker organizes sessions by combo priority

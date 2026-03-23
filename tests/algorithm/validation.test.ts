@@ -123,4 +123,27 @@ describe("validatePostGeneration", () => {
     expect(violations).toHaveLength(1);
     expect(violations[0].type).toBe("hardBuddies");
   });
+
+  it("skips validation for locked sessions", () => {
+    // Alice needs minBuddies=2 and hard buddy Bob.
+    // SWM01 is locked — even though Bob doesn't have it,
+    // it shouldn't be flagged as a violation.
+    const members = [
+      makeMember("Alice", {
+        minBuddies: 2,
+        hardBuddies: ["Bob"],
+        lockedSessionCodes: ["SWM01"],
+      }),
+      makeMember("Bob"),
+    ];
+
+    const combos: DayComboResult[] = [
+      makeCombo("Alice", "2028-07-22", "primary", ["SWM01", "GYM01"]),
+      makeCombo("Bob", "2028-07-22", "primary", ["GYM01"]),
+    ];
+
+    const violations = validatePostGeneration(combos, members);
+    // SWM01 violation should be skipped (locked), GYM01 has Bob → no violation
+    expect(violations.filter((v) => v.sessionCode === "SWM01")).toHaveLength(0);
+  });
 });

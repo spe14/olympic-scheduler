@@ -1,23 +1,14 @@
 "use client";
 
+import { formatActionTimestamp } from "@/lib/utils";
 import { useGroup } from "./group-context";
 
 type Notification = {
   key: string;
-  variant: "error" | "info";
+  variant: "error" | "info" | "warning";
   content: React.ReactNode;
   timestamp: Date;
 };
-
-function formatTimestamp(date: Date): string {
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 function formatNameList(names: string[]): string {
   if (names.length === 1) return names[0];
@@ -274,14 +265,32 @@ export default function NotificationsSection() {
     });
   }
 
+  // 6. Purchase Changes (AMBER)
+  const hasPurchaseChanges =
+    group.purchaseDataChangedAt &&
+    group.scheduleGeneratedAt &&
+    new Date(group.purchaseDataChangedAt) > new Date(group.scheduleGeneratedAt);
+
+  if (hasPurchaseChanges) {
+    const message = isOwner
+      ? "Some sessions have had their purchase status and/or availability updated since the last schedule generation. You may want to regenerate schedules to reflect these changes."
+      : "Some sessions have had their purchase status and/or availability since the last schedule generation. These changes won't be reflected on your schedule until the owner regenerates schedules.";
+    notifications.push({
+      key: "purchase-changes",
+      variant: "warning",
+      content: message,
+      timestamp: new Date(group.purchaseDataChangedAt!),
+    });
+  }
+
   if (notifications.length === 0) return null;
 
   return (
     <section className="mt-8">
+      <h2 className="mb-4 text-lg font-semibold text-slate-900">
+        Notifications
+      </h2>
       <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="mb-3 text-base font-semibold text-slate-900">
-          Notifications
-        </h3>
         <div className="space-y-3">
           {notifications.map((n) => (
             <div
@@ -289,16 +298,22 @@ export default function NotificationsSection() {
               className={`rounded-lg border px-4 py-3 text-sm ${
                 n.variant === "error"
                   ? "border-red-200 bg-red-50 text-red-600"
-                  : "border-[#009de5]/20 bg-[#009de5]/5 text-[#009de5]"
+                  : n.variant === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-[#009de5]/20 bg-[#009de5]/5 text-[#009de5]"
               }`}
             >
               <div>{n.content}</div>
               <div
                 className={`mt-1 text-xs ${
-                  n.variant === "error" ? "text-red-400" : "text-[#009de5]/60"
+                  n.variant === "error"
+                    ? "text-red-400"
+                    : n.variant === "warning"
+                      ? "text-amber-500"
+                      : "text-[#009de5]/60"
                 }`}
               >
-                {formatTimestamp(n.timestamp)}
+                {formatActionTimestamp(n.timestamp)}
               </div>
             </div>
           ))}

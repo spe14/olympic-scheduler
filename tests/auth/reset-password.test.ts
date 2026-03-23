@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resetPassword } from "@/app/(auth)/actions";
+import { makeFormData } from "@/tests/helpers";
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => {
@@ -16,14 +17,6 @@ vi.mock("@/lib/supabase/server", () => ({
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/db/schema", () => ({ user: {} }));
-
-function makeFormData(fields: Record<string, string>): FormData {
-  const fd = new FormData();
-  for (const [key, value] of Object.entries(fields)) {
-    fd.set(key, value);
-  }
-  return fd;
-}
 
 describe("resetPassword", () => {
   beforeEach(() => {

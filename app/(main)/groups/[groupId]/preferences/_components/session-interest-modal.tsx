@@ -2,22 +2,13 @@
 
 import { useState } from "react";
 import Modal from "@/components/modal";
+import {
+  btnPrimaryClass,
+  INTEREST_COLORS,
+  INTEREST_LEVELS,
+} from "@/lib/constants";
+import { formatSessionDate, formatSessionTime } from "@/lib/utils";
 import type { SessionData, SessionPreferenceData } from "./preference-wizard";
-
-const INTEREST_COLORS: Record<
-  string,
-  { bg: string; text: string; border: string }
-> = {
-  low: { bg: "rgba(255, 0, 128, 0.15)", text: "#ff0080", border: "#ff0080" },
-  medium: { bg: "rgba(250, 204, 21, 0.2)", text: "#d97706", border: "#d97706" },
-  high: { bg: "rgba(0, 157, 229, 0.2)", text: "#009de5", border: "#009de5" },
-};
-
-const INTEREST_LEVELS = [
-  { value: "low" as const, label: "Low" },
-  { value: "medium" as const, label: "Medium" },
-  { value: "high" as const, label: "High" },
-];
 
 type SportColor = { accent: string; bg: string; text: string; title: string };
 
@@ -29,23 +20,6 @@ type Props = {
   onClear: (sessionId: string) => void;
   onClose: () => void;
 };
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatTime(timeStr: string): string {
-  const [hours, minutes] = timeStr.split(":");
-  const h = parseInt(hours, 10);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${h12}:${minutes} ${ampm}`;
-}
 
 export default function SessionInterestModal({
   session,
@@ -95,11 +69,11 @@ export default function SessionInterestModal({
           </span>
         </div>
         <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-          <span>{formatDate(session.sessionDate)}</span>
+          <span>{formatSessionDate(session.sessionDate)}</span>
           <span style={{ color: sportColor.accent }}>|</span>
           <span>
-            {formatTime(session.startTime)} &ndash;{" "}
-            {formatTime(session.endTime)} PT
+            {formatSessionTime(session.startTime)} &ndash;{" "}
+            {formatSessionTime(session.endTime)} PT
           </span>
         </p>
         <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
@@ -217,7 +191,7 @@ export default function SessionInterestModal({
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
+            className={btnPrimaryClass}
           >
             Apply
           </button>

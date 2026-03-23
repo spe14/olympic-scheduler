@@ -2,13 +2,12 @@
 
 ## Overview
 
-The scheduler operates in three phases:
+The scheduler operates in two phases:
 
 1. **Phase 1: Schedule Generation** — Generate an optimal group schedule based on interest levels, sport rankings, and buddy constraints. Output: each member gets a schedule with P/B1/B2 combos per day.
-2. **Phase 2: Ticket Purchase Plan** — Members with purchase timeslots set price ceilings and create a combo-based purchase plan. Output: day-by-day combos with price ceilings, fallbacks, and "buy for others" assignments.
-3. **Phase 3: Purchase Tracking & Re-generation** — Track actual purchases, budget spent, sold-out sessions, and extra sessions. Re-generate schedules with purchased sessions locked in.
+2. **Phase 2: Purchase Tracking & Re-generation** — Plan purchases, track actual purchases, record prices, mark sold-out and out-of-budget sessions. Re-generate schedules with purchased sessions locked in and sold-out/out-of-budget sessions excluded.
 
-This document focuses on Phase 1. Phases 2 and 3 are outlined at the end with detailed data flow.
+This document focuses on Phase 1. Phase 2 is outlined at the end with detailed data flow.
 
 ---
 
@@ -409,20 +408,22 @@ _Note: Steps 1-3 are user preference input (buddy constraints, sport ranking, se
 
 #### Step 4: Filter Sessions by User Interest
 
-For each user, filter the full session list to only sessions they've explicitly selected (interest level != None) and that are not excluded.
+For each user, filter the full session list to only sessions they've explicitly selected (interest level != None). Additionally, sold-out sessions are excluded (unless the member has purchased tickets for them), and out-of-budget sessions are excluded for the specific member (unless purchased).
 
 ```
-Input: All sessions, User's session preferences
+Input: All sessions, User's session preferences, sold-out sessions, out-of-budget sessions, purchased sessions
 Output: User's candidate sessions
 
 Filter criteria:
   - session_preference row exists for this user + session
   - interest != None
-  - excluded = false
+  - NOT sold-out (unless member has purchased tickets for this session)
+  - NOT out-of-budget for this member (unless purchased)
 
 Example:
   Alice selected sessions in: Gymnastics, Swimming, Track
-  Alice's candidates: 12 sessions she explicitly marked as High/Medium/Low interest (excluding any with excluded = true)
+  Alice's candidates: 12 sessions she explicitly marked as High/Medium/Low interest
+    (minus 1 sold-out session, minus 1 out-of-budget session = 10 candidates)
 ```
 
 #### Step 5: Apply Buddy Constraints, Travel Constraints, and Generate Combinations
@@ -713,7 +714,7 @@ After schedules are generated, members review their schedules. Members stay at `
 - No explicit "re-enter preferences" step — the group stays in `schedule_review`, and the owner regenerates when all members are satisfied
 
 **Why no confirmation step:**
-The confirmation step (`schedule_review_pending` → `schedule_review_confirmed` → `completed`) was removed because it added unnecessary friction. By the time users are purchasing tickets, they've implicitly accepted their schedules. Members can update preferences and the owner can regenerate at any time, making explicit confirmation redundant.
+There is no explicit confirmation step or `completed` phase. Members implicitly accept their schedules by proceeding to purchase tracking. Members can update preferences in-place during `schedule_review` (with a warning), and the owner can regenerate at any time, making explicit confirmation redundant.
 
 ### Date Configuration
 
@@ -1111,26 +1112,15 @@ If Alice and Bob are hard buddies and are assigned to the Gymnastics Final toget
   1. **Exclude the session** from their schedule and re-generate (the session won't appear in future schedules)
   2. **Update buddy constraints** (remove or change the hard buddy) and re-generate
 
-Re-generation preserves any purchased session locks (see Phase 3).
+Re-generation preserves any purchased session locks (see Phase 2).
 
 ---
 
-## Phase 3: Purchase Tracking & Re-generation
+## Phase 2: Purchase Tracking & Re-generation
 
 ### Overview
 
-Phase 3 tracks actual ticket purchases and supports iterative re-generation as the group's situation evolves (sessions sold out, tickets purchased, budget adjustments).
-
-### Data Flow: Phase 2 -> Phase 3
-
-```
-Phase 2 Output                     Phase 3 Input
------------------                   -----------------
-Combo-based purchase plan     ->    What to buy (day by day)
-Price ceilings (per session)  ->    Buy/skip decisions
-"Buy for others" assignments  ->    Who gets which tickets
-Valid windows (narrowed)      ->    Which windows remain viable
-```
+Phase 2 tracks purchase planning, actual ticket purchases, price reports, sold-out sessions, and out-of-budget sessions. It supports iterative re-generation as the group's situation evolves.
 
 ### Purchase Recording
 
@@ -1140,14 +1130,14 @@ When a member purchases tickets, they record the purchase in the app:
 | ------------------ | --------------------------------- | ----------------- |
 | `session_id`       | Which session                     | "GYM-WFINAL-0803" |
 | `price_per_ticket` | Actual price paid                 | $275              |
-| `quantity`         | Number of tickets                 | 3                 |
 | `assignees`        | Which members the tickets are for | [Alice, Bob, Eve] |
+
+Individual assignees can have per-member pricing via `ticket_purchase_assignee.price_paid`.
 
 **Effects of recording a purchase:**
 
 - Session is **locked** for all assignees — survives re-generation
-- Assignees' ticket counts increment toward the 12-ticket limit
-- Budget tracking updates (spent vs. remaining)
+- `purchase_data_changed_at` on group is updated — triggers regeneration notification
 
 ### Purchased Session Locks
 
@@ -1178,37 +1168,13 @@ Members may re-generate schedules when:
 **Re-generation rules:**
 
 - Purchased sessions are locked — candidates that violate travel constraints against locked sessions are eliminated before combo generation (see Purchased Session Locks above)
-- Sold-out sessions (unpurchased) are excluded from candidates
-- `excluded` flags are preserved (sessions a user chose to exclude stay excluded)
-- Note: `hardBuddyOverride` and `minBuddyOverride` columns have been removed — users adjust constraints directly
+- Sold-out sessions are excluded from candidates (unless the member has purchased tickets for that session)
+- Out-of-budget sessions are excluded for the specific member (unless purchased)
 - Everything else is re-optimized around the fixed constraints
 
-### Budget Tracking
+### Budget Tracking & 12-Ticket Limit
 
-Budget is set at the **user level** (not per-group), editable anytime in user settings. It does NOT affect the algorithm. Since ticket quantities are tracked globally (12-ticket limit across all groups), budget is also global.
-
-```
-=== ALICE'S BUDGET ===
-
-Budget: $500
-Spent: $275 (Gymnastics Final x1)
-Remaining: $225
-
-Upcoming (from purchase plan):
-  Swimming 100m Final - Ceiling: <$200
-  Track 200m Semi - Ceiling: <$150
-  Total if at ceiling: $350 -> Over budget by $125
-```
-
-### 12-Ticket Limit
-
-Each user has a global 12-ticket limit across all groups. The app tracks:
-
-- Tickets assigned to the user (via `ticket_purchase_assignee` rows)
-- Count across all groups
-- Warning when approaching limit
-
-**Multi-group warning:** Users can join multiple groups, but the app displays a warning: "It's not recommended to join multiple groups since optimal schedules are only generated at the group level." The algorithm optimizes within a single group and has no cross-group coordination.
+Budget tracking and the 12-ticket global limit have been **removed from current scope**. They may be revisited in a future phase.
 
 ### Extra Purchases
 
@@ -1223,23 +1189,15 @@ PHASE 1: SCHEDULE GENERATION
   Input:  Interest levels, sport rankings, buddy constraints
   Output: P/B1/B2 combos per day, window rankings (top 3 if consecutive, 1 if specific)
           |
-          | Members confirm schedules
+          | Members review schedules, edit preferences in-place if needed
           v
-PHASE 2: TICKET PURCHASE PLAN
-  Input:  Phase 1 combos (per day), valid windows (top 3 / 1), buddy overlap data
-  New:    Price ceilings (freeform $ per session), combo-based purchase plan
-  Output: Day-by-day combo plan with price limits, "buy for others" assignments
+PHASE 2: PURCHASE TRACKING
+  Input:  Phase 1 combos, purchase timeslots, price reports
+  New:    Purchase records, sold-out tracking, out-of-budget tracking, price reports
+  Output: Ticket assignments, session status (purchased/sold-out/OOB)
           |
-          | Members purchase tickets during their timeslots
-          | Valid windows narrow as purchases accumulate
-          v
-PHASE 3: PURCHASE TRACKING & RE-GENERATION
-  Input:  Phase 2 purchase plan, actual ticket purchases
-  New:    Purchase records, sold-out flags, budget tracking
-  Output: Updated schedules (with locks), budget status, ticket counts
-          |
-          | Loop back: re-generate if needed (sold out, preference changes)
-          | Window rankings recomputed with purchased-date filter
+          | Loop back: re-generate if needed (sold out, preference changes, new purchases)
+          | Purchased sessions locked, sold-out/OOB excluded
           v
   RE-GENERATION (back to Phase 1 algorithm, with purchased locks as fixed constraints)
 ```

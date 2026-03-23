@@ -5,164 +5,48 @@ import { useGroup } from "../_components/group-context";
 import { useSidePanel } from "../_components/side-panel-context";
 import { getGroupSchedule } from "./actions";
 import type { GroupScheduleMemberCombo } from "./actions";
-import { SPORT_COLORS } from "@/lib/constants";
 import type { AvatarColor } from "@/lib/constants";
+import {
+  type SportColor,
+  FALLBACK_SPORT_COLOR,
+  buildSportColorMap,
+  RANK_LABELS,
+  RANK_SHORT_LABELS,
+  RANK_TAG_COLORS,
+  HOUR_START,
+  HOUR_END,
+  TOTAL_HOURS,
+  HOUR_HEIGHT,
+  OLYMPIC_DAYS_SET,
+  OLYMPIC_DAYS_LIST,
+  timeToMinutes,
+  formatHourLabel,
+  addDays,
+  buildWeeks,
+  daysInRange,
+  matchesSearch,
+  computeOverlapLayout,
+  type LayoutInfo,
+} from "@/lib/schedule-utils";
 import { Maximize2, User } from "lucide-react";
 import Modal from "@/components/modal";
 import UserAvatar from "@/components/user-avatar";
-
-// ── Sport color helper ───────────────────────────────────────────────────────
-type SportColor = { bg: string; border: string; text: string; title: string };
-const FALLBACK_COLOR: SportColor = {
-  bg: "#f1f5f9",
-  border: "#94a3b8",
-  text: "#475569",
-  title: "#64748b",
-};
-
-function buildSportColorMap(sports: string[]): Map<string, SportColor> {
-  const map = new Map<string, SportColor>();
-  const seen = new Set<string>();
-  const unique: string[] = [];
-  for (const s of sports) {
-    if (!seen.has(s)) {
-      seen.add(s);
-      unique.push(s);
-    }
-  }
-  unique.forEach((sport, i) => {
-    const c = SPORT_COLORS[i % SPORT_COLORS.length];
-    map.set(sport, {
-      bg: c.bg,
-      border: c.accent,
-      text: c.text,
-      title: c.title,
-    });
-  });
-  return map;
-}
-
-// ── Time grid config ──────────────────────────────────────────────────────────
-const HOUR_START = 6;
-const HOUR_END = 25;
-const TOTAL_HOURS = HOUR_END - HOUR_START;
-const HOUR_HEIGHT = 64;
-
-// ── Olympic dates ─────────────────────────────────────────────────────────────
-const OLYMPIC_DAYS_SET = new Set<string>();
-const OLYMPIC_DAYS_LIST: string[] = [];
-const OLYMPIC_START_DATE = new Date("2028-07-12T12:00:00");
-for (let i = 0; i < 19; i++) {
-  const d = new Date(OLYMPIC_START_DATE);
-  d.setDate(d.getDate() + i);
-  const ds = d.toISOString().split("T")[0];
-  OLYMPIC_DAYS_SET.add(ds);
-  OLYMPIC_DAYS_LIST.push(ds);
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function timeToMinutes(time: string): number {
-  const [h, m] = time.split(":").map(Number);
-  const total = h * 60 + m;
-  return total === 0 ? 24 * 60 : total;
-}
-
-function formatTime(time: string) {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  return `${display}:${m} ${ampm}`;
-}
-
-function formatHourLabel(hour: number) {
-  const h = hour % 24;
-  if (h === 0) return "12 AM";
-  if (h === 12) return "12 PM";
-  return h > 12 ? `${h - 12} PM` : `${h} AM`;
-}
-
-function formatDateHeader(dateStr: string) {
-  const date = new Date(dateStr + "T12:00:00");
-  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  const day = date.getDate();
-  return { weekday, monthDay: `${month} ${day}` };
-}
-
-function addDays(dateStr: string, n: number): string {
-  const d = new Date(dateStr + "T12:00:00");
-  d.setDate(d.getDate() + n);
-  return d.toISOString().split("T")[0];
-}
-
-function formatDate(dateStr: string): string {
-  const normalized = dateStr.includes("T") ? dateStr : dateStr + "T12:00:00";
-  const date = new Date(normalized);
-  if (isNaN(date.getTime())) return dateStr;
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function buildWeeks(): string[][] {
-  const firstOlympic = "2028-07-12";
-  const lastOlympic = "2028-07-30";
-  const firstDate = new Date(firstOlympic + "T12:00:00");
-  const dow = firstDate.getDay();
-  const weekStart = addDays(firstOlympic, -dow);
-  const lastDate = new Date(lastOlympic + "T12:00:00");
-  const lastDow = lastDate.getDay();
-  const saturdayOffset = lastDow === 6 ? 0 : 6 - lastDow;
-  const weekEnd = addDays(lastOlympic, saturdayOffset);
-
-  const weeks: string[][] = [];
-  let current = weekStart;
-  let currentWeek: string[] = [];
-  while (current <= weekEnd) {
-    currentWeek.push(current);
-    if (currentWeek.length === 7) {
-      weeks.push(currentWeek);
-      currentWeek = [];
-    }
-    current = addDays(current, 1);
-  }
-  return weeks;
-}
-
-function daysInRange(start: string, end: string): Set<string> {
-  const days = new Set<string>();
-  let current = start;
-  while (current <= end) {
-    days.add(current);
-    current = addDays(current, 1);
-  }
-  return days;
-}
+import StatusBadge from "@/components/status-badge";
+import { PageError, PageEmpty } from "@/components/page-state";
+import SidebarSearch from "@/components/sidebar-search";
+import FilterPill, { FilterGroup } from "@/components/filter-pill";
+import type {
+  PurchaseData,
+  ReportedPriceData,
+} from "../schedule/purchase-actions";
+import {
+  formatSessionTime,
+  formatSessionDate,
+  formatSessionDateHeader,
+} from "@/lib/utils";
 
 // ── Rank helpers ─────────────────────────────────────────────────────────────
 type ComboRank = "primary" | "backup1" | "backup2";
-const RANK_ORDER: Record<string, number> = {
-  primary: 0,
-  backup1: 1,
-  backup2: 2,
-};
-const rankLabels: Record<string, string> = {
-  primary: "Primary",
-  backup1: "Backup 1",
-  backup2: "Backup 2",
-};
-const rankTagStylesSolid: Record<string, { bg: string; text: string }> = {
-  primary: { bg: "#009de5", text: "#ffffff" },
-  backup1: { bg: "#d97706", text: "#ffffff" },
-  backup2: { bg: "#ff0080", text: "#ffffff" },
-};
-
-function betterRank(a: ComboRank, b: ComboRank): ComboRank {
-  return RANK_ORDER[a] <= RANK_ORDER[b] ? a : b;
-}
 
 // ── Session with member info ──────────────────────────────────────────────────
 type GroupSessionMember = {
@@ -170,7 +54,7 @@ type GroupSessionMember = {
   firstName: string;
   lastName: string;
   avatarColor: AvatarColor;
-  bestRank: ComboRank;
+  ranks: ComboRank[];
 };
 
 type GroupSession = {
@@ -183,81 +67,12 @@ type GroupSession = {
   startTime: string;
   endTime: string;
   members: GroupSessionMember[];
+  // Purchase data
+  purchases: PurchaseData[];
+  isSoldOut: boolean;
+  isOutOfBudget: boolean;
+  reportedPrices: ReportedPriceData[];
 };
-
-// ── Overlap layout ───────────────────────────────────────────────────────────
-type LayoutInfo = { colIndex: number; totalCols: number };
-
-function computeOverlapLayout(
-  sessions: GroupSession[]
-): Map<string, LayoutInfo> {
-  const result = new Map<string, LayoutInfo>();
-  if (sessions.length === 0) return result;
-
-  const sorted = [...sessions].sort((a, b) => {
-    const aStart = timeToMinutes(a.startTime);
-    const bStart = timeToMinutes(b.startTime);
-    if (aStart !== bStart) return aStart - bStart;
-    return timeToMinutes(b.endTime) - timeToMinutes(a.endTime);
-  });
-
-  const columns: { end: number; code: string }[][] = [];
-
-  for (const s of sorted) {
-    const start = timeToMinutes(s.startTime);
-    const end = timeToMinutes(s.endTime);
-
-    let placed = false;
-    for (let col = 0; col < columns.length; col++) {
-      const lastInCol = columns[col][columns[col].length - 1];
-      if (lastInCol.end <= start) {
-        columns[col].push({ end, code: s.sessionCode });
-        result.set(s.sessionCode, { colIndex: col, totalCols: 0 });
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) {
-      columns.push([{ end, code: s.sessionCode }]);
-      result.set(s.sessionCode, { colIndex: columns.length - 1, totalCols: 0 });
-    }
-  }
-
-  const entries = sorted.map((s) => ({
-    code: s.sessionCode,
-    start: timeToMinutes(s.startTime),
-    end: timeToMinutes(s.endTime),
-  }));
-
-  const groups: number[][] = [];
-  let currentGroup: number[] = [];
-  let groupEnd = 0;
-
-  for (let i = 0; i < entries.length; i++) {
-    if (currentGroup.length === 0 || entries[i].start < groupEnd) {
-      currentGroup.push(i);
-      groupEnd = Math.max(groupEnd, entries[i].end);
-    } else {
-      groups.push(currentGroup);
-      currentGroup = [i];
-      groupEnd = entries[i].end;
-    }
-  }
-  if (currentGroup.length > 0) groups.push(currentGroup);
-
-  for (const g of groups) {
-    const colsUsed = new Set(
-      g.map((i) => result.get(entries[i].code)!.colIndex)
-    );
-    const totalCols = colsUsed.size;
-    for (const i of g) {
-      const info = result.get(entries[i].code)!;
-      info.totalCols = totalCols;
-    }
-  }
-
-  return result;
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 // ── Member filter types ─────────────────────────────────────────────────────
@@ -285,11 +100,18 @@ export default function GroupScheduleContent() {
     "all"
   );
   const [filterMode, setFilterMode] = useState<FilterMode>("any");
+  const [purchasedFilter, setPurchasedFilter] = useState<
+    "all" | "purchased" | "not_purchased"
+  >("all");
+  const [soldOutFilter, setSoldOutFilter] = useState<
+    "all" | "sold_out" | "available"
+  >("all");
   const [displayMode, setDisplayMode] = useState<"calendar" | "list">(
     "calendar"
   );
   const [calendarScale, setCalendarScale] = useState<"week" | "day">("week");
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const isOwner = group.myRole === "owner";
   const hasSchedules = !!group.scheduleGeneratedAt;
@@ -341,7 +163,7 @@ export default function GroupScheduleContent() {
     }
   }
 
-  useEffect(() => {
+  const fetchSchedule = () => {
     if (!hasSchedules || group.membersWithNoCombos.length > 0) return;
     setLoading(true);
     getGroupSchedule(group.id).then((result) => {
@@ -352,6 +174,11 @@ export default function GroupScheduleContent() {
         setSchedule(result.data ?? []);
       }
     });
+  };
+
+  useEffect(() => {
+    fetchSchedule();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group.id, hasSchedules, group.membersWithNoCombos.length]);
 
   // Build sport color map from all sessions
@@ -411,17 +238,16 @@ export default function GroupScheduleContent() {
               (m) => m.memberId === c.memberId
             );
             if (existingMember) {
-              existingMember.bestRank = betterRank(
-                existingMember.bestRank,
-                c.rank
-              );
+              if (!existingMember.ranks.includes(c.rank)) {
+                existingMember.ranks.push(c.rank);
+              }
             } else {
               existing.members.push({
                 memberId: c.memberId,
                 firstName: c.firstName,
                 lastName: c.lastName,
                 avatarColor: c.avatarColor,
-                bestRank: c.rank,
+                ranks: [c.rank],
               });
             }
           } else {
@@ -433,7 +259,7 @@ export default function GroupScheduleContent() {
                   firstName: c.firstName,
                   lastName: c.lastName,
                   avatarColor: c.avatarColor,
-                  bestRank: c.rank,
+                  ranks: [c.rank],
                 },
               ],
             });
@@ -476,17 +302,43 @@ export default function GroupScheduleContent() {
 
   // Filter a session list by member selection
   function filterSessions(sessions: GroupSession[]): GroupSession[] {
-    // "All Members" + "Any Attending" means show everything (any member attending = all sessions)
-    if (isAllSelected && filterMode === "any") return sessions;
-    if (selectedMemberSet.size === 0) return sessions;
-    return sessions.filter((s) => {
-      const memberIds = new Set(s.members.map((m) => m.memberId));
-      if (filterMode === "any") {
-        return [...selectedMemberSet].some((id) => memberIds.has(id));
-      } else {
-        return [...selectedMemberSet].every((id) => memberIds.has(id));
-      }
-    });
+    let result = sessions;
+
+    // Member filter
+    if (
+      !(isAllSelected && filterMode === "any") &&
+      selectedMemberSet.size > 0
+    ) {
+      result = result.filter((s) => {
+        const memberIds = new Set(s.members.map((m) => m.memberId));
+        if (filterMode === "any") {
+          return [...selectedMemberSet].some((id) => memberIds.has(id));
+        } else {
+          return [...selectedMemberSet].every((id) => memberIds.has(id));
+        }
+      });
+    }
+
+    // Purchased filter
+    if (purchasedFilter === "purchased") {
+      result = result.filter((s) => s.purchases.length > 0);
+    } else if (purchasedFilter === "not_purchased") {
+      result = result.filter((s) => s.purchases.length === 0);
+    }
+
+    // Sold out filter
+    if (soldOutFilter === "sold_out") {
+      result = result.filter((s) => s.isSoldOut);
+    } else if (soldOutFilter === "available") {
+      result = result.filter((s) => !s.isSoldOut);
+    }
+
+    // Search filter
+    if (searchQuery) {
+      result = result.filter((s) => matchesSearch(s, searchQuery));
+    }
+
+    return result;
   }
 
   // Render sidebar into the side panel
@@ -513,9 +365,15 @@ export default function GroupScheduleContent() {
         selectedMembers={selectedMemberSet}
         isAllSelected={isAllSelected}
         filterMode={filterMode}
+        purchasedFilter={purchasedFilter}
+        searchQuery={searchQuery}
         onToggleMember={toggleMember}
         onSetFilterMode={setFilterMode}
+        onSetPurchasedFilter={setPurchasedFilter}
+        soldOutFilter={soldOutFilter}
+        onSetSoldOutFilter={setSoldOutFilter}
         onSelectAll={selectAll}
+        onSetSearchQuery={setSearchQuery}
       />
     );
 
@@ -536,6 +394,9 @@ export default function GroupScheduleContent() {
     selectedMembers,
     isAllSelected,
     filterMode,
+    purchasedFilter,
+    soldOutFilter,
+    searchQuery,
     displayMode,
   ]);
 
@@ -551,7 +412,7 @@ export default function GroupScheduleContent() {
       const sorted = [...filtered].sort(
         (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
       );
-      const hdr = formatDateHeader(day);
+      const hdr = formatSessionDateHeader(day);
       groups.push({
         date: day,
         label: `${hdr.weekday}, ${hdr.monthDay}`,
@@ -560,31 +421,25 @@ export default function GroupScheduleContent() {
     }
     return groups;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayMode, daySessionMap, selectedMembers, filterMode]);
+  }, [displayMode, daySessionMap, selectedMembers, filterMode, searchQuery]);
 
   // State 1: No schedules
   if (!hasSchedules) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-16 text-center">
-        <h2 className="mb-2 text-lg font-semibold text-slate-900">
-          Group Schedule
-        </h2>
+      <PageEmpty title="Group Schedule">
         <p className="text-base text-slate-500">
           The group schedule will appear here once the owner has generated
           schedules and configured dates.
         </p>
-      </div>
+      </PageEmpty>
     );
   }
 
   // No date config takes precedence over no combos
   if (!hasDateConfig) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-16 text-center">
-        <h2 className="mb-2 text-lg font-semibold text-slate-900">
-          Group Schedule
-        </h2>
-        <p className="text-base font-bold text-amber-600">
+      <PageEmpty title="Group Schedule">
+        <p className="text-base font-normal text-slate-500">
           Owner needs to configure dates before the group schedule can be
           viewed.
         </p>
@@ -593,16 +448,13 @@ export default function GroupScheduleContent() {
             Open Group Settings to set your date configuration.
           </p>
         )}
-      </div>
+      </PageEmpty>
     );
   }
 
   if (group.membersWithNoCombos.length > 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-16 text-center">
-        <h2 className="mb-2 text-lg font-semibold text-slate-900">
-          Group Schedule
-        </h2>
+      <PageEmpty title="Group Schedule">
         <p className="text-base font-bold text-red-600">
           Some members received no sessions on their schedules.
         </p>
@@ -611,7 +463,7 @@ export default function GroupScheduleContent() {
           fulfill buddy requirements. Wait for affected members to update their
           preferences and then regenerate schedules.
         </p>
-      </div>
+      </PageEmpty>
     );
   }
 
@@ -624,21 +476,14 @@ export default function GroupScheduleContent() {
   }
 
   if (error) {
-    return (
-      <div className="rounded-xl border border-red-200 bg-red-50 px-6 py-16 text-center">
-        <p className="text-sm text-red-600">{error}</p>
-      </div>
-    );
+    return <PageError message={error} />;
   }
 
   if (!schedule || schedule.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-16 text-center">
-        <h2 className="mb-2 text-lg font-semibold text-slate-900">
-          Group Schedule
-        </h2>
+      <PageEmpty title="Group Schedule">
         <p className="text-base text-slate-500">No schedule data available.</p>
-      </div>
+      </PageEmpty>
     );
   }
 
@@ -649,15 +494,15 @@ export default function GroupScheduleContent() {
   const currentWeek = weeks[weekIndex];
   const canPrevWeek = weekIndex > 0;
   const canNextWeek = weekIndex < weeks.length - 1;
-  const weekStart = formatDateHeader(currentWeek[0]);
-  const weekEnd = formatDateHeader(currentWeek[6]);
+  const weekStart = formatSessionDateHeader(currentWeek[0]);
+  const weekEnd = formatSessionDateHeader(currentWeek[6]);
   const weekLabel = `${weekStart.monthDay} - ${weekEnd.monthDay}, 2028`;
 
   // Day view navigation
   const currentDay = OLYMPIC_DAYS_LIST[dayIndex];
   const canPrevDay = dayIndex > 0;
   const canNextDay = dayIndex < OLYMPIC_DAYS_LIST.length - 1;
-  const currentDayHeader = formatDateHeader(currentDay);
+  const currentDayHeader = formatSessionDateHeader(currentDay);
   const dayLabel = `${currentDayHeader.weekday}, ${currentDayHeader.monthDay}, 2028`;
 
   // Which days to render in the grid
@@ -686,7 +531,7 @@ export default function GroupScheduleContent() {
     const endMin = timeToMinutes(s.endTime);
     const topPx = ((startMin - HOUR_START * 60) / 60) * HOUR_HEIGHT;
     const heightPx = ((endMin - startMin) / 60) * HOUR_HEIGHT;
-    const color = sportColorMap.get(s.sport) ?? FALLBACK_COLOR;
+    const color = sportColorMap.get(s.sport) ?? FALLBACK_SPORT_COLOR;
     const layout = overlapLayout.get(s.sessionCode);
     const colIndex = layout?.colIndex ?? 0;
     const totalCols = layout?.totalCols ?? 1;
@@ -735,7 +580,7 @@ export default function GroupScheduleContent() {
           </p>
           {heightPx >= 44 && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-500">
-              {formatTime(s.startTime)} - {formatTime(s.endTime)}
+              {formatSessionTime(s.startTime)} - {formatSessionTime(s.endTime)}
             </p>
           )}
           {heightPx >= 64 && s.sessionDescription && (
@@ -898,7 +743,8 @@ export default function GroupScheduleContent() {
                 </h4>
                 <div className="space-y-1.5">
                   {group.sessions.map((s) => {
-                    const color = sportColorMap.get(s.sport) ?? FALLBACK_COLOR;
+                    const color =
+                      sportColorMap.get(s.sport) ?? FALLBACK_SPORT_COLOR;
                     const isMine = s.members.some(
                       (m) => m.memberId === myMemberId
                     );
@@ -952,9 +798,9 @@ export default function GroupScheduleContent() {
                             </p>
                           )}
                           <p className="mt-0.5 text-sm text-slate-400">
-                            {formatTime(s.startTime)} &ndash;{" "}
-                            {formatTime(s.endTime)} &middot; {s.venue} &middot;{" "}
-                            {s.zone}
+                            {formatSessionTime(s.startTime)} &ndash;{" "}
+                            {formatSessionTime(s.endTime)} &middot; {s.venue}{" "}
+                            &middot; {s.zone}
                           </p>
                         </div>
                         <div className="flex flex-shrink-0 items-center gap-2">
@@ -986,7 +832,7 @@ export default function GroupScheduleContent() {
           <div className={`grid ${gridCols} border-b border-slate-200`}>
             <div />
             {visibleDays.map((dayStr) => {
-              const { weekday, monthDay } = formatDateHeader(dayStr);
+              const { weekday, monthDay } = formatSessionDateHeader(dayStr);
               const isOlympic = OLYMPIC_DAYS_SET.has(dayStr);
               const isInWindow = windowDaysSet.has(dayStr);
               const canClick = calendarScale === "week" && isOlympic;
@@ -1064,7 +910,13 @@ export default function GroupScheduleContent() {
               const daySessions = filterSessions(
                 daySessionMap.get(dayStr) ?? []
               );
-              const overlapLayout = computeOverlapLayout(daySessions);
+              const overlapLayout = computeOverlapLayout(
+                daySessions.map((s) => ({
+                  code: s.sessionCode,
+                  startTime: s.startTime,
+                  endTime: s.endTime,
+                }))
+              );
 
               // In week view, cap columns and collect "+N more" badges
               const shouldCap = calendarScale === "week";
@@ -1119,7 +971,13 @@ export default function GroupScheduleContent() {
                 }
 
                 if (hidden.length > 0) {
-                  const cappedLayout = computeOverlapLayout(visibleSessions);
+                  const cappedLayout = computeOverlapLayout(
+                    visibleSessions.map((s) => ({
+                      code: s.sessionCode,
+                      startTime: s.startTime,
+                      endTime: s.endTime,
+                    }))
+                  );
                   const isColHovered = hoveredDay === dayStr;
                   return (
                     <div
@@ -1226,7 +1084,8 @@ export default function GroupScheduleContent() {
           session={selectedSession.session}
           day={selectedSession.day}
           sportColor={
-            sportColorMap.get(selectedSession.session.sport) ?? FALLBACK_COLOR
+            sportColorMap.get(selectedSession.session.sport) ??
+            FALLBACK_SPORT_COLOR
           }
           onClose={() => setSelectedSession(null)}
         />
@@ -1247,9 +1106,15 @@ function GroupScheduleSidebar({
   selectedMembers,
   isAllSelected,
   filterMode,
+  purchasedFilter,
+  soldOutFilter,
+  searchQuery,
   onToggleMember,
   onSetFilterMode,
+  onSetPurchasedFilter,
+  onSetSoldOutFilter,
   onSelectAll,
+  onSetSearchQuery,
 }: {
   displayMode: "calendar" | "list";
   onSetDisplayMode: (mode: "calendar" | "list") => void;
@@ -1272,9 +1137,15 @@ function GroupScheduleSidebar({
   selectedMembers: Set<string>;
   isAllSelected: boolean;
   filterMode: FilterMode;
+  purchasedFilter: "all" | "purchased" | "not_purchased";
+  searchQuery: string;
   onToggleMember: (id: string) => void;
   onSetFilterMode: (mode: FilterMode) => void;
+  onSetPurchasedFilter: (v: "all" | "purchased" | "not_purchased") => void;
+  soldOutFilter: "all" | "sold_out" | "available";
+  onSetSoldOutFilter: (v: "all" | "sold_out" | "available") => void;
   onSelectAll: () => void;
+  onSetSearchQuery: (query: string) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -1298,6 +1169,9 @@ function GroupScheduleSidebar({
         </div>
       </div>
 
+      {/* Search */}
+      <SidebarSearch value={searchQuery} onChange={onSetSearchQuery} />
+
       {/* Date configuration */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h4 className="mb-2 text-sm font-semibold text-slate-900">
@@ -1305,8 +1179,8 @@ function GroupScheduleSidebar({
         </h4>
         {dateConfig.dateMode === "specific" ? (
           <p className="text-xs text-slate-600">
-            {formatDateHeader(dateConfig.startDate!).monthDay} –{" "}
-            {formatDateHeader(dateConfig.endDate!).monthDay}
+            {formatSessionDateHeader(dateConfig.startDate!).monthDay} –{" "}
+            {formatSessionDateHeader(dateConfig.endDate!).monthDay}
           </p>
         ) : (
           <p className="text-xs text-slate-600">
@@ -1345,8 +1219,8 @@ function GroupScheduleSidebar({
           </p>
           <div className="space-y-2">
             {windowRankings.map((w, i) => {
-              const wStart = formatDateHeader(w.startDate);
-              const wEnd = formatDateHeader(w.endDate);
+              const wStart = formatSessionDateHeader(w.startDate);
+              const wEnd = formatSessionDateHeader(w.endDate);
               const isActive = w.id === activeWindowId;
               const isClickable = displayMode === "calendar";
               return (
@@ -1400,7 +1274,9 @@ function GroupScheduleSidebar({
       {/* Member filter */}
       {members.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h4 className="mb-3 text-sm font-semibold text-slate-900">Members</h4>
+          <h4 className="mb-3 text-sm font-semibold text-slate-900">
+            Filter by Members
+          </h4>
 
           {/* Any / All toggle */}
           <div className="mb-3 flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
@@ -1408,8 +1284,8 @@ function GroupScheduleSidebar({
               const isActive = filterMode === mode;
               const tooltip =
                 mode === "any"
-                  ? "Display sessions that at least 1 selected member is attending."
-                  : "Display sessions that all selected members are attending.";
+                  ? "Display sessions that at least 1 selected member is attending or interested in attending."
+                  : "Display sessions that all selected members are attending or interested in attending.";
               return (
                 <button
                   key={mode}
@@ -1420,7 +1296,7 @@ function GroupScheduleSidebar({
                       : "text-slate-400 hover:text-slate-600"
                   }`}
                 >
-                  {mode === "any" ? "Any Attending" : "All Attending"}
+                  {mode === "any" ? "Any" : "All"}
                   <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-48 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/toggle:opacity-100">
                     {tooltip}
                   </span>
@@ -1459,6 +1335,42 @@ function GroupScheduleSidebar({
           </div>
         </div>
       )}
+
+      {/* Filter by Purchase Status */}
+      <FilterGroup title="Filter by Purchase Status">
+        {(
+          [
+            { key: "all", label: "All" },
+            { key: "purchased", label: "Purchased" },
+            { key: "not_purchased", label: "Not Purchased" },
+          ] as const
+        ).map(({ key, label }) => (
+          <FilterPill
+            key={key}
+            label={label}
+            active={purchasedFilter === key}
+            onClick={() => onSetPurchasedFilter(key)}
+          />
+        ))}
+      </FilterGroup>
+
+      {/* Filter by Sold Out Status */}
+      <FilterGroup title="Filter by Sold Out Status">
+        {(
+          [
+            { key: "all", label: "All" },
+            { key: "available", label: "Available" },
+            { key: "sold_out", label: "Sold Out" },
+          ] as const
+        ).map(({ key, label }) => (
+          <FilterPill
+            key={key}
+            label={label}
+            active={soldOutFilter === key}
+            onClick={() => onSetSoldOutFilter(key)}
+          />
+        ))}
+      </FilterGroup>
     </div>
   );
 }
@@ -1475,9 +1387,29 @@ function GroupSessionDetailModal({
   sportColor: SportColor;
   onClose: () => void;
 }) {
+  const hasPurchases = session.purchases.length > 0;
+  const hasReportedPrices = session.reportedPrices.length > 0;
+
+  // Members with purchased tickets — exclude them from interested list
+  const attendingMemberIds = new Set(
+    session.purchases.flatMap((p) => p.assignees.map((a) => a.memberId))
+  );
+  const interestedOnly = session.members.filter(
+    (m) => !attendingMemberIds.has(m.memberId)
+  );
+
   return (
     <Modal title="Session Details" onClose={onClose} size="lg">
-      {/* Session info header — matches individual schedule style */}
+      {/* Status badges */}
+      {(hasPurchases || session.isSoldOut || session.isOutOfBudget) && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {hasPurchases && <StatusBadge variant="purchased" />}
+          {session.isSoldOut && <StatusBadge variant="sold_out" />}
+          {session.isOutOfBudget && <StatusBadge variant="out_of_budget" />}
+        </div>
+      )}
+
+      {/* Session info header */}
       <div
         className="mb-4 space-y-0.5 rounded-lg p-3.5"
         style={{ backgroundColor: `${sportColor.bg}99` }}
@@ -1503,11 +1435,11 @@ function GroupSessionDetailModal({
           </span>
         </div>
         <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-          <span>{formatDate(day)}</span>
+          <span>{formatSessionDate(day)}</span>
           <span style={{ color: sportColor.border }}>|</span>
           <span>
-            {formatTime(session.startTime)} &ndash;{" "}
-            {formatTime(session.endTime)} PT
+            {formatSessionTime(session.startTime)} &ndash;{" "}
+            {formatSessionTime(session.endTime)} PT
           </span>
         </p>
         <p className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
@@ -1530,45 +1462,115 @@ function GroupSessionDetailModal({
         )}
       </div>
 
-      {/* Attending members grouped by rank */}
-      <div>
-        <p className="mb-2 text-sm font-semibold text-slate-700">
-          Attending Members
-        </p>
-        {(["primary", "backup1", "backup2"] as const).map((rank) => {
-          const rankMembers = session.members.filter(
-            (m) => m.bestRank === rank
-          );
-          if (rankMembers.length === 0) return null;
-          return (
-            <div key={rank} className="mb-2">
-              <span
-                className="mb-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
-                style={{
-                  backgroundColor: rankTagStylesSolid[rank].bg,
-                }}
-              >
-                {rankLabels[rank]}
-              </span>
-              <div className="mt-1 space-y-2">
-                {rankMembers.map((m) => (
-                  <div key={m.memberId} className="flex items-center gap-2.5">
-                    <UserAvatar
-                      firstName={m.firstName}
-                      lastName={m.lastName}
-                      avatarColor={m.avatarColor}
-                      size="sm"
-                    />
+      {/* Attending members — only those with purchased tickets */}
+      {hasPurchases && (
+        <div className="mb-4">
+          <p className="mb-2 text-sm font-semibold text-slate-700">
+            Attending Members:
+          </p>
+          <div className="space-y-2">
+            {session.purchases.map((p) =>
+              p.assignees.map((a) => (
+                <div
+                  key={`${p.purchaseId}-${a.memberId}`}
+                  className="flex items-center gap-2.5"
+                >
+                  <UserAvatar
+                    firstName={a.firstName}
+                    lastName={a.lastName}
+                    avatarColor={a.avatarColor}
+                    size="sm"
+                  />
+                  <div className="flex flex-col">
                     <span className="text-sm font-medium text-slate-800">
-                      {m.firstName} {m.lastName}
+                      {a.firstName} {a.lastName}
                     </span>
+                    {(a.pricePaid != null || p.pricePerTicket > 0) && (
+                      <span className="text-xs text-emerald-600">
+                        ${a.pricePaid ?? p.pricePerTicket} / ticket
+                      </span>
+                    )}
                   </div>
-                ))}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Interested members — excludes those already attending */}
+      {interestedOnly.length > 0 && (
+        <div className="mb-4">
+          <p className="mb-2 text-sm font-semibold text-slate-700">
+            Interested Members:
+          </p>
+          <div className="space-y-2">
+            {interestedOnly.map((m) => (
+              <div key={m.memberId} className="flex items-center gap-2.5">
+                <UserAvatar
+                  firstName={m.firstName}
+                  lastName={m.lastName}
+                  avatarColor={m.avatarColor}
+                  size="sm"
+                />
+                <span className="text-sm font-medium text-slate-800">
+                  {m.firstName} {m.lastName}
+                </span>
+                <div className="flex gap-1">
+                  {(m.ranks ?? []).map((r) => (
+                    <span
+                      key={r}
+                      className="flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold leading-none text-white"
+                      style={{
+                        backgroundColor: RANK_TAG_COLORS[r].bg,
+                      }}
+                    >
+                      {RANK_SHORT_LABELS[r]}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Reported prices */}
+      {hasReportedPrices && (
+        <div className="mt-4 rounded-lg bg-slate-50 p-3">
+          <p className="mb-1.5 text-xs font-semibold text-slate-600">
+            Reported Prices:
+          </p>
+          <div className="space-y-1">
+            {session.reportedPrices.map((rp, i) => (
+              <div key={i} className="text-xs text-slate-500">
+                <p>
+                  {rp.minPrice != null && rp.maxPrice != null
+                    ? `$${rp.minPrice} – $${rp.maxPrice}`
+                    : rp.minPrice != null
+                      ? `From $${rp.minPrice}`
+                      : rp.maxPrice != null
+                        ? `Up to $${rp.maxPrice}`
+                        : "Comment"}{" "}
+                  reported by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
+                  {new Date(rp.createdAt).toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </p>
+                {rp.comments && (
+                  <p className="mt-0.5 italic text-slate-400">
+                    &ldquo;{rp.comments}&rdquo;
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

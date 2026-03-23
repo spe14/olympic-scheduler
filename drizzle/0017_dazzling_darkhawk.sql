@@ -1,0 +1,1 @@
+ALTER TABLE "reported_price" DROP CONSTRAINT "reported_price_group_id_session_id_reported_by_member_id_unique";

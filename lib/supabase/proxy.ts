@@ -95,6 +95,10 @@ export async function updateSession(request: NextRequest) {
       redirectUrl.pathname = "/login";
       const response = NextResponse.redirect(redirectUrl);
 
+      for (const cookie of supabaseResponse.cookies.getAll()) {
+        response.cookies.set(cookie);
+      }
+
       // Clear session tracking cookies
       response.cookies.delete(SESSION_START_COOKIE);
       response.cookies.delete(LAST_ACTIVE_COOKIE);

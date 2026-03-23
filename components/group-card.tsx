@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { phaseLabels, statusLabels } from "@/lib/constants";
+import { statusLabels } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
 import { Group } from "@/lib/types";
 import { removeMembership } from "@/app/(main)/actions";
@@ -124,14 +124,6 @@ export default function GroupCard({
                 />
               </svg>
               {g.memberCount} {g.memberCount === 1 ? "member" : "members"}
-            </span>
-            <span className="flex items-center gap-1">
-              <span
-                className={`inline-block h-2 w-2 rounded-full ${
-                  g.phase === "completed" ? "bg-green-500" : "bg-yellow-500"
-                }`}
-              />
-              Group Status: {phaseLabels[g.phase] ?? g.phase}
             </span>
           </div>
         )}

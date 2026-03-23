@@ -1,6 +1,6 @@
 "use server";
 
-import { getMembership } from "@/lib/auth";
+import { requireMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   combo,
@@ -10,22 +10,26 @@ import {
   sessionPreference,
   user,
 } from "@/lib/db/schema";
+import { purchaseTimeslot } from "@/lib/db/schema";
 import { eq, and, inArray, ne } from "drizzle-orm";
 import type { AvatarColor } from "@/lib/constants";
+import { groupBy } from "@/lib/utils";
+import type { BaseMemberInfo } from "@/lib/types";
+import {
+  getPurchaseDataForSessions,
+  type PurchasePlanEntryData,
+  type PurchaseData,
+  type ReportedPriceData,
+  type TimeslotData,
+} from "./purchase-actions";
 
-export type InterestedMember = {
-  firstName: string;
-  lastName: string;
+export type InterestedMember = BaseMemberInfo & {
   username: string;
-  avatarColor: AvatarColor;
 };
 
-export type ScheduledMember = {
-  firstName: string;
-  lastName: string;
+export type ScheduledMember = BaseMemberInfo & {
   username: string;
-  avatarColor: AvatarColor;
-  rank: "primary" | "backup1" | "backup2";
+  ranks: ("primary" | "backup1" | "backup2")[];
 };
 
 export type ScheduleSession = {
@@ -40,6 +44,12 @@ export type ScheduleSession = {
   interest: "low" | "medium" | "high";
   scheduledMembers: ScheduledMember[];
   interestedMembers: InterestedMember[];
+  // Phase 2 purchase data
+  purchasePlanEntries: PurchasePlanEntryData[];
+  purchases: PurchaseData[];
+  isSoldOut: boolean;
+  isOutOfBudget: boolean;
+  reportedPrices: ReportedPriceData[];
 };
 
 export type ScheduleCombo = {
@@ -51,16 +61,16 @@ export type ScheduleCombo = {
 export type ScheduleDay = {
   day: string;
   combos: ScheduleCombo[];
+  primaryScore: number;
 };
 
 export async function getMySchedule(groupId: string): Promise<{
   data?: ScheduleDay[];
+  timeslot?: TimeslotData | null;
   error?: string;
 }> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
   const combos = await db
     .select({
@@ -123,6 +133,7 @@ export async function getMySchedule(groupId: string): Promise<{
       ? await db
           .select({
             sessionId: sessionPreference.sessionId,
+            memberId: sessionPreference.memberId,
             firstName: user.firstName,
             lastName: user.lastName,
             username: user.username,
@@ -135,23 +146,22 @@ export async function getMySchedule(groupId: string): Promise<{
             and(
               inArray(sessionPreference.sessionId, sessionCodes),
               eq(member.groupId, groupId),
-              ne(sessionPreference.memberId, membership.id),
-              eq(sessionPreference.excluded, false)
+              ne(sessionPreference.memberId, membership.id)
             )
           )
       : [];
 
-  const interestedMap = new Map<string, InterestedMember[]>();
-  for (const row of interestedRows) {
-    const list = interestedMap.get(row.sessionId) ?? [];
-    list.push({
+  const interestedMap = groupBy(
+    interestedRows,
+    (r) => r.sessionId,
+    (row): InterestedMember => ({
+      memberId: row.memberId,
       firstName: row.firstName,
       lastName: row.lastName,
       username: row.username,
       avatarColor: row.avatarColor as AvatarColor,
-    });
-    interestedMap.set(row.sessionId, list);
-  }
+    })
+  );
 
   // Fetch other members' combo assignments for sessions in current user's combos
   const scheduledRows =
@@ -159,6 +169,7 @@ export async function getMySchedule(groupId: string): Promise<{
       ? await db
           .select({
             sessionId: comboSession.sessionId,
+            memberId: combo.memberId,
             rank: combo.rank,
             firstName: user.firstName,
             lastName: user.lastName,
@@ -178,31 +189,55 @@ export async function getMySchedule(groupId: string): Promise<{
           )
       : [];
 
-  // Build scheduledMembers map: sessionCode → best rank per member
+  // Build scheduledMembers map: sessionCode → member with all ranks collected
   const scheduledMap = new Map<string, ScheduledMember[]>();
-  const RANK_ORDER: Record<string, number> = {
-    primary: 0,
-    backup1: 1,
-    backup2: 2,
-  };
   for (const row of scheduledRows) {
     const list = scheduledMap.get(row.sessionId) ?? [];
-    const existing = list.find((m) => m.username === row.username);
+    const existing = list.find((m) => m.memberId === row.memberId);
     if (existing) {
-      if (RANK_ORDER[row.rank] < RANK_ORDER[existing.rank]) {
-        existing.rank = row.rank;
+      if (!existing.ranks.includes(row.rank)) {
+        existing.ranks.push(row.rank);
       }
     } else {
       list.push({
+        memberId: row.memberId,
         firstName: row.firstName,
         lastName: row.lastName,
         username: row.username,
         avatarColor: row.avatarColor as AvatarColor,
-        rank: row.rank,
+        ranks: [row.rank],
       });
       scheduledMap.set(row.sessionId, list);
     }
   }
+
+  // Fetch purchase data for all sessions
+  const purchaseData = await getPurchaseDataForSessions(
+    groupId,
+    membership.id,
+    sessionCodes
+  );
+
+  // Fetch timeslot for current user
+  const [timeslotRow] = await db
+    .select()
+    .from(purchaseTimeslot)
+    .where(
+      and(
+        eq(purchaseTimeslot.memberId, membership.id),
+        eq(purchaseTimeslot.groupId, groupId)
+      )
+    )
+    .limit(1);
+
+  const timeslot: TimeslotData | null = timeslotRow
+    ? {
+        id: timeslotRow.id,
+        timeslotStart: timeslotRow.timeslotStart,
+        timeslotEnd: timeslotRow.timeslotEnd,
+        status: timeslotRow.status,
+      }
+    : null;
 
   // Group combos by day
   const dayMap = new Map<string, ScheduleCombo[]>();
@@ -221,6 +256,11 @@ export async function getMySchedule(groupId: string): Promise<{
         interest: interestMap.get(cs.sessionCode) ?? "medium",
         scheduledMembers: scheduledMap.get(cs.sessionCode) ?? [],
         interestedMembers: interestedMap.get(cs.sessionCode) ?? [],
+        purchasePlanEntries: purchaseData.planEntries.get(cs.sessionCode) ?? [],
+        purchases: purchaseData.purchases.get(cs.sessionCode) ?? [],
+        isSoldOut: purchaseData.soldOutSessions.has(cs.sessionCode),
+        isOutOfBudget: purchaseData.outOfBudgetSessions.has(cs.sessionCode),
+        reportedPrices: purchaseData.reportedPrices.get(cs.sessionCode) ?? [],
       }))
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
@@ -231,7 +271,14 @@ export async function getMySchedule(groupId: string): Promise<{
 
   const data: ScheduleDay[] = [...dayMap.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([day, combos]) => ({ day, combos }));
+    .map(([day, dayCombos]) => {
+      const primaryCombo = dayCombos.find((c) => c.rank === "primary");
+      return {
+        day,
+        combos: dayCombos,
+        primaryScore: primaryCombo?.score ?? 0,
+      };
+    });
 
-  return { data };
+  return { data, timeslot };
 }

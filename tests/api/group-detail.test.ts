@@ -192,4 +192,96 @@ describe("GET /api/groups/[groupId]", () => {
     expect(body.myStatus).toBe("preferences_set");
     expect(body.myMemberId).toBe("member-2");
   });
+
+  it("transforms legacy string departedMembers to object format", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "owner", status: "joined" },
+    ]);
+    directWhereResults.push([
+      { ...sampleGroup, departedMembers: ["Alice", "Bob"] },
+    ]);
+    mockOrderBy.mockResolvedValueOnce([]);
+    mockOrderBy.mockResolvedValueOnce(sampleMembers);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.departedMembers).toHaveLength(2);
+    expect(body.departedMembers[0]).toEqual(
+      expect.objectContaining({ name: "Alice" })
+    );
+    expect(body.departedMembers[0].departedAt).toBeDefined();
+    expect(body.departedMembers[1]).toEqual(
+      expect.objectContaining({ name: "Bob" })
+    );
+  });
+
+  it("passes through object departedMembers unchanged", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "owner", status: "joined" },
+    ]);
+    const departed = [{ name: "Carol", departedAt: "2028-02-01" }];
+    directWhereResults.push([{ ...sampleGroup, departedMembers: departed }]);
+    mockOrderBy.mockResolvedValueOnce([]);
+    mockOrderBy.mockResolvedValueOnce([]);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.departedMembers).toEqual(departed);
+  });
+
+  it("returns empty array when departedMembers is not an array", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "owner", status: "joined" },
+    ]);
+    directWhereResults.push([{ ...sampleGroup, departedMembers: null }]);
+    mockOrderBy.mockResolvedValueOnce([]);
+    mockOrderBy.mockResolvedValueOnce([]);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.departedMembers).toEqual([]);
+  });
+
+  it("returns empty object when affectedBuddyMembers is an array", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "owner", status: "joined" },
+    ]);
+    directWhereResults.push([
+      { ...sampleGroup, affectedBuddyMembers: ["invalid"] },
+    ]);
+    mockOrderBy.mockResolvedValueOnce([]);
+    mockOrderBy.mockResolvedValueOnce([]);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.affectedBuddyMembers).toEqual({});
+  });
+
+  it("returns empty object when affectedBuddyMembers is null", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "owner", status: "joined" },
+    ]);
+    directWhereResults.push([{ ...sampleGroup, affectedBuddyMembers: null }]);
+    mockOrderBy.mockResolvedValueOnce([]);
+    mockOrderBy.mockResolvedValueOnce([]);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.affectedBuddyMembers).toEqual({});
+  });
 });

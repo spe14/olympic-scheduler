@@ -12,6 +12,11 @@ import {
 } from "@/components/date-mode-fields";
 import type { GroupDetail } from "@/lib/types";
 import { getDateDisplay } from "@/lib/utils";
+import {
+  btnPrimaryClass,
+  btnSecondaryClass,
+  btnDangerClass,
+} from "@/lib/constants";
 import { transferOwnership, updateDateConfig, deleteGroup } from "../actions";
 
 type DateMode = "consecutive" | "specific";
@@ -155,7 +160,7 @@ export default function GroupSettingsModal({
               setDeleteConfirmName("");
             }}
             disabled={deleteLoading}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className={btnSecondaryClass}
           >
             Cancel
           </button>
@@ -163,7 +168,7 @@ export default function GroupSettingsModal({
             type="button"
             onClick={handleDelete}
             disabled={deleteConfirmName !== group.name || deleteLoading}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+            className={btnDangerClass}
           >
             {deleteLoading ? "Deleting..." : "Delete"}
           </button>
@@ -249,7 +254,7 @@ export default function GroupSettingsModal({
             type="button"
             onClick={() => setShowTransfer(false)}
             disabled={transferLoading}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className={btnSecondaryClass}
           >
             Cancel
           </button>
@@ -261,7 +266,7 @@ export default function GroupSettingsModal({
               transferLoading ||
               transferableMembers.length === 0
             }
-            className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
+            className={btnPrimaryClass}
           >
             {transferLoading ? "Transferring..." : "Confirm Transfer"}
           </button>
@@ -323,7 +328,7 @@ export default function GroupSettingsModal({
                 setDateError("");
               }}
               disabled={dateLoading}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              className={btnSecondaryClass}
             >
               Cancel
             </button>
@@ -331,7 +336,7 @@ export default function GroupSettingsModal({
               type="button"
               onClick={handleDateSubmit}
               disabled={!isDateFormValid || dateLoading}
-              className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
+              className={btnPrimaryClass}
             >
               {dateLoading ? "Saving..." : "Save"}
             </button>

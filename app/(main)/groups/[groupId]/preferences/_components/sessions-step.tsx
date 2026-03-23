@@ -6,7 +6,8 @@ import SessionInterestModal from "./session-interest-modal";
 import SessionCard from "./session-card";
 import ConfirmModal from "@/components/confirm-modal";
 import type { SessionData, SessionPreferenceData } from "./preference-wizard";
-import { SPORT_COLORS } from "@/lib/constants";
+import { SPORT_COLORS, INTEREST_COLORS } from "@/lib/constants";
+import { formatSessionDate } from "@/lib/utils";
 
 type Props = {
   sessions: SessionData[];
@@ -17,15 +18,6 @@ type Props = {
   onHiddenChange: (hidden: Set<string>) => void;
   loading?: boolean;
 };
-
-function formatDateHeader(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export default function SessionsStep({
   sessions,
@@ -209,14 +201,11 @@ export default function SessionsStep({
     onHiddenChange(newHidden);
   }
 
-  const interestStyles = {
-    low: { backgroundColor: "rgba(255, 0, 128, 0.15)", color: "#ff0080" },
-    medium: { backgroundColor: "rgba(250, 204, 21, 0.2)", color: "#d97706" },
-    high: { backgroundColor: "rgba(0, 157, 229, 0.2)", color: "#009de5" },
-  };
-
   function getPreferenceBadge(pref: SessionPreferenceData) {
-    const style = interestStyles[pref.interest];
+    const style = {
+      backgroundColor: INTEREST_COLORS[pref.interest].bg,
+      color: INTEREST_COLORS[pref.interest].text,
+    };
     return (
       <span
         className="rounded-full px-2 py-0.5 text-xs font-medium"
@@ -435,7 +424,7 @@ export default function SessionsStep({
           {groupedSessions.map((group) => (
             <div key={group.date}>
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                {formatDateHeader(group.date)}
+                {formatSessionDate(group.date)}
               </h4>
               <div className="space-y-1.5">
                 {group.sessions.map((s) => {
@@ -569,20 +558,20 @@ const INTEREST_FILTER_OPTIONS = [
   {
     value: "low",
     label: "Low",
-    activeBg: "rgba(255, 0, 128, 0.15)",
-    activeText: "#ff0080",
+    activeBg: INTEREST_COLORS.low.bg,
+    activeText: INTEREST_COLORS.low.text,
   },
   {
     value: "medium",
     label: "Medium",
-    activeBg: "rgba(250, 204, 21, 0.2)",
-    activeText: "#d97706",
+    activeBg: INTEREST_COLORS.medium.bg,
+    activeText: INTEREST_COLORS.medium.text,
   },
   {
     value: "high",
     label: "High",
-    activeBg: "rgba(0, 157, 229, 0.2)",
-    activeText: "#009de5",
+    activeBg: INTEREST_COLORS.high.bg,
+    activeText: INTEREST_COLORS.high.text,
   },
   {
     value: "not_set",
@@ -764,7 +753,7 @@ function SessionFilters({
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              {formatDateHeader(d)}
+              {formatSessionDate(d)}
             </button>
           ))}
         </div>

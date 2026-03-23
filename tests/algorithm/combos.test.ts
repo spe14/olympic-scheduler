@@ -257,6 +257,104 @@ describe("generateDayCombos", () => {
     expect(singles[0].sessions[0].sessionCode).toBe("AAA01");
     expect(singles[1].sessions[0].sessionCode).toBe("BBB01");
   });
+
+  // --- Locked sessions ---
+
+  it("includes locked sessions in every combo when lockedCodes is provided", () => {
+    const locked = makeSession("LOCK-01", {
+      startTime: "08:00",
+      endTime: "09:00",
+    });
+    const unlocked1 = makeSession("UNL-01", {
+      startTime: "10:00",
+      endTime: "11:00",
+    });
+    const unlocked2 = makeSession("UNL-02", {
+      startTime: "12:00",
+      endTime: "13:00",
+    });
+
+    const combos = generateDayCombos(
+      [locked, unlocked1, unlocked2],
+      emptyTravelMatrix,
+      member,
+      emptySoftBuddyMap,
+      3,
+      new Set(["LOCK-01"])
+    );
+
+    // Every combo should contain the locked session
+    for (const combo of combos) {
+      expect(combo.sessions.some((s) => s.sessionCode === "LOCK-01")).toBe(
+        true
+      );
+    }
+    // Should also have a locked-only combo
+    expect(
+      combos.some(
+        (c) => c.sessionCount === 1 && c.sessions[0].sessionCode === "LOCK-01"
+      )
+    ).toBe(true);
+  });
+
+  it("returns only locked combo when all slots are locked", () => {
+    const s1 = makeSession("LOCK-01", { startTime: "08:00", endTime: "09:00" });
+    const s2 = makeSession("LOCK-02", { startTime: "10:00", endTime: "11:00" });
+    const s3 = makeSession("LOCK-03", { startTime: "12:00", endTime: "13:00" });
+    const extra = makeSession("UNL-01", {
+      startTime: "14:00",
+      endTime: "15:00",
+    });
+
+    // maxPerDay=3 and 3 locked sessions → remainingSlots=0
+    const combos = generateDayCombos(
+      [s1, s2, s3, extra],
+      emptyTravelMatrix,
+      member,
+      emptySoftBuddyMap,
+      3,
+      new Set(["LOCK-01", "LOCK-02", "LOCK-03"])
+    );
+
+    // Only one possible combo containing exactly the 3 locked sessions
+    expect(combos).toHaveLength(1);
+    expect(combos[0].sessionCount).toBe(3);
+    const codes = combos[0].sessions.map((s) => s.sessionCode).sort();
+    expect(codes).toEqual(["LOCK-01", "LOCK-02", "LOCK-03"]);
+  });
+
+  it("falls back to locked-only combo when no feasible travel combos exist", () => {
+    // Locked in one zone, unlocked in a far zone with tight timing → infeasible
+    const locked = makeSession("LOCK-01", {
+      zone: "SoFi Stadium Zone",
+      startTime: "09:00",
+      endTime: "10:00",
+    });
+    const unlocked = makeSession("UNL-01", {
+      zone: "Downtown LA Zone",
+      startTime: "10:10",
+      endTime: "11:00",
+    });
+
+    const combos = generateDayCombos(
+      [locked, unlocked],
+      travelMatrix,
+      member,
+      emptySoftBuddyMap,
+      3,
+      new Set(["LOCK-01"])
+    );
+
+    // The {locked, unlocked} combo is infeasible due to travel
+    // Individual unlocked is still feasible, plus the locked-only fallback
+    expect(combos.length).toBeGreaterThanOrEqual(1);
+    // Must contain a combo with just the locked session
+    expect(
+      combos.some(
+        (c) => c.sessionCount === 1 && c.sessions[0].sessionCode === "LOCK-01"
+      )
+    ).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -648,6 +746,41 @@ describe("generateAllMemberCombos", () => {
     expect(result[0].rank).toBe("primary");
     if (result.length >= 2) expect(result[1].rank).toBe("backup1");
     if (result.length >= 3) expect(result[2].rank).toBe("backup2");
+  });
+
+  it("passes locked session codes through to generateDayCombos", () => {
+    const locked = makeSession("LOCK-01", {
+      sport: "Swimming",
+      startTime: "08:00",
+      endTime: "09:00",
+      sessionDate: "2028-07-22",
+    });
+    const unlocked = makeSession("UNL-01", {
+      sport: "Gymnastics",
+      startTime: "11:00",
+      endTime: "12:00",
+      sessionDate: "2028-07-22",
+    });
+
+    const member = makeMember("Alice", {
+      sportRankings: ["Swimming", "Gymnastics"],
+      candidateSessions: [locked, unlocked],
+      lockedSessionCodes: ["LOCK-01"],
+    });
+
+    const filteredSessions = [locked, unlocked];
+    const result = generateAllMemberCombos(
+      member,
+      filteredSessions,
+      ["2028-07-22"],
+      emptyTravelMatrix,
+      buildFilteredMap([["Alice", filteredSessions]])
+    );
+
+    // Every combo should contain the locked session
+    for (const combo of result) {
+      expect(combo.sessionCodes).toContain("LOCK-01");
+    }
   });
 
   it("only assigns primary when all combos are subsets of the top combo", () => {

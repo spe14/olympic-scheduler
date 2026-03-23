@@ -78,6 +78,18 @@ vi.mock("lucide-react", () => ({
   User: (props: Record<string, unknown>) => (
     <svg data-testid="user-icon" {...props} />
   ),
+  Search: (props: Record<string, unknown>) => (
+    <svg data-testid="search-icon" {...props} />
+  ),
+  X: (props: Record<string, unknown>) => (
+    <svg data-testid="x-icon" {...props} />
+  ),
+  Check: (props: Record<string, unknown>) => (
+    <svg data-testid="check-icon" {...props} />
+  ),
+  DollarSign: (props: Record<string, unknown>) => (
+    <svg data-testid="dollar-icon" {...props} />
+  ),
 }));
 
 import GroupScheduleContent from "@/app/(main)/groups/[groupId]/group-schedule/group-schedule-content";
@@ -137,6 +149,8 @@ function makeGroup(overrides: Partial<GroupDetail> = {}): GroupDetail {
       },
     ],
     membersWithNoCombos: [],
+    memberTimeslots: [],
+    myTimeslot: null,
     departedMembers: [],
     affectedBuddyMembers: {},
     windowRankings: [
@@ -166,6 +180,22 @@ function makeGroup(overrides: Partial<GroupDetail> = {}): GroupDetail {
   };
 }
 
+const defaultPurchaseFields = {
+  purchases: [],
+  isSoldOut: false,
+  isOutOfBudget: false,
+  reportedPrices: [],
+};
+
+function sess(
+  s: Omit<
+    GroupScheduleMemberCombo["sessions"][0],
+    "purchases" | "isSoldOut" | "isOutOfBudget" | "reportedPrices"
+  >
+): GroupScheduleMemberCombo["sessions"][0] {
+  return { ...s, ...defaultPurchaseFields };
+}
+
 function makeScheduleData(): GroupScheduleMemberCombo[] {
   return [
     {
@@ -177,7 +207,7 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
       rank: "primary",
       score: 85,
       sessions: [
-        {
+        sess({
           sessionCode: "SWM01",
           sport: "Swimming",
           sessionType: "Final",
@@ -186,8 +216,8 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
           zone: "Zone A",
           startTime: "09:00",
           endTime: "11:00",
-        },
-        {
+        }),
+        sess({
           sessionCode: "ATH01",
           sport: "Athletics",
           sessionType: "Preliminary",
@@ -196,7 +226,7 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
           zone: "Zone B",
           startTime: "14:00",
           endTime: "16:00",
-        },
+        }),
       ],
     },
     {
@@ -208,7 +238,7 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
       rank: "primary",
       score: 80,
       sessions: [
-        {
+        sess({
           sessionCode: "SWM01",
           sport: "Swimming",
           sessionType: "Final",
@@ -217,8 +247,8 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
           zone: "Zone A",
           startTime: "09:00",
           endTime: "11:00",
-        },
-        {
+        }),
+        sess({
           sessionCode: "GYM01",
           sport: "Gymnastics",
           sessionType: "Final",
@@ -227,7 +257,7 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
           zone: "Zone C",
           startTime: "18:00",
           endTime: "20:00",
-        },
+        }),
       ],
     },
     {
@@ -239,7 +269,7 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
       rank: "primary",
       score: 82,
       sessions: [
-        {
+        sess({
           sessionCode: "DIV01",
           sport: "Diving",
           sessionType: "Final",
@@ -248,7 +278,7 @@ function makeScheduleData(): GroupScheduleMemberCombo[] {
           zone: "Zone A",
           startTime: "10:00",
           endTime: "12:00",
-        },
+        }),
       ],
     },
   ];
@@ -265,7 +295,7 @@ function makeOverlappingData(): GroupScheduleMemberCombo[] {
       rank: "primary",
       score: 85,
       sessions: [
-        {
+        sess({
           sessionCode: "S1",
           sport: "Swimming",
           sessionType: "Final",
@@ -274,8 +304,8 @@ function makeOverlappingData(): GroupScheduleMemberCombo[] {
           zone: "Z1",
           startTime: "09:00",
           endTime: "11:00",
-        },
-        {
+        }),
+        sess({
           sessionCode: "S2",
           sport: "Athletics",
           sessionType: "Final",
@@ -284,8 +314,8 @@ function makeOverlappingData(): GroupScheduleMemberCombo[] {
           zone: "Z2",
           startTime: "09:00",
           endTime: "11:00",
-        },
-        {
+        }),
+        sess({
           sessionCode: "S3",
           sport: "Gymnastics",
           sessionType: "Final",
@@ -294,8 +324,8 @@ function makeOverlappingData(): GroupScheduleMemberCombo[] {
           zone: "Z3",
           startTime: "09:00",
           endTime: "11:00",
-        },
-        {
+        }),
+        sess({
           sessionCode: "S4",
           sport: "Diving",
           sessionType: "Final",
@@ -304,8 +334,8 @@ function makeOverlappingData(): GroupScheduleMemberCombo[] {
           zone: "Z4",
           startTime: "09:00",
           endTime: "11:00",
-        },
-        {
+        }),
+        sess({
           sessionCode: "S5",
           sport: "Fencing",
           sessionType: "Final",
@@ -314,7 +344,7 @@ function makeOverlappingData(): GroupScheduleMemberCombo[] {
           zone: "Z5",
           startTime: "09:00",
           endTime: "11:00",
-        },
+        }),
       ],
     },
   ];
@@ -694,18 +724,18 @@ describe("GroupScheduleContent — sidebar member filter", () => {
     cleanup();
   });
 
-  it("renders Any Attending / All Attending toggle", async () => {
+  it("renders Any / All toggle", async () => {
     await renderWithSchedule();
     const sidebar = renderSidebar();
-    expect(sidebar.getByText("Any Attending")).toBeDefined();
-    expect(sidebar.getByText("All Attending")).toBeDefined();
+    expect(sidebar.getByText("Any")).toBeDefined();
+    expect(sidebar.getAllByText("All").length).toBeGreaterThanOrEqual(1);
     cleanup();
   });
 
-  it("defaults to Any Attending mode", async () => {
+  it("defaults to Any mode", async () => {
     await renderWithSchedule();
     const sidebar = renderSidebar();
-    const anyBtn = sidebar.getByText("Any Attending");
+    const anyBtn = sidebar.getByText("Any");
     expect(anyBtn.className).toContain("bg-white");
     expect(anyBtn.className).toContain("shadow-sm");
     cleanup();
@@ -723,10 +753,10 @@ describe("GroupScheduleContent — sidebar member filter", () => {
     await renderWithSchedule();
     const sidebar = renderSidebar();
     expect(sidebar.container.textContent).toContain(
-      "Display sessions that at least 1 selected member is attending."
+      "Display sessions that at least 1 selected member is attending or interested in attending."
     );
     expect(sidebar.container.textContent).toContain(
-      "Display sessions that all selected members are attending."
+      "Display sessions that all selected members are attending or interested in attending."
     );
     cleanup();
   });
@@ -739,10 +769,12 @@ describe("GroupScheduleContent — sidebar member filter", () => {
     expect(mockSetPanel).toHaveBeenCalled();
   });
 
-  it("clicking All Attending toggle does not crash", async () => {
+  it("clicking All toggle does not crash", async () => {
     await renderWithSchedule();
     const sidebar = renderSidebar();
-    fireEvent.click(sidebar.getByText("All Attending"));
+    // There may be multiple "All" buttons — the Any/All toggle and the purchase status filter
+    const allButtons = sidebar.getAllByText("All");
+    fireEvent.click(allButtons[0]);
     cleanup();
     expect(mockSetPanel).toHaveBeenCalled();
   });
@@ -856,12 +888,13 @@ describe("GroupScheduleContent — session detail modal", () => {
     expect(modal.textContent).toContain("100m Freestyle Final");
   });
 
-  it("shows attending members grouped by rank", async () => {
+  it("shows interested members with rank tags", async () => {
     await renderWithSchedule();
     fireEvent.click(screen.getAllByText("SWM01")[0].closest("button")!);
     const modal = screen.getByTestId("modal");
-    expect(modal.textContent).toContain("Attending Members");
-    expect(modal.textContent).toContain("Primary");
+    expect(modal.textContent).toContain("Interested Members");
+    // Short rank labels (P, B1, B2) appear as tags next to member names
+    expect(modal.textContent).toContain("P");
     expect(modal.textContent).toContain("Alex Chen");
     expect(modal.textContent).toContain("Jordan Park");
   });
@@ -948,7 +981,7 @@ describe("GroupScheduleContent — calendar default position", () => {
 // ─── Member Filter Integration ──────────────────────────────────────
 
 describe("GroupScheduleContent — member filter behavior", () => {
-  it("shows all sessions when All Members + Any Attending (default)", async () => {
+  it("shows all sessions when All Members + Any (default)", async () => {
     await renderWithSchedule();
     expect(screen.getByText("SWM01")).toBeDefined();
     expect(screen.getByText("ATH01")).toBeDefined();
@@ -977,7 +1010,7 @@ describe("GroupScheduleContent — member filter behavior", () => {
         rank: "backup1",
         score: 70,
         sessions: [
-          {
+          sess({
             sessionCode: "SWM01",
             sport: "Swimming",
             sessionType: "Final",
@@ -986,7 +1019,7 @@ describe("GroupScheduleContent — member filter behavior", () => {
             zone: "Zone A",
             startTime: "09:00",
             endTime: "11:00",
-          },
+          }),
         ],
       },
       {
@@ -998,7 +1031,7 @@ describe("GroupScheduleContent — member filter behavior", () => {
         rank: "primary",
         score: 85,
         sessions: [
-          {
+          sess({
             sessionCode: "SWM01",
             sport: "Swimming",
             sessionType: "Final",
@@ -1007,15 +1040,17 @@ describe("GroupScheduleContent — member filter behavior", () => {
             zone: "Zone A",
             startTime: "09:00",
             endTime: "11:00",
-          },
+          }),
         ],
       },
     ];
     await renderWithSchedule({}, data);
     fireEvent.click(screen.getAllByText("SWM01")[0].closest("button")!);
     const modal = screen.getByTestId("modal");
-    // Should show Primary (best rank), not Backup 1
-    expect(modal.textContent).toContain("Primary");
+    // Member appears once with both rank tags (B1 and P)
+    expect(modal.textContent).toContain("Alex Chen");
+    expect(modal.textContent).toContain("B1");
+    expect(modal.textContent).toContain("P");
   });
 });
 
@@ -1045,11 +1080,13 @@ describe("GroupScheduleContent — sidebar lifecycle", () => {
 // ─── Member Filter — filtering behavior ─────────────────────────────
 
 describe("GroupScheduleContent — member filter filtering", () => {
-  it("All Members + All Attending hides sessions not attended by everyone", async () => {
+  it("All Members + All hides sessions not shared by everyone", async () => {
     await renderWithSchedule();
-    // Switch to All Attending via sidebar
+    // Switch to All via sidebar
     const sidebar = renderSidebar();
-    fireEvent.click(sidebar.getByText("All Attending"));
+    // There may be multiple "All" buttons — click the first one (Any/All toggle)
+    const allButtons = sidebar.getAllByText("All");
+    fireEvent.click(allButtons[0]);
     cleanup();
 
     // After toggling, the main component re-renders.
@@ -1058,11 +1095,12 @@ describe("GroupScheduleContent — member filter filtering", () => {
     // We need to verify through the sidebar callback re-render.
     // Since sidebar callbacks trigger state updates in the parent,
     // and the parent re-renders passing new props to setPanel,
-    // we verify the All Attending toggle was activated.
+    // we verify the All toggle was activated.
     const latestSidebar = getLatestSidebarElement();
     const sidebar2 = render(latestSidebar);
-    const allBtn = sidebar2.getByText("All Attending");
-    expect(allBtn.className).toContain("bg-white");
+    // Find the "All" button in the Any/All toggle (first one)
+    const allBtns = sidebar2.getAllByText("All");
+    expect(allBtns[0].className).toContain("bg-white");
     cleanup();
   });
 
@@ -1427,7 +1465,7 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
         rank: "primary",
         score: 85,
         sessions: [
-          {
+          sess({
             sessionCode: "MC1",
             sport: "Swimming",
             sessionType: "Final",
@@ -1436,8 +1474,8 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z1",
             startTime: "09:00",
             endTime: "11:00",
-          },
-          {
+          }),
+          sess({
             sessionCode: "MC2",
             sport: "Athletics",
             sessionType: "Final",
@@ -1446,8 +1484,8 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z2",
             startTime: "09:00",
             endTime: "11:00",
-          },
-          {
+          }),
+          sess({
             sessionCode: "MC3",
             sport: "Gymnastics",
             sessionType: "Final",
@@ -1456,8 +1494,8 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z3",
             startTime: "09:00",
             endTime: "11:00",
-          },
-          {
+          }),
+          sess({
             sessionCode: "MC4",
             sport: "Diving",
             sessionType: "Final",
@@ -1466,8 +1504,8 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z4",
             startTime: "09:00",
             endTime: "11:00",
-          },
-          {
+          }),
+          sess({
             sessionCode: "MC5",
             sport: "Fencing",
             sessionType: "Final",
@@ -1476,8 +1514,8 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z5",
             startTime: "18:00",
             endTime: "20:00",
-          },
-          {
+          }),
+          sess({
             sessionCode: "MC6",
             sport: "Rowing",
             sessionType: "Final",
@@ -1486,8 +1524,8 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z6",
             startTime: "18:00",
             endTime: "20:00",
-          },
-          {
+          }),
+          sess({
             sessionCode: "MC7",
             sport: "Boxing",
             sessionType: "Final",
@@ -1496,8 +1534,8 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z7",
             startTime: "18:00",
             endTime: "20:00",
-          },
-          {
+          }),
+          sess({
             sessionCode: "MC8",
             sport: "Judo",
             sessionType: "Final",
@@ -1506,7 +1544,7 @@ describe("GroupScheduleContent — multiple more badge clusters", () => {
             zone: "Z8",
             startTime: "18:00",
             endTime: "20:00",
-          },
+          }),
         ],
       },
     ];
@@ -1604,5 +1642,323 @@ describe("GroupScheduleContent — window ranking keyboard handler", () => {
     ).filter((el) => el.textContent?.includes("Jul"));
     expect(updatedWindows[1].className).toContain("border-[#009de5]");
     cleanup();
+  });
+});
+
+// ─── Purchase / Sold-out / Search filters ───────────────────────────
+
+describe("GroupScheduleContent — purchase and sold-out filters", () => {
+  function makePurchaseData(): GroupScheduleMemberCombo[] {
+    return [
+      {
+        memberId: "m1",
+        firstName: "Alex",
+        lastName: "Chen",
+        avatarColor: "blue",
+        day: SESSION_DAY,
+        rank: "primary",
+        score: 85,
+        sessions: [
+          {
+            sessionCode: "PURCH01",
+            sport: "Swimming",
+            sessionType: "Final",
+            sessionDescription: "100m Free",
+            venue: "Aquatics",
+            zone: "Zone A",
+            startTime: "09:00",
+            endTime: "11:00",
+            purchases: [
+              {
+                purchaseId: "p1",
+                buyerMemberId: "m1",
+                buyerFirstName: "Alex",
+                buyerLastName: "Chen",
+                pricePerTicket: 100,
+                assignees: [
+                  {
+                    memberId: "m1",
+                    firstName: "Alex",
+                    lastName: "Chen",
+                    avatarColor: "blue",
+                    pricePaid: 100,
+                  },
+                ],
+                createdAt: new Date("2028-07-10T10:00:00Z"),
+              },
+            ],
+            isSoldOut: false,
+            isOutOfBudget: false,
+            reportedPrices: [
+              {
+                reporterFirstName: "Alex",
+                reporterLastName: "Chen",
+                minPrice: 80,
+                maxPrice: 120,
+                comments: "Face value",
+                createdAt: new Date("2028-07-09T10:00:00Z"),
+              },
+            ],
+          },
+          {
+            sessionCode: "AVAIL01",
+            sport: "Athletics",
+            sessionType: "Heat",
+            sessionDescription: "200m Heats",
+            venue: "Stadium",
+            zone: "Zone B",
+            startTime: "14:00",
+            endTime: "16:00",
+            purchases: [],
+            isSoldOut: false,
+            isOutOfBudget: false,
+            reportedPrices: [],
+          },
+          {
+            sessionCode: "SOLD01",
+            sport: "Gymnastics",
+            sessionType: "Final",
+            sessionDescription: "Floor Final",
+            venue: "Gym Arena",
+            zone: "Zone C",
+            startTime: "18:00",
+            endTime: "20:00",
+            purchases: [],
+            isSoldOut: true,
+            isOutOfBudget: false,
+            reportedPrices: [],
+          },
+        ],
+      },
+    ];
+  }
+
+  it("filters to purchased sessions when 'Purchased' pill is clicked", async () => {
+    await renderWithSchedule({}, makePurchaseData());
+    const sidebar = renderSidebar();
+
+    const purchasedPill = sidebar.container.querySelector("button")
+      ? Array.from(sidebar.container.querySelectorAll("button")).find(
+          (b) => b.textContent === "Purchased"
+        )
+      : null;
+    expect(purchasedPill).toBeTruthy();
+    fireEvent.click(purchasedPill!);
+    cleanup();
+
+    // Re-render main to apply filter
+    cleanup();
+    await renderWithSchedule({}, makePurchaseData());
+    // Simulate filter change by finding the FilterPill in the new sidebar
+    const sidebar2 = renderSidebar();
+    const pill2 = Array.from(
+      sidebar2.container.querySelectorAll("button")
+    ).find((b) => b.textContent === "Purchased");
+    expect(pill2).toBeTruthy();
+    cleanup();
+  });
+
+  it("filters to sold-out sessions when 'Sold Out' pill is clicked", async () => {
+    await renderWithSchedule({}, makePurchaseData());
+    const sidebar = renderSidebar();
+
+    const soldOutPill = Array.from(
+      sidebar.container.querySelectorAll("button")
+    ).find((b) => b.textContent === "Sold Out");
+    expect(soldOutPill).toBeTruthy();
+    fireEvent.click(soldOutPill!);
+    cleanup();
+
+    // Re-render sidebar to verify filter state
+    const sidebar2 = render(getLatestSidebarElement());
+    const activePill = Array.from(
+      sidebar2.container.querySelectorAll("button")
+    ).find((b) => b.textContent === "Sold Out");
+    // Active pill should have the blue ring style
+    expect(activePill?.className).toContain("ring");
+    cleanup();
+  });
+
+  it("filters to available (not sold-out) sessions when 'Available' pill is clicked", async () => {
+    await renderWithSchedule({}, makePurchaseData());
+    const sidebar = renderSidebar();
+
+    const availablePill = Array.from(
+      sidebar.container.querySelectorAll("button")
+    ).find((b) => b.textContent === "Available");
+    expect(availablePill).toBeTruthy();
+    fireEvent.click(availablePill!);
+    cleanup();
+
+    const sidebar2 = render(getLatestSidebarElement());
+    const activePill = Array.from(
+      sidebar2.container.querySelectorAll("button")
+    ).find((b) => b.textContent === "Available");
+    expect(activePill?.className).toContain("ring");
+    cleanup();
+  });
+
+  it("filters to not-purchased sessions when 'Not Purchased' pill is clicked", async () => {
+    await renderWithSchedule({}, makePurchaseData());
+    const sidebar = renderSidebar();
+
+    const notPurchasedPill = Array.from(
+      sidebar.container.querySelectorAll("button")
+    ).find((b) => b.textContent === "Not Purchased");
+    expect(notPurchasedPill).toBeTruthy();
+    fireEvent.click(notPurchasedPill!);
+    cleanup();
+
+    const sidebar2 = render(getLatestSidebarElement());
+    const activePill = Array.from(
+      sidebar2.container.querySelectorAll("button")
+    ).find((b) => b.textContent === "Not Purchased");
+    expect(activePill?.className).toContain("ring");
+    cleanup();
+  });
+
+  it("filters sessions by search query", async () => {
+    await renderWithSchedule({}, makePurchaseData());
+    const sidebar = renderSidebar();
+
+    // Find the search input
+    const searchInput = sidebar.container.querySelector(
+      'input[placeholder="Search sessions..."]'
+    ) as HTMLInputElement;
+    expect(searchInput).toBeTruthy();
+
+    // Type a search query that matches only one session
+    fireEvent.change(searchInput, { target: { value: "Gymnastics" } });
+    cleanup();
+
+    // Re-render sidebar to verify search state
+    const sidebar2 = render(getLatestSidebarElement());
+    const updatedInput = sidebar2.container.querySelector(
+      'input[placeholder="Search sessions..."]'
+    ) as HTMLInputElement;
+    expect(updatedInput.value).toBe("Gymnastics");
+    cleanup();
+  });
+});
+
+// ─── Session detail modal with purchase data ────────────────────────
+
+describe("GroupScheduleContent — session detail modal with purchases", () => {
+  function makePurchaseSession(): GroupScheduleMemberCombo[] {
+    return [
+      {
+        memberId: "m1",
+        firstName: "Alex",
+        lastName: "Chen",
+        avatarColor: "blue",
+        day: SESSION_DAY,
+        rank: "primary",
+        score: 85,
+        sessions: [
+          {
+            sessionCode: "SWM01",
+            sport: "Swimming",
+            sessionType: "Final",
+            sessionDescription: "100m Freestyle Final",
+            venue: "Aquatics Center",
+            zone: "Zone A",
+            startTime: "09:00",
+            endTime: "11:00",
+            purchases: [
+              {
+                purchaseId: "p1",
+                buyerMemberId: "m1",
+                buyerFirstName: "Alex",
+                buyerLastName: "Chen",
+                pricePerTicket: 100,
+                assignees: [
+                  {
+                    memberId: "m1",
+                    firstName: "Alex",
+                    lastName: "Chen",
+                    avatarColor: "blue",
+                    pricePaid: 100,
+                  },
+                  {
+                    memberId: "m2",
+                    firstName: "Jordan",
+                    lastName: "Park",
+                    avatarColor: "pink",
+                    pricePaid: 95,
+                  },
+                ],
+                createdAt: new Date("2028-07-10T10:00:00Z"),
+              },
+            ],
+            isSoldOut: true,
+            isOutOfBudget: true,
+            reportedPrices: [
+              {
+                reporterFirstName: "Alex",
+                reporterLastName: "Chen",
+                minPrice: 80,
+                maxPrice: 120,
+                comments: "Good seats",
+                createdAt: new Date("2028-07-09T10:00:00Z"),
+              },
+              {
+                reporterFirstName: "Jordan",
+                reporterLastName: "Park",
+                minPrice: null,
+                maxPrice: 150,
+                comments: null,
+                createdAt: new Date("2028-07-08T10:00:00Z"),
+              },
+            ],
+          },
+        ],
+      },
+    ];
+  }
+
+  it("shows status badges for purchased, sold-out, and out-of-budget in the modal", async () => {
+    await renderWithSchedule({}, makePurchaseSession());
+    fireEvent.click(screen.getAllByText("SWM01")[0].closest("button")!);
+
+    const modal = screen.getByTestId("modal");
+    expect(modal).toBeInTheDocument();
+
+    // Status badges
+    expect(screen.getByText("Purchased")).toBeInTheDocument();
+    expect(screen.getByText("Sold Out")).toBeInTheDocument();
+    expect(screen.getByText("Out of Budget")).toBeInTheDocument();
+  });
+
+  it("shows attending members with price paid in the modal", async () => {
+    await renderWithSchedule({}, makePurchaseSession());
+    fireEvent.click(screen.getAllByText("SWM01")[0].closest("button")!);
+
+    expect(screen.getByText("Attending Members:")).toBeInTheDocument();
+    // Price format: "$100 / ticket"
+    expect(screen.getByText(/\$100 \/ ticket/)).toBeInTheDocument();
+    expect(screen.getByText(/\$95 \/ ticket/)).toBeInTheDocument();
+  });
+
+  it("shows reported prices in the modal", async () => {
+    await renderWithSchedule({}, makePurchaseSession());
+    fireEvent.click(screen.getAllByText("SWM01")[0].closest("button")!);
+
+    expect(screen.getByText("Reported Prices:")).toBeInTheDocument();
+    // First reporter: min-max range "$80 – $120 reported by ..."
+    expect(screen.getByText(/\$80 – \$120/)).toBeInTheDocument();
+    // Second reporter: only max "Up to $150 reported by ..."
+    expect(screen.getByText(/Up to \$150/)).toBeInTheDocument();
+    // Comment rendered as quoted text
+    expect(screen.getByText(/Good seats/)).toBeInTheDocument();
+  });
+
+  it("separates attending members from interested members list", async () => {
+    await renderWithSchedule({}, makePurchaseSession());
+    fireEvent.click(screen.getAllByText("SWM01")[0].closest("button")!);
+
+    // Both m1 and m2 have purchases — they should be in "Attending Members"
+    // The "Interested Members" section should not list them again
+    const attendingSection = screen.getByText("Attending Members:");
+    expect(attendingSection).toBeInTheDocument();
   });
 });

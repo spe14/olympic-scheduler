@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { login } from "@/app/(auth)/actions";
+import { makeFormData } from "@/tests/helpers";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -24,14 +25,6 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/db/schema", () => ({
   user: {},
 }));
-
-function makeFormData(fields: Record<string, string>): FormData {
-  const fd = new FormData();
-  for (const [key, value] of Object.entries(fields)) {
-    fd.set(key, value);
-  }
-  return fd;
-}
 
 const validFields = {
   email: "jane@example.com",

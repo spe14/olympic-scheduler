@@ -50,6 +50,7 @@ const mockSelect = vi.fn(() => ({
 vi.mock("@/lib/db", () => ({
   db: {
     select: (...args: unknown[]) => mockSelect(...args),
+    selectDistinct: (...args: unknown[]) => mockSelect(...args),
   },
 }));
 
@@ -67,7 +68,24 @@ vi.mock("@/lib/db/schema", () => ({
     departedMembers: "departed_members",
     affectedBuddyMembers: "affected_buddy_members",
     membersWithNoCombos: "members_with_no_combos",
+    purchaseDataChangedAt: "purchase_data_changed_at",
     createdAt: "created_at",
+  },
+  purchaseTimeslot: {
+    groupId: "group_id",
+    memberId: "member_id",
+    timeslotStart: "timeslot_start",
+    timeslotEnd: "timeslot_end",
+    status: "status",
+  },
+  ticketPurchase: {
+    id: "id",
+    groupId: "group_id",
+    purchasedByMemberId: "purchased_by_member_id",
+  },
+  ticketPurchaseAssignee: {
+    ticketPurchaseId: "ticket_purchase_id",
+    memberId: "member_id",
   },
   member: {
     id: "id",
@@ -132,6 +150,8 @@ const baseGroup = {
   departedMembers: [],
   affectedBuddyMembers: {},
   membersWithNoCombos: [],
+  memberTimeslots: [],
+  purchaseDataChangedAt: null,
   createdAt: new Date("2028-01-01"),
 };
 
@@ -192,12 +212,15 @@ describe("getGroupDetail", () => {
     expect(result).toBeNull();
   });
 
-  it("returns full group detail", async () => {
+  it("returns full group detail with empty purchase data", async () => {
     queryResults = [
-      [baseMembership], // membership
-      [baseGroup], // group data
-      [baseWindowRanking], // window rankings
-      [baseMember], // members
+      [baseMembership], // 1. membership
+      [baseGroup], // 2. group data
+      [baseWindowRanking], // 3. window rankings (orderBy)
+      [baseMember], // 4. members (orderBy)
+      [], // 5. timeslotRows
+      [], // 6. purchaseBuyerRows (selectDistinct)
+      [], // 7. purchaseAssigneeRows (selectDistinct → innerJoin → where)
     ];
 
     const result = await getGroupDetail(GROUP_ID, USER_ID);
@@ -215,6 +238,61 @@ describe("getGroupDetail", () => {
     expect(result!.departedMembers).toEqual([]);
     expect(result!.affectedBuddyMembers).toEqual({});
     expect(result!.membersWithNoCombos).toEqual([]);
+    expect(result!.memberTimeslots).toEqual([]);
+    expect(result!.membersPurchased).toEqual([]);
+    expect(result!.membersWithPurchaseData).toEqual([]);
+    expect(result!.myTimeslot).toBeNull();
+    expect(result!.purchaseDataChangedAt).toBeNull();
+  });
+
+  it("returns purchase-related data when present", async () => {
+    const timeslotRows = [
+      {
+        memberId: "m1",
+        timeslotStart: new Date("2028-07-15T10:00:00Z"),
+        timeslotEnd: new Date("2028-07-15T12:00:00Z"),
+        status: "upcoming",
+      },
+      {
+        memberId: "m2",
+        timeslotStart: new Date("2028-07-16T10:00:00Z"),
+        timeslotEnd: new Date("2028-07-16T12:00:00Z"),
+        status: "completed",
+      },
+    ];
+    const purchaseBuyerRows = [{ memberId: "m1" }];
+    const purchaseAssigneeRows = [{ memberId: "m2" }];
+    const changedAt = new Date("2028-07-15T14:00:00Z");
+
+    queryResults = [
+      [baseMembership], // 1. membership
+      [{ ...baseGroup, purchaseDataChangedAt: changedAt }], // 2. group data
+      [], // 3. window rankings
+      [baseMember], // 4. members
+      timeslotRows, // 5. timeslotRows
+      purchaseBuyerRows, // 6. purchaseBuyerRows
+      purchaseAssigneeRows, // 7. purchaseAssigneeRows
+    ];
+
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+
+    expect(result).not.toBeNull();
+    // myTimeslot should be populated (m1 is the current user)
+    expect(result!.myTimeslot).toEqual({
+      timeslotStart: timeslotRows[0].timeslotStart,
+      timeslotEnd: timeslotRows[0].timeslotEnd,
+      status: "upcoming",
+    });
+    // memberTimeslots includes all members with timeslots
+    expect(result!.memberTimeslots).toEqual(
+      expect.arrayContaining(["m1", "m2"])
+    );
+    expect(result!.membersPurchased).toEqual(["m1"]);
+    // membersWithPurchaseData = union of buyers and assignees
+    expect(result!.membersWithPurchaseData).toEqual(
+      expect.arrayContaining(["m1", "m2"])
+    );
+    expect(result!.purchaseDataChangedAt).toEqual(changedAt);
   });
 
   it("transforms legacy string departedMembers to object format", async () => {

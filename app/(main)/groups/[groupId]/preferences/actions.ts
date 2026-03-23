@@ -1,6 +1,6 @@
 "use server";
 
-import { getMembership } from "@/lib/auth";
+import { requireMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   group,
@@ -12,6 +12,7 @@ import {
 import { eq, and, notInArray, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types";
+import { MSG_GROUP_NOT_FOUND, failedAction } from "@/lib/messages";
 
 const PREFERENCE_STEP_ORDER = [
   null,
@@ -46,10 +47,8 @@ export async function saveBuddies(
     buddies: { memberId: string; type: "hard" | "soft" }[];
   }
 ): Promise<ActionResult> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
   const { minBuddies, buddies } = data;
 
@@ -151,7 +150,7 @@ export async function saveBuddies(
         .select({ affectedBuddyMembers: group.affectedBuddyMembers })
         .from(group)
         .where(eq(group.id, groupId))
-        .limit(1);
+        .for("update");
       const affected =
         (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
       if (affected[membership.id]) {
@@ -163,7 +162,7 @@ export async function saveBuddies(
       }
     });
   } catch {
-    return { error: "Failed to save preferences. Please try again." };
+    return { error: failedAction("save preferences") };
   }
 
   return { success: true };
@@ -173,10 +172,8 @@ export async function saveSportRankings(
   groupId: string,
   data: { sportRankings: string[] }
 ): Promise<ActionResult> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
   const { sportRankings } = data;
 
@@ -261,7 +258,7 @@ export async function saveSportRankings(
       }
     });
   } catch {
-    return { error: "Failed to save sport rankings. Please try again." };
+    return { error: failedAction("save sport rankings") };
   }
 
   return { success: true };
@@ -276,10 +273,8 @@ export async function saveSessionPreferences(
     }[];
   }
 ): Promise<ActionResult> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
   if (
     membership.preferenceStep !== "sport_rankings" &&
@@ -368,7 +363,7 @@ export async function saveSessionPreferences(
         .select({ affectedBuddyMembers: group.affectedBuddyMembers })
         .from(group)
         .where(eq(group.id, groupId))
-        .limit(1);
+        .for("update");
       const affected =
         (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
       if (affected[membership.id]) {
@@ -380,7 +375,7 @@ export async function saveSessionPreferences(
       }
     });
   } catch {
-    return { error: "Failed to save session preferences. Please try again." };
+    return { error: failedAction("save session preferences") };
   }
 
   revalidatePath(`/groups/${groupId}`, "layout");
@@ -390,10 +385,8 @@ export async function saveSessionPreferences(
 export async function ackScheduleWarning(
   groupId: string
 ): Promise<ActionResult> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
   const [groupData] = await db
     .select({ scheduleGeneratedAt: group.scheduleGeneratedAt })
@@ -402,7 +395,7 @@ export async function ackScheduleWarning(
     .limit(1);
 
   if (!groupData) {
-    return { error: "Group not found." };
+    return { error: MSG_GROUP_NOT_FOUND };
   }
 
   await db
@@ -417,29 +410,29 @@ export async function ackScheduleWarning(
 export async function confirmAffectedBuddyReview(
   groupId: string
 ): Promise<ActionResult> {
-  const membership = await getMembership(groupId);
-  if (!membership) {
-    return { error: "You are not an active member of this group." };
-  }
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
 
-  const [grpData] = await db
-    .select({ affectedBuddyMembers: group.affectedBuddyMembers })
-    .from(group)
-    .where(eq(group.id, groupId))
-    .limit(1);
+  await db.transaction(async (tx) => {
+    const [grpData] = await tx
+      .select({ affectedBuddyMembers: group.affectedBuddyMembers })
+      .from(group)
+      .where(eq(group.id, groupId))
+      .for("update");
 
-  const affected =
-    (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
+    const affected =
+      (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
 
-  if (!affected[membership.id]) {
-    return { success: true };
-  }
+    if (!affected[membership.id]) {
+      return;
+    }
 
-  const { [membership.id]: _removed, ...remaining } = affected;
-  await db
-    .update(group)
-    .set({ affectedBuddyMembers: remaining })
-    .where(eq(group.id, groupId));
+    const { [membership.id]: _removed, ...remaining } = affected;
+    await tx
+      .update(group)
+      .set({ affectedBuddyMembers: remaining })
+      .where(eq(group.id, groupId));
+  });
 
   revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };

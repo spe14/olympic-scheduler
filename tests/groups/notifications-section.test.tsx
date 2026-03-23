@@ -42,6 +42,7 @@ function baseGroup(overrides: Record<string, unknown> = {}) {
       },
     ],
     membersWithNoCombos: [],
+    memberTimeslots: [],
     departedMembers: [],
     affectedBuddyMembers: {},
     ...overrides,
@@ -866,5 +867,123 @@ describe("NotificationsSection", () => {
     expect(departedPos).toBeLessThan(affectedPos);
     expect(affectedPos).toBeLessThan(joinedPos);
     expect(joinedPos).toBeLessThan(updatedPos);
+  });
+
+  // --- Purchase changes (AMBER) ---
+
+  it("shows purchase changes notification for owner when purchase data changed after schedule generation", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      purchaseDataChangedAt: "2028-01-05T10:00:00Z",
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.getByText(/purchase status and\/or availability updated/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/You may want to regenerate schedules/)
+    ).toBeInTheDocument();
+  });
+
+  it("shows purchase changes notification for non-owner with different wording", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      myRole: "member",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      purchaseDataChangedAt: "2028-01-05T10:00:00Z",
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.getByText(
+        /won't be reflected on your schedule until the owner regenerates/
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("does not show purchase changes when purchaseDataChangedAt is before scheduleGeneratedAt", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-10T00:00:00Z",
+      purchaseDataChangedAt: "2028-01-05T00:00:00Z",
+    });
+    render(<NotificationsSection />);
+    expect(screen.queryByText(/purchase status/)).not.toBeInTheDocument();
+  });
+
+  // --- Newly joined: multiple members with different joinedAt ---
+
+  it("uses most recent joinedAt across multiple newly joined members", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          joinedAt: "2027-12-01T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "joined",
+          joinedAt: "2028-07-20T08:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-3",
+          firstName: "Carol",
+          lastName: "White",
+          role: "member",
+          status: "joined",
+          joinedAt: "2028-07-25T10:00:00Z",
+          statusChangedAt: null,
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    // Should list both names
+    expect(
+      screen.getByText(/Bob Jones and Carol White recently joined/)
+    ).toBeInTheDocument();
+    // Timestamp should use the more recent joinedAt (Jul 25)
+    expect(screen.getByText(/Jul 25, 2028/)).toBeInTheDocument();
+  });
+
+  it("handles newly joined member with null joinedAt gracefully", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          joinedAt: "2027-12-01T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "joined",
+          joinedAt: null,
+          statusChangedAt: null,
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.getByText(/Bob Jones recently joined the group/)
+    ).toBeInTheDocument();
   });
 });
