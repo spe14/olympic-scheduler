@@ -239,7 +239,7 @@ export default function ScheduleContent() {
   if (loading) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center">
-        <p className="text-sm text-slate-500">Loading schedule...</p>
+        <p className="text-sm text-slate-500">Loading...</p>
       </div>
     );
   }
@@ -275,7 +275,7 @@ export default function ScheduleContent() {
   return (
     <section>
       {isAffectedByNonConvergence && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-800">
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-600">
           <p>
             The algorithm was not able to meet all of your requirements during
             schedule generation. The generated schedule is the best-effort
@@ -637,7 +637,7 @@ export default function ScheduleContent() {
 
                             {/* Time */}
                             {heightPx >= 44 && (
-                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-500">
+                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {formatSessionTime(session.startTime)} -{" "}
                                 {formatSessionTime(session.endTime)}
                               </p>
@@ -645,21 +645,21 @@ export default function ScheduleContent() {
 
                             {/* Description */}
                             {heightPx >= 64 && session.sessionDescription && (
-                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-500">
+                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {session.sessionDescription}
                               </p>
                             )}
 
                             {/* Venue */}
                             {heightPx >= 82 && (
-                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-400">
+                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {session.venue}
                               </p>
                             )}
 
                             {/* Zone */}
                             {heightPx >= 96 && session.zone && (
-                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-400">
+                              <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {session.zone}
                               </p>
                             )}

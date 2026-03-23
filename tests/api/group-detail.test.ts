@@ -137,6 +137,32 @@ describe("GET /api/groups/[groupId]", () => {
     expect(body.error).toBe("Not found");
   });
 
+  it("returns 404 when user has pending_approval status", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "member", status: "pending_approval" },
+    ]);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Not found");
+  });
+
+  it("returns 404 when user has denied status", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "member", status: "denied" },
+    ]);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Not found");
+  });
+
   it("returns 404 when group does not exist", async () => {
     mockGetCurrentUser.mockResolvedValue(mockUser);
     mockLimit.mockResolvedValueOnce([

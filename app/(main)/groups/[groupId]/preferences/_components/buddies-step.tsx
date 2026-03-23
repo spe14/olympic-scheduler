@@ -78,7 +78,7 @@ export default function BuddiesStep({
   const buddyStateStyles = {
     none: "border-slate-200 bg-white text-slate-600",
     hard: "border-[#009de5] bg-[#009de5]/10 text-[#009de5]",
-    soft: "border-amber-400 bg-amber-50 text-amber-700",
+    soft: "border-amber-400 bg-amber-50 text-amber-600",
   };
 
   const buddyStateLabels = {
@@ -173,7 +173,7 @@ export default function BuddiesStep({
                       state === "hard"
                         ? "bg-[#009de5]/20 text-[#009de5]"
                         : state === "soft"
-                          ? "bg-amber-100 text-amber-700"
+                          ? "bg-amber-100 text-amber-600"
                           : "bg-slate-100 text-slate-400"
                     }`}
                   >

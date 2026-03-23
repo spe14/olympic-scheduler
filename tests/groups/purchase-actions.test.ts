@@ -341,6 +341,16 @@ describe("saveTimeslot", () => {
     expect(result).toEqual({ success: true });
     expect(mockInsert).toHaveBeenCalled();
   });
+
+  it("returns error when db insert fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockOnConflictDoUpdate.mockRejectedValueOnce(new Error("DB error"));
+    const result = await saveTimeslot("group-1", {
+      start: "2028-07-15T10:00:00Z",
+      end: "2028-07-15T12:00:00Z",
+    });
+    expect(result.error).toContain("save timeslot");
+  });
 });
 
 describe("updateTimeslotStatus", () => {
@@ -370,6 +380,14 @@ describe("updateTimeslotStatus", () => {
     const result = await updateTimeslotStatus("group-1", "completed");
     expect(result).toEqual({ success: true });
     expect(mockUpdate).toHaveBeenCalled();
+  });
+
+  it("returns error when db update fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ id: "ts-1" }]];
+    mockUpdateWhere.mockRejectedValueOnce(new Error("DB error"));
+    const result = await updateTimeslotStatus("group-1", "in_progress");
+    expect(result.error).toContain("update timeslot status");
   });
 });
 
@@ -411,6 +429,17 @@ describe("savePurchasePlanEntry", () => {
     });
     expect(result).toEqual({ success: true });
   });
+
+  it("returns error when db insert fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockOnConflictDoUpdate.mockRejectedValueOnce(new Error("DB error"));
+    const result = await savePurchasePlanEntry("group-1", {
+      sessionId: "SES-001",
+      assigneeMemberId: "member-2",
+      priceCeiling: 100,
+    });
+    expect(result.error).toContain("save purchase plan entry");
+  });
 });
 
 describe("removePurchasePlanEntry", () => {
@@ -438,6 +467,16 @@ describe("removePurchasePlanEntry", () => {
     });
     expect(result).toEqual({ success: true });
     expect(mockDelete).toHaveBeenCalled();
+  });
+
+  it("returns error when db delete fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockDeleteWhere.mockRejectedValueOnce(new Error("DB error"));
+    const result = await removePurchasePlanEntry("group-1", {
+      sessionId: "SES-001",
+      assigneeMemberId: "member-2",
+    });
+    expect(result.error).toContain("remove purchase plan entry");
   });
 });
 
@@ -483,6 +522,16 @@ describe("markAsPurchased", () => {
     expect(result).toEqual({ success: true });
     expect(mockTransaction).toHaveBeenCalledOnce();
   });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      assignees: [{ memberId: "member-2" }],
+    });
+    expect(result.error).toContain("record purchase");
+  });
 });
 
 describe("deletePurchase", () => {
@@ -524,6 +573,14 @@ describe("deletePurchase", () => {
     const result = await deletePurchase("group-1", "purchase-1");
     expect(result).toEqual({ success: true });
     expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ purchasedByMemberId: "member-1" }]];
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await deletePurchase("group-1", "purchase-1");
+    expect(result.error).toContain("delete purchase");
   });
 });
 
@@ -582,6 +639,16 @@ describe("removePurchaseAssignee", () => {
     expect(result).toEqual({ success: true });
     expect(mockTransaction).toHaveBeenCalledOnce();
   });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await removePurchaseAssignee("group-1", {
+      purchaseId: "p-1",
+      memberId: "member-2",
+    });
+    expect(result.error).toContain("remove purchase assignee");
+  });
 });
 
 describe("updatePurchaseAssigneePrice", () => {
@@ -635,6 +702,18 @@ describe("updatePurchaseAssigneePrice", () => {
     });
     expect(result).toEqual({ success: true });
   });
+
+  it("returns error when db update fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ id: "p-1" }]];
+    mockUpdateWhere.mockRejectedValueOnce(new Error("DB error"));
+    const result = await updatePurchaseAssigneePrice("group-1", {
+      purchaseId: "p-1",
+      memberId: "member-2",
+      pricePaid: 75,
+    });
+    expect(result.error).toContain("update assignee price");
+  });
 });
 
 describe("markAsSoldOut", () => {
@@ -658,6 +737,13 @@ describe("markAsSoldOut", () => {
     expect(result).toEqual({ success: true });
     expect(mockTransaction).toHaveBeenCalledOnce();
   });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await markAsSoldOut("group-1", { sessionId: "SES-001" });
+    expect(result.error).toContain("mark session as sold out");
+  });
 });
 
 describe("unmarkSoldOut", () => {
@@ -680,6 +766,13 @@ describe("unmarkSoldOut", () => {
     const result = await unmarkSoldOut("group-1", { sessionId: "SES-001" });
     expect(result).toEqual({ success: true });
     expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await unmarkSoldOut("group-1", { sessionId: "SES-001" });
+    expect(result.error).toContain("unmark session as sold out");
   });
 });
 
@@ -708,6 +801,15 @@ describe("markAsOutOfBudget", () => {
     expect(result).toEqual({ success: true });
     expect(mockTransaction).toHaveBeenCalledOnce();
   });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await markAsOutOfBudget("group-1", {
+      sessionId: "SES-001",
+    });
+    expect(result.error).toContain("mark session as out of budget");
+  });
 });
 
 describe("unmarkOutOfBudget", () => {
@@ -734,6 +836,15 @@ describe("unmarkOutOfBudget", () => {
     });
     expect(result).toEqual({ success: true });
     expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await unmarkOutOfBudget("group-1", {
+      sessionId: "SES-001",
+    });
+    expect(result.error).toContain("unmark session as out of budget");
   });
 });
 
@@ -850,6 +961,24 @@ describe("reportSessionPrice", () => {
     });
     expect(result).toEqual({ success: true });
   });
+
+  it("returns error when db insert fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockInsertValues.mockReturnValueOnce({
+      onConflictDoUpdate: vi.fn(),
+      onConflictDoNothing: vi.fn(),
+      returning: vi.fn(),
+      then: (_: unknown, reject: (e: Error) => void) =>
+        reject(new Error("DB error")),
+    });
+    const result = await reportSessionPrice("group-1", {
+      sessionId: "SES-001",
+      minPrice: 100,
+      maxPrice: 200,
+      comments: null,
+    });
+    expect(result.error).toContain("report session price");
+  });
 });
 
 describe("deleteOffScheduleSessionData", () => {
@@ -872,6 +1001,13 @@ describe("deleteOffScheduleSessionData", () => {
     expect(result).toEqual({ success: true });
     // Deletes run inside a transaction
     expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await deleteOffScheduleSessionData("group-1", "SES-001");
+    expect(result.error).toContain("delete off-schedule session data");
   });
 });
 

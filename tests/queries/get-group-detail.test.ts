@@ -201,6 +201,13 @@ describe("getGroupDetail", () => {
     expect(result).toBeNull();
   });
 
+  it("returns null when member status is pending_approval", async () => {
+    queryResults = [[{ ...baseMembership, status: "pending_approval" }]];
+
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result).toBeNull();
+  });
+
   it("returns null when group not found", async () => {
     // Membership found, but group query returns empty
     queryResults = [

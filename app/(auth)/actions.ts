@@ -17,6 +17,7 @@ import { MSG_USERNAME_TAKEN } from "@/lib/messages";
 
 export type AuthResult = {
   error?: string;
+  message?: string;
   fieldErrors?: Record<string, string[]>;
   values?: Record<string, string>;
 };
@@ -35,8 +36,10 @@ export async function signUp(
 
   const result = signUpSchema.safeParse(raw);
 
+  const { password: _, ...safeValues } = raw;
+
   if (!result.success) {
-    return { fieldErrors: parseFieldErrors(result.error), values: raw };
+    return { fieldErrors: parseFieldErrors(result.error), values: safeValues };
   }
 
   const { email, password, username, firstName, lastName } = result.data;
@@ -51,7 +54,7 @@ export async function signUp(
   if (existingUser.length > 0) {
     return {
       error: MSG_USERNAME_TAKEN,
-      values: raw,
+      values: safeValues,
     };
   }
 
@@ -63,27 +66,85 @@ export async function signUp(
   });
 
   if (error) {
-    const message =
-      error.message === "User already registered"
-        ? "This email is already associated with an account. Please log in."
-        : error.message;
-    return { error: message, values: raw };
+    // If Supabase says email already registered, try to recover orphaned accounts
+    // (auth created but local DB insert failed on a prior attempt)
+    if (error.message === "User already registered") {
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({ email, password });
+
+      if (signInError || !signInData.user) {
+        return {
+          error:
+            "This email is already associated with an account. Please log in.",
+          values: safeValues,
+        };
+      }
+
+      // Check if local DB user exists
+      const existingDbUser = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(eq(user.authId, signInData.user.id))
+        .limit(1);
+
+      if (existingDbUser.length > 0) {
+        await supabase.auth.signOut();
+        return {
+          error:
+            "This email is already associated with an account. Please log in.",
+          values: safeValues,
+        };
+      }
+
+      // Orphaned auth user — create the missing DB row
+      try {
+        await db.insert(user).values({
+          authId: signInData.user.id,
+          email,
+          username,
+          firstName,
+          lastName,
+        });
+      } catch (recoverErr) {
+        await supabase.auth.signOut();
+        const recoverMessage =
+          recoverErr instanceof Error && recoverErr.message.includes("username")
+            ? MSG_USERNAME_TAKEN
+            : "Sign up failed. Please try again.";
+        return { error: recoverMessage, values: safeValues };
+      }
+
+      redirect("/");
+    }
+
+    return { error: error.message, values: safeValues };
   }
 
   if (!data.user) {
-    return { error: "Sign up failed. Please try again.", values: raw };
+    return { error: "Sign up failed. Please try again.", values: safeValues };
   }
 
   try {
-    await db.insert(user).values({
-      authId: data.user.id,
-      email,
-      username,
-      firstName,
-      lastName,
-    });
-  } catch {
-    return { error: "Account creation failed. Please try again.", values: raw };
+    await db
+      .insert(user)
+      .values({
+        authId: data.user.id,
+        email,
+        username,
+        firstName,
+        lastName,
+      })
+      .onConflictDoUpdate({
+        target: user.authId,
+        set: { email, username, firstName, lastName },
+      });
+  } catch (err) {
+    await supabase.auth.signOut();
+    const message =
+      err instanceof Error && err.message.includes("username")
+        ? MSG_USERNAME_TAKEN
+        : "Sign up failed. Please try again.";
+    return { error: message, values: safeValues };
   }
 
   redirect("/");
@@ -100,8 +161,13 @@ export async function login(
 
   const result = loginSchema.safeParse(raw);
 
+  const { password: _pw, ...safeLoginValues } = raw;
+
   if (!result.success) {
-    return { fieldErrors: parseFieldErrors(result.error), values: raw };
+    return {
+      fieldErrors: parseFieldErrors(result.error),
+      values: safeLoginValues,
+    };
   }
 
   const { email, password } = result.data;
@@ -114,7 +180,7 @@ export async function login(
   });
 
   if (error) {
-    return { error: "Invalid email or password.", values: raw };
+    return { error: "Invalid email or password.", values: safeLoginValues };
   }
 
   redirect("/");
@@ -142,11 +208,11 @@ export async function forgotPassword(
   });
 
   if (error) {
-    return { error: error.message, values: { email } };
+    console.error("Password reset email failed:", error.message);
   }
 
   return {
-    error:
+    message:
       "If an account exists with this email, you will receive a password reset link.",
     values: { email },
   };
@@ -167,6 +233,15 @@ export async function resetPassword(
     return { fieldErrors: parseFieldErrors(result.error) };
   }
 
+  const cookieStore = await cookies();
+  const resetCookie = cookieStore.get("password_reset");
+
+  if (!resetCookie) {
+    return {
+      error: "Your reset link has expired. Please request a new one.",
+    };
+  }
+
   const supabase = await createClient();
 
   const { error } = await supabase.auth.updateUser({
@@ -177,6 +252,10 @@ export async function resetPassword(
     return { error: error.message };
   }
 
+  cookieStore.delete("password_reset");
+  cookieStore.delete("session_start_at");
+  cookieStore.delete("last_active_at");
+  await supabase.auth.signOut();
   redirect("/login");
 }
 

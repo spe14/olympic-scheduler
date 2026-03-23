@@ -28,10 +28,10 @@ export function PageEmpty({
   );
 }
 
-export function PageLoading() {
+export function PageLoading({ message = "Loading..." }: { message?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center">
-      <p className="text-sm text-slate-500">Loading...</p>
+      <p className="text-sm text-slate-500">{message}</p>
     </div>
   );
 }

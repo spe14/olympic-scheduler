@@ -470,7 +470,7 @@ export default function GroupScheduleContent() {
   if (loading) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center">
-        <p className="text-sm text-slate-500">Loading group schedule...</p>
+        <p className="text-sm text-slate-500">Loading...</p>
       </div>
     );
   }
@@ -579,22 +579,22 @@ export default function GroupScheduleContent() {
             {s.sport}
           </p>
           {heightPx >= 44 && (
-            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-500">
+            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {formatSessionTime(s.startTime)} - {formatSessionTime(s.endTime)}
             </p>
           )}
           {heightPx >= 64 && s.sessionDescription && (
-            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-500">
+            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.sessionDescription}
             </p>
           )}
           {heightPx >= 82 && (
-            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-400">
+            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.venue}
             </p>
           )}
           {heightPx >= 96 && s.zone && (
-            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-400">
+            <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.zone}
             </p>
           )}

@@ -68,12 +68,12 @@ describe("login", () => {
       expect(result?.fieldErrors?.password).toBeDefined();
     });
 
-    it("preserves submitted values on validation error", async () => {
+    it("preserves submitted values on validation error (without password)", async () => {
       const fd = makeFormData({ email: "bad", password: "" });
       const result = await login(null, fd);
 
       expect(result?.values?.email).toBe("bad");
-      expect(result?.values?.password).toBe("");
+      expect(result?.values?.password).toBeUndefined();
     });
   });
 

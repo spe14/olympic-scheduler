@@ -66,10 +66,11 @@ describe("forgotPassword", () => {
       const fd = makeFormData({ email: "jane@example.com" });
       const result = await forgotPassword(null, fd);
 
-      expect(result?.error).toContain("password reset link");
+      expect(result?.message).toContain("password reset link");
+      expect(result?.error).toBeUndefined();
     });
 
-    it("returns error when Supabase fails", async () => {
+    it("returns generic success message even when Supabase fails", async () => {
       mockResetPasswordForEmail.mockResolvedValue({
         error: { message: "Rate limit exceeded" },
       });
@@ -77,7 +78,8 @@ describe("forgotPassword", () => {
       const fd = makeFormData({ email: "jane@example.com" });
       const result = await forgotPassword(null, fd);
 
-      expect(result?.error).toBe("Rate limit exceeded");
+      expect(result?.message).toContain("password reset link");
+      expect(result?.error).toBeUndefined();
       expect(result?.values?.email).toBe("jane@example.com");
     });
 

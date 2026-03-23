@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const usernameSchema = z
   .string()
+  .trim()
+  .toLowerCase()
   .check(
     z.minLength(3, "Username must be at least 3 characters long."),
     z.maxLength(30, "Username must be less than 30 characters long."),
@@ -13,15 +15,20 @@ export const usernameSchema = z
 
 export const firstNameSchema = z
   .string()
+  .trim()
   .min(1, "First name is required.")
   .max(50, "First name must be less than 50 characters long.");
 
 export const lastNameSchema = z
   .string()
+  .trim()
   .min(1, "Last name is required.")
   .max(50, "Last name must be less than 50 characters long.");
 
-export const emailSchema = z.email("Email must be valid.");
+export const emailSchema = z
+  .string()
+  .trim()
+  .check(z.email("Email must be valid."));
 
 export const passwordSchema = z
   .string()
@@ -70,6 +77,7 @@ export const profileFieldSchemas = {
 
 export const groupNameSchema = z
   .string()
+  .trim()
   .min(1, "Group name is required.")
   .max(50, "Group name must be less than 50 characters.");
 

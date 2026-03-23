@@ -27,7 +27,11 @@ export const getGroupDetail = cache(async function getGroupDetail(
     .where(and(eq(member.groupId, groupId), eq(member.userId, userId)))
     .limit(1);
 
-  if (!myMembership || myMembership.status === "denied") {
+  if (
+    !myMembership ||
+    myMembership.status === "denied" ||
+    myMembership.status === "pending_approval"
+  ) {
     return null;
   }
 

@@ -11,9 +11,15 @@ vi.mock("next/navigation", () => ({
 
 // Mock Supabase client
 const mockSignUp = vi.fn();
+const mockSignOut = vi.fn().mockResolvedValue({ error: null });
+const mockSignInWithPassword = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(() => ({
-    auth: { signUp: mockSignUp },
+    auth: {
+      signUp: mockSignUp,
+      signOut: mockSignOut,
+      signInWithPassword: mockSignInWithPassword,
+    },
   })),
 }));
 
@@ -22,7 +28,10 @@ const mockLimit = vi.fn();
 const mockWhere = vi.fn(() => ({ limit: mockLimit }));
 const mockFrom = vi.fn(() => ({ where: mockWhere }));
 const mockSelect = vi.fn(() => ({ from: mockFrom }));
-const mockValues = vi.fn();
+const mockOnConflictDoUpdate = vi.fn();
+const mockValues = vi.fn(() => ({
+  onConflictDoUpdate: mockOnConflictDoUpdate,
+}));
 const mockInsert = vi.fn(() => ({ values: mockValues }));
 
 vi.mock("@/lib/db", () => ({
@@ -33,7 +42,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  user: { id: "id", username: "username" },
+  user: { id: "id", username: "username", authId: "auth_id" },
 }));
 
 const validFields = {
@@ -124,7 +133,7 @@ describe("signUp", () => {
         data: { user: { id: "auth-123" } },
         error: null,
       });
-      mockValues.mockResolvedValue(undefined);
+      mockOnConflictDoUpdate.mockResolvedValue(undefined);
 
       await expect(signUp(null, fd)).rejects.toThrow("NEXT_REDIRECT");
     });
@@ -143,7 +152,7 @@ describe("signUp", () => {
         data: { user: { id: "auth-123" } },
         error: null,
       });
-      mockValues.mockResolvedValue(undefined);
+      mockOnConflictDoUpdate.mockResolvedValue(undefined);
 
       await expect(signUp(null, fd)).rejects.toThrow("NEXT_REDIRECT");
     });
@@ -154,7 +163,7 @@ describe("signUp", () => {
         data: { user: { id: "auth-123" } },
         error: null,
       });
-      mockValues.mockResolvedValue(undefined);
+      mockOnConflictDoUpdate.mockResolvedValue(undefined);
 
       await expect(signUp(null, fd)).rejects.toThrow("NEXT_REDIRECT");
     });
@@ -165,7 +174,7 @@ describe("signUp", () => {
         data: { user: { id: "auth-123" } },
         error: null,
       });
-      mockValues.mockResolvedValue(undefined);
+      mockOnConflictDoUpdate.mockResolvedValue(undefined);
 
       await expect(signUp(null, fd)).rejects.toThrow("NEXT_REDIRECT");
     });
@@ -221,10 +230,14 @@ describe("signUp", () => {
   });
 
   describe("supabase auth", () => {
-    it("returns friendly message when email is already registered", async () => {
+    it("returns friendly message when email registered and sign-in fails", async () => {
       mockSignUp.mockResolvedValue({
         data: { user: null },
         error: { message: "User already registered" },
+      });
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: null },
+        error: { message: "Invalid login credentials" },
       });
 
       const fd = makeFormData(validFields);
@@ -232,6 +245,43 @@ describe("signUp", () => {
 
       expect(result?.error).toContain("already associated with an account");
       expect(result?.error).toContain("Please log in");
+    });
+
+    it("returns friendly message when email registered and DB user exists", async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: null },
+        error: { message: "User already registered" },
+      });
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: { id: "auth-123" } },
+        error: null,
+      });
+      mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 1 }]);
+
+      const fd = makeFormData(validFields);
+      const result = await signUp(null, fd);
+
+      expect(result?.error).toContain("already associated with an account");
+      expect(mockSignOut).toHaveBeenCalled();
+    });
+
+    it("recovers orphaned auth user by creating DB row", async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: null },
+        error: { message: "User already registered" },
+      });
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: { id: "auth-123" } },
+        error: null,
+      });
+      // First call: username check (no match), second call: DB user check (no match)
+      mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      mockOnConflictDoUpdate.mockResolvedValue(undefined);
+
+      const fd = makeFormData(validFields);
+
+      await expect(signUp(null, fd)).rejects.toThrow("NEXT_REDIRECT");
+      expect(mockInsert).toHaveBeenCalled();
     });
 
     it("returns supabase error message for other auth errors", async () => {
@@ -265,7 +315,7 @@ describe("signUp", () => {
         data: { user: { id: "auth-123" } },
         error: null,
       });
-      mockValues.mockResolvedValue(undefined);
+      mockOnConflictDoUpdate.mockResolvedValue(undefined);
 
       const fd = makeFormData(validFields);
 
@@ -273,17 +323,36 @@ describe("signUp", () => {
       expect(mockInsert).toHaveBeenCalled();
     });
 
-    it("returns error when db insert fails", async () => {
+    it("returns generic error and signs out when db insert fails", async () => {
       mockSignUp.mockResolvedValue({
         data: { user: { id: "auth-123" } },
         error: null,
       });
-      mockValues.mockRejectedValue(new Error("DB connection failed"));
+      mockOnConflictDoUpdate.mockRejectedValue(new Error("connection error"));
 
       const fd = makeFormData(validFields);
       const result = await signUp(null, fd);
 
-      expect(result?.error).toContain("Account creation failed");
+      expect(result?.error).toContain("Sign up failed");
+      expect(mockSignOut).toHaveBeenCalled();
+    });
+
+    it("returns username taken when db insert fails with username constraint", async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: { id: "auth-123" } },
+        error: null,
+      });
+      mockOnConflictDoUpdate.mockRejectedValue(
+        new Error(
+          'duplicate key value violates unique constraint "users_username_unique"'
+        )
+      );
+
+      const fd = makeFormData(validFields);
+      const result = await signUp(null, fd);
+
+      expect(result?.error).toContain("username is already taken");
+      expect(mockSignOut).toHaveBeenCalled();
     });
   });
 });

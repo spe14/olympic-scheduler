@@ -85,46 +85,52 @@ export async function approveMember(
     return { error: MSG_MEMBER_NOT_PENDING };
   }
 
-  const [{ count: activeCount }] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(member)
-    .where(
-      and(
-        eq(member.groupId, groupId),
-        notInArray(member.status, ["pending_approval", "denied"])
-      )
-    );
-
-  if (activeCount >= MAX_GROUP_MEMBERS) {
-    return { error: MSG_GROUP_FULL };
-  }
-
   try {
-    await db
-      .update(member)
-      .set({ status: "joined", joinedAt: new Date() })
-      .where(eq(member.id, memberId));
+    const result = await db.transaction(async (tx) => {
+      // Lock group row to prevent concurrent approvals exceeding the limit
+      await tx
+        .select({ id: group.id })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .for("update");
 
-    const [approvedUser] = await db
-      .select({
-        userId: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      })
-      .from(member)
-      .innerJoin(user, eq(member.userId, user.id))
-      .where(eq(member.id, memberId))
-      .limit(1);
+      const [{ count: activeCount }] = await tx
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(member)
+        .where(
+          and(
+            eq(member.groupId, groupId),
+            notInArray(member.status, ["pending_approval", "denied"])
+          )
+        );
 
-    if (approvedUser) {
-      await db.transaction(async (tx) => {
+      if (activeCount >= MAX_GROUP_MEMBERS) {
+        return { full: true as const };
+      }
+
+      await tx
+        .update(member)
+        .set({ status: "joined", joinedAt: new Date() })
+        .where(eq(member.id, memberId));
+
+      const [approvedUser] = await tx
+        .select({
+          userId: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        })
+        .from(member)
+        .innerJoin(user, eq(member.userId, user.id))
+        .where(eq(member.id, memberId))
+        .limit(1);
+
+      if (approvedUser) {
         const [grpData] = await tx
           .select({
             departedMembers: group.departedMembers,
           })
           .from(group)
-          .where(eq(group.id, groupId))
-          .for("update");
+          .where(eq(group.id, groupId));
 
         const departed =
           (grpData?.departedMembers as {
@@ -148,7 +154,13 @@ export async function approveMember(
             .set({ departedMembers: updated })
             .where(eq(group.id, groupId));
         }
-      });
+      }
+
+      return { full: false as const };
+    });
+
+    if (result.full) {
+      return { error: MSG_GROUP_FULL };
     }
   } catch {
     return {
@@ -597,74 +609,9 @@ export async function deleteGroup(groupId: string): Promise<ActionResult> {
   if (authError) return authError;
 
   try {
-    await db.transaction(async (tx) => {
-      // 1. Delete combo sessions
-      const comboIds = tx
-        .select({ id: combo.id })
-        .from(combo)
-        .where(eq(combo.groupId, groupId));
-      await tx
-        .delete(comboSession)
-        .where(inArray(comboSession.comboId, comboIds));
-
-      // 2. Delete combos
-      await tx.delete(combo).where(eq(combo.groupId, groupId));
-
-      // 3. Delete window rankings
-      await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
-
-      // 7. Get all member IDs for the group
-      const memberIds = tx
-        .select({ id: member.id })
-        .from(member)
-        .where(eq(member.groupId, groupId));
-
-      // 8. Delete session preferences
-      await tx
-        .delete(sessionPreference)
-        .where(inArray(sessionPreference.memberId, memberIds));
-
-      // 9. Delete buddy constraints
-      await tx
-        .delete(buddyConstraint)
-        .where(
-          or(
-            inArray(buddyConstraint.memberId, memberIds),
-            inArray(buddyConstraint.buddyMemberId, memberIds)
-          )
-        );
-
-      // 10. Delete purchase data (dependency order: assignees → purchases → rest)
-      const purchaseIds = tx
-        .select({ id: ticketPurchase.id })
-        .from(ticketPurchase)
-        .where(eq(ticketPurchase.groupId, groupId));
-      await tx
-        .delete(ticketPurchaseAssignee)
-        .where(inArray(ticketPurchaseAssignee.ticketPurchaseId, purchaseIds));
-      await tx
-        .delete(ticketPurchase)
-        .where(eq(ticketPurchase.groupId, groupId));
-      await tx
-        .delete(purchasePlanEntry)
-        .where(eq(purchasePlanEntry.groupId, groupId));
-      await tx
-        .delete(purchaseTimeslot)
-        .where(eq(purchaseTimeslot.groupId, groupId));
-      await tx
-        .delete(soldOutSession)
-        .where(eq(soldOutSession.groupId, groupId));
-      await tx
-        .delete(outOfBudgetSession)
-        .where(eq(outOfBudgetSession.groupId, groupId));
-      await tx.delete(reportedPrice).where(eq(reportedPrice.groupId, groupId));
-
-      // 11. Delete members
-      await tx.delete(member).where(eq(member.groupId, groupId));
-
-      // 11. Delete group
-      await tx.delete(group).where(eq(group.id, groupId));
-    });
+    // All related tables have onDelete: "cascade" referencing group.id,
+    // so deleting the group row cascades to all dependent data.
+    await db.delete(group).where(eq(group.id, groupId));
   } catch {
     return { error: failedAction("delete group") };
   }

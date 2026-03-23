@@ -1,6 +1,6 @@
 "use client";
 
-import { signUp } from "../actions";
+import { signUp } from "@/app/(auth)/actions";
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import PasswordInput from "@/components/password-input";
@@ -19,7 +19,7 @@ export default function SignUpPage() {
   const [lastName, setLastName] = useState(state?.values?.lastName ?? "");
   const [username, setUsername] = useState(state?.values?.username ?? "");
   const [email, setEmail] = useState(state?.values?.email ?? "");
-  const [password, setPassword] = useState(state?.values?.password ?? "");
+  const [password, setPassword] = useState("");
 
   const usernameResult = usernameSchema.safeParse(username);
   const usernameHints =

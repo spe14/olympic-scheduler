@@ -12,6 +12,7 @@ import {
   boolean,
   primaryKey,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const zoneEnum = pgEnum("zone_enum", [
@@ -181,7 +182,10 @@ export const member = pgTable(
       .default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [unique().on(table.userId, table.groupId)]
+  (table) => [
+    unique().on(table.userId, table.groupId),
+    index("member_group_status_idx").on(table.groupId, table.status),
+  ]
 );
 
 export const buddyConstraint = pgTable(
@@ -195,7 +199,10 @@ export const buddyConstraint = pgTable(
       .references(() => member.id, { onDelete: "cascade" }),
     type: buddyTypeEnum("type").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.memberId, table.buddyMemberId] })]
+  (table) => [
+    primaryKey({ columns: [table.memberId, table.buddyMemberId] }),
+    index("buddy_constraint_buddy_id_idx").on(table.buddyMemberId),
+  ]
 );
 
 export const sessionPreference = pgTable(
@@ -212,18 +219,22 @@ export const sessionPreference = pgTable(
   (table) => [primaryKey({ columns: [table.sessionId, table.memberId] })]
 );
 
-export const combo = pgTable("combo", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  groupId: uuid("group_id")
-    .notNull()
-    .references(() => group.id, { onDelete: "cascade" }),
-  memberId: uuid("member_id")
-    .notNull()
-    .references(() => member.id, { onDelete: "cascade" }),
-  day: date("day").notNull(),
-  rank: comboRankEnum("rank").notNull(),
-  score: real("score").notNull(),
-});
+export const combo = pgTable(
+  "combo",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => group.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    rank: comboRankEnum("rank").notNull(),
+    score: real("score").notNull(),
+  },
+  (table) => [index("combo_group_member_idx").on(table.groupId, table.memberId)]
+);
 
 export const comboSession = pgTable(
   "combo_session",
@@ -296,21 +307,30 @@ export const purchasePlanEntry = pgTable(
   ]
 );
 
-export const ticketPurchase = pgTable("ticket_purchase", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  groupId: uuid("group_id")
-    .notNull()
-    .references(() => group.id, { onDelete: "cascade" }),
-  sessionId: text("session_id")
-    .notNull()
-    .references(() => session.sessionCode, { onDelete: "cascade" }),
-  purchasedByMemberId: uuid("purchased_by_member_id")
-    .notNull()
-    .references(() => member.id, { onDelete: "cascade" }),
-  pricePerTicket: integer("price_per_ticket").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const ticketPurchase = pgTable(
+  "ticket_purchase",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => group.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => session.sessionCode, { onDelete: "cascade" }),
+    purchasedByMemberId: uuid("purchased_by_member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    pricePerTicket: integer("price_per_ticket").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("ticket_purchase_group_session_idx").on(
+      table.groupId,
+      table.sessionId
+    ),
+  ]
+);
 
 export const ticketPurchaseAssignee = pgTable(
   "ticket_purchase_assignee",

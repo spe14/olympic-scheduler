@@ -61,6 +61,10 @@ describe("buildSportColorMap", () => {
     // Sport at index SPORT_COLORS.length wraps to palette[0]
     expect(map.get(`Sport${SPORT_COLORS.length}`)!.bg).toBe(SPORT_COLORS[0].bg);
   });
+
+  it("has 20 colors in the palette", () => {
+    expect(SPORT_COLORS.length).toBe(20);
+  });
 });
 
 // ── FALLBACK_SPORT_COLOR ────────────────────────────────────────────────────

@@ -299,9 +299,7 @@ export default function PurchaseTrackerContent() {
   if (loading) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center">
-        <p className="text-sm text-slate-500">
-          Loading purchase planner & tracker...
-        </p>
+        <p className="text-sm text-slate-500">Loading...</p>
       </div>
     );
   }
@@ -1553,7 +1551,7 @@ function SessionRow({
               disabled={busy}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
                 localOutOfBudget
-                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  ? "bg-amber-100 text-amber-600 hover:bg-amber-200"
                   : "bg-amber-50 text-amber-600 hover:bg-amber-100"
               }`}
             >
@@ -3530,12 +3528,12 @@ function ExcludedSessionRow({
               </span>
             )}
             {oobNow && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-600">
                 Out of Budget
               </span>
             )}
             {hasPendingChanges && (
-              <span className="group/pending relative inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+              <span className="group/pending relative inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-600">
                 Pending Schedule Regeneration
                 <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-60 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-center text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/pending:opacity-100">
                   There were changes to this session&apos;s status. These

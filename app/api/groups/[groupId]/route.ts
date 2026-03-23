@@ -22,7 +22,11 @@ export async function GET(
     .where(and(eq(member.groupId, groupId), eq(member.userId, currentUser.id)))
     .limit(1);
 
-  if (myMembership.length === 0) {
+  if (
+    myMembership.length === 0 ||
+    myMembership[0].status === "pending_approval" ||
+    myMembership[0].status === "denied"
+  ) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

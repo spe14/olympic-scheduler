@@ -70,7 +70,7 @@ const mockUpdate = vi.fn(() => ({ set: mockSet }));
 const mockDeleteWhere = vi.fn(() => Promise.resolve());
 const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
 
-const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
+const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<unknown>) => {
   // Build a mock tx that mirrors the db shape
   const txSelect = vi.fn(() => ({
     from: vi.fn(() => ({
@@ -295,6 +295,66 @@ describe("updateGroupName", () => {
   });
 });
 
+/**
+ * Builds a mock tx for approveMember tests. All count checks, status updates,
+ * user lookups, and departed member handling now happen in a single transaction.
+ */
+function buildApproveTxMock(opts: {
+  activeCount: number;
+  approvedUser?: {
+    userId: string;
+    firstName: string;
+    lastName: string;
+  } | null;
+  groupData?: { departedMembers: unknown[] };
+}) {
+  const setCalls: Record<string, unknown>[] = [];
+  const selectQueue: unknown[][] = [
+    [{ id: "group-1" }], // FOR UPDATE lock on group
+    [{ count: opts.activeCount }], // active member count
+  ];
+  if (opts.activeCount < 12) {
+    // user lookup (only if not full)
+    selectQueue.push(opts.approvedUser ? [opts.approvedUser] : []);
+    // group data for departed member check (only if user found)
+    if (opts.approvedUser) {
+      selectQueue.push([opts.groupData ?? { departedMembers: [] }]);
+    }
+  }
+
+  const makeQueryChain = () => {
+    const result = selectQueue.shift() ?? [];
+    return {
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          for: vi.fn(() => result),
+          limit: vi.fn(() => result),
+          then(r: (v: unknown) => void) {
+            r(result);
+          },
+        })),
+        innerJoin: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => result),
+          })),
+        })),
+      })),
+    };
+  };
+
+  const txMock = {
+    select: vi.fn(makeQueryChain),
+    update: vi.fn(() => ({
+      set: vi.fn((vals: Record<string, unknown>) => {
+        setCalls.push(vals);
+        return { where: vi.fn(() => Promise.resolve()) };
+      }),
+    })),
+  };
+
+  return { txMock, setCalls };
+}
+
 describe("approveMember", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -333,18 +393,22 @@ describe("approveMember", () => {
     mockOwner();
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
-    ]); // target
-    directWhereResults.push([{ count: 5 }]); // not full
-    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]); // user name
-    mockLimit.mockResolvedValueOnce([
-      { departedMembers: [], affectedBuddyMembers: {} },
-    ]); // group data
+    ]);
+
+    const { txMock, setCalls } = buildApproveTxMock({
+      activeCount: 5,
+      approvedUser: { userId: "u-2", firstName: "Jane", lastName: "Doe" },
+      groupData: { departedMembers: [] },
+    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
-    expect(mockSet).toHaveBeenCalledWith(
+    expect(setCalls[0]).toEqual(
       expect.objectContaining({ status: "joined", joinedAt: expect.any(Date) })
     );
   });
@@ -354,17 +418,21 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 5 }]);
-    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
-    mockLimit.mockResolvedValueOnce([
-      { departedMembers: [], affectedBuddyMembers: {} },
-    ]);
+
+    const { txMock, setCalls } = buildApproveTxMock({
+      activeCount: 5,
+      approvedUser: { userId: "u-2", firstName: "Jane", lastName: "Doe" },
+      groupData: { departedMembers: [] },
+    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const before = new Date();
     await approveMember("group-1", "member-2");
     const after = new Date();
 
-    const calledWith = mockSet.mock.calls[0][0] as { joinedAt: Date };
+    const calledWith = setCalls[0] as { joinedAt: Date };
     expect(calledWith.joinedAt.getTime()).toBeGreaterThanOrEqual(
       before.getTime()
     );
@@ -376,7 +444,11 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 12 }]); // full
+
+    const { txMock } = buildApproveTxMock({ activeCount: 12 });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const result = await approveMember("group-1", "member-2");
 
@@ -389,7 +461,11 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 13 }]); // over capacity
+
+    const { txMock } = buildApproveTxMock({ activeCount: 13 });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const result = await approveMember("group-1", "member-2");
 
@@ -401,11 +477,15 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 11 }]); // one slot left
-    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
-    mockLimit.mockResolvedValueOnce([
-      { departedMembers: [], affectedBuddyMembers: {} },
-    ]);
+
+    const { txMock } = buildApproveTxMock({
+      activeCount: 11,
+      approvedUser: { userId: "u-2", firstName: "Jane", lastName: "Doe" },
+      groupData: { departedMembers: [] },
+    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const result = await approveMember("group-1", "member-2");
 
@@ -418,62 +498,33 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 5 }]);
-    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
 
-    // Group data is now fetched inside a transaction with .for("update")
-    const txSetCalls: Record<string, unknown>[] = [];
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([
-                    {
-                      departedMembers: [
-                        {
-                          name: "Jane Doe",
-                          departedAt: "2028-01-10T12:00:00Z",
-                        },
-                        {
-                          name: "Bob Smith",
-                          departedAt: "2028-01-11T12:00:00Z",
-                        },
-                      ],
-                    },
-                  ]);
-                },
-              })),
-              then(r: (v: unknown) => void) {
-                r([
-                  {
-                    departedMembers: [
-                      { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
-                      { name: "Bob Smith", departedAt: "2028-01-11T12:00:00Z" },
-                    ],
-                  },
-                ]);
-              },
-            })),
-          })),
-        })),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            txSetCalls.push(vals);
-            return { where: vi.fn(() => Promise.resolve()) };
-          }),
-        })),
-      };
-      return cb(tx);
+    const { txMock, setCalls } = buildApproveTxMock({
+      activeCount: 5,
+      approvedUser: { userId: "u-2", firstName: "Jane", lastName: "Doe" },
+      groupData: {
+        departedMembers: [
+          {
+            userId: "u-2",
+            name: "Jane Doe",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
+          {
+            userId: "u-3",
+            name: "Bob Smith",
+            departedAt: "2028-01-11T12:00:00Z",
+          },
+        ],
+      },
     });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
-    // Should update group with rejoinedAt set on Jane Doe, Bob Smith unchanged
-    const groupUpdateCall = txSetCalls.find(
+    const groupUpdateCall = setCalls.find(
       (call) => call && typeof call === "object" && "departedMembers" in call
     );
     expect(groupUpdateCall).toBeDefined();
@@ -498,57 +549,28 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 5 }]);
-    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
 
-    // Group data is now fetched inside a transaction with .for("update")
-    const txSetCalls: Record<string, unknown>[] = [];
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([
-                    {
-                      departedMembers: [
-                        {
-                          name: "Jane Doe",
-                          departedAt: "2028-01-10T12:00:00Z",
-                        },
-                      ],
-                    },
-                  ]);
-                },
-              })),
-              then(r: (v: unknown) => void) {
-                r([
-                  {
-                    departedMembers: [
-                      { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
-                    ],
-                  },
-                ]);
-              },
-            })),
-          })),
-        })),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            txSetCalls.push(vals);
-            return { where: vi.fn(() => Promise.resolve()) };
-          }),
-        })),
-      };
-      return cb(tx);
+    const { txMock, setCalls } = buildApproveTxMock({
+      activeCount: 5,
+      approvedUser: { userId: "u-2", firstName: "Jane", lastName: "Doe" },
+      groupData: {
+        departedMembers: [
+          {
+            userId: "u-2",
+            name: "Jane Doe",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
+        ],
+      },
     });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
-    // Should only update departedMembers (with rejoinedAt), NOT affectedBuddyMembers
-    const groupUpdateCall = txSetCalls.find(
+    const groupUpdateCall = setCalls.find(
       (call) => call && typeof call === "object" && "departedMembers" in call
     );
     expect(groupUpdateCall).toBeDefined();
@@ -560,58 +582,27 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 5 }]);
-    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
-
-    // Group data is now fetched inside a transaction with .for("update")
-    const txSetCalls: Record<string, unknown>[] = [];
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([
-                    {
-                      departedMembers: [
-                        {
-                          name: "Jane Doe",
-                          departedAt: "2028-01-10T12:00:00Z",
-                        },
-                      ],
-                    },
-                  ]);
-                },
-              })),
-              then(r: (v: unknown) => void) {
-                r([
-                  {
-                    departedMembers: [
-                      { name: "Jane Doe", departedAt: "2028-01-10T12:00:00Z" },
-                    ],
-                  },
-                ]);
-              },
-            })),
-          })),
-        })),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            txSetCalls.push(vals);
-            return { where: vi.fn(() => Promise.resolve()) };
-          }),
-        })),
-      };
-      return cb(tx);
+    const { txMock, setCalls } = buildApproveTxMock({
+      activeCount: 5,
+      approvedUser: { userId: "u-2", firstName: "Jane", lastName: "Doe" },
+      groupData: {
+        departedMembers: [
+          {
+            userId: "u-2",
+            name: "Jane Doe",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
+        ],
+      },
     });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     const result = await approveMember("group-1", "member-2");
 
     expect(result.success).toBe(true);
-    // The group update should only contain departedMembers
-    // affectedBuddyMembers entries for member-3 and member-4 are preserved
-    const groupUpdate = txSetCalls.find(
+    const groupUpdate = setCalls.find(
       (call) => call && typeof call === "object" && "departedMembers" in call
     );
     expect(groupUpdate).toBeDefined();
@@ -623,32 +614,37 @@ describe("approveMember", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 5 }]);
-    mockLimit.mockResolvedValueOnce([{ firstName: "Jane", lastName: "Doe" }]);
-    mockLimit.mockResolvedValueOnce([
-      {
+
+    const { txMock, setCalls } = buildApproveTxMock({
+      activeCount: 5,
+      approvedUser: { userId: "u-2", firstName: "Jane", lastName: "Doe" },
+      groupData: {
         departedMembers: [
-          { name: "Bob Smith", departedAt: "2028-01-10T12:00:00Z" },
+          {
+            userId: "u-99",
+            name: "Bob Smith",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
         ],
       },
-    ]);
+    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => cb(txMock)
+    );
 
     await approveMember("group-1", "member-2");
 
-    // Only the member status update, no group update
-    expect(mockSet).toHaveBeenCalledTimes(1);
-    expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "joined" })
-    );
+    // Only the member status update, no group update (u-2 not in departed list)
+    expect(setCalls).toHaveLength(1);
+    expect(setCalls[0]).toEqual(expect.objectContaining({ status: "joined" }));
   });
 
-  it("returns error when db update fails", async () => {
+  it("returns error when transaction fails", async () => {
     mockOwner();
     mockLimit.mockResolvedValueOnce([
       { id: "member-2", status: "pending_approval" },
     ]);
-    directWhereResults.push([{ count: 5 }]);
-    mockUpdateWhere.mockRejectedValue(new Error("DB error"));
+    mockTransaction.mockRejectedValue(new Error("DB error"));
 
     const result = await approveMember("group-1", "member-2");
 
@@ -800,16 +796,18 @@ function makeTxSelectFromQueue(queue: unknown[][]) {
 
 // Reusable default transaction mock for removeMemberTransaction tests.
 function defaultRemoveMemberTxMock() {
-  mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-    const tx = {
-      select: vi.fn(() => ({ from: makeTxSelectFrom() })),
-      delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-      update: vi.fn(() => ({
-        set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-      })),
-    };
-    return cb(tx);
-  });
+  mockTransaction.mockImplementation(
+    (cb: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        select: vi.fn(() => ({ from: makeTxSelectFrom() })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        update: vi.fn(() => ({
+          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        })),
+      };
+      return cb(tx);
+    }
+  );
 }
 
 describe("leaveGroup", () => {
@@ -889,16 +887,18 @@ describe("leaveGroup", () => {
       return { where: txDeleteWhere };
     });
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({ from: makeTxSelectFrom() })),
-        delete: txDelete,
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-      };
-      return cb(tx);
-    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({ from: makeTxSelectFrom() })),
+          delete: txDelete,
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await leaveGroup("group-1");
 
@@ -919,16 +919,18 @@ describe("leaveGroup", () => {
     });
     const txUpdate = vi.fn(() => ({ set: txSet }));
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({
-          from: makeTxSelectFrom([{ memberId: "member-3" }]),
-        })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        update: txUpdate,
-      };
-      return cb(tx);
-    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({
+            from: makeTxSelectFrom([{ memberId: "member-3" }]),
+          })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: txUpdate,
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await leaveGroup("group-1");
 
@@ -973,45 +975,47 @@ describe("leaveGroup", () => {
       ],
     ];
     let qIdx = 0;
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeWhere = () => {
-        const res = () => queryQueue[qIdx++] ?? [];
-        return {
-          limit: vi.fn(() => ({
-            then(r: (v: unknown) => void) {
-              r(res());
-            },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeWhere = () => {
+          const res = () => queryQueue[qIdx++] ?? [];
+          return {
+            limit: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r(res());
+                },
+              })),
+            })),
             for: vi.fn(() => ({
               then(r: (v: unknown) => void) {
                 r(res());
               },
             })),
-          })),
-          for: vi.fn(() => ({
             then(r: (v: unknown) => void) {
               r(res());
             },
-          })),
-          then(r: (v: unknown) => void) {
-            r(res());
-          },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(makeWhere),
-            innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(makeWhere),
+              innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
+            })),
           })),
-        })),
-        delete: vi.fn(() => {
-          deleteCount++;
-          return { where: txDeleteWhere };
-        }),
-        update: vi.fn(() => ({ set: txSet })),
-      };
-      return cb(tx);
-    });
+          delete: vi.fn(() => {
+            deleteCount++;
+            return { where: txDeleteWhere };
+          }),
+          update: vi.fn(() => ({ set: txSet })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await leaveGroup("group-1");
 
@@ -1037,22 +1041,24 @@ describe("leaveGroup", () => {
     const setCalls: Record<string, unknown>[] = [];
     let deleteCount = 0;
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({ from: makeTxSelectFrom() })),
-        delete: vi.fn(() => {
-          deleteCount++;
-          return { where: vi.fn(() => Promise.resolve()) };
-        }),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            setCalls.push(vals);
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({ from: makeTxSelectFrom() })),
+          delete: vi.fn(() => {
+            deleteCount++;
             return { where: vi.fn(() => Promise.resolve()) };
           }),
-        })),
-      };
-      return cb(tx);
-    });
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: vi.fn(() => Promise.resolve()) };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await leaveGroup("group-1");
 
@@ -1089,47 +1095,49 @@ describe("leaveGroup", () => {
       ],
     ];
     let qIdx = 0;
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeWhere = () => {
-        const res = () => queryQueue[qIdx++] ?? [];
-        return {
-          limit: vi.fn(() => ({
-            then(r: (v: unknown) => void) {
-              r(res());
-            },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeWhere = () => {
+          const res = () => queryQueue[qIdx++] ?? [];
+          return {
+            limit: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r(res());
+                },
+              })),
+            })),
             for: vi.fn(() => ({
               then(r: (v: unknown) => void) {
                 r(res());
               },
             })),
-          })),
-          for: vi.fn(() => ({
             then(r: (v: unknown) => void) {
               r(res());
             },
-          })),
-          then(r: (v: unknown) => void) {
-            r(res());
-          },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(makeWhere),
-            innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(makeWhere),
+              innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
+            })),
           })),
-        })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            setCalls.push(vals);
-            return { where: vi.fn(() => Promise.resolve()) };
-          }),
-        })),
-      };
-      return cb(tx);
-    });
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: vi.fn(() => Promise.resolve()) };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await leaveGroup("group-1");
 
@@ -1329,50 +1337,52 @@ describe("removeMember", () => {
       ],
     ];
     let qIdx = 0;
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeWhere = () => {
-        const res = () => queryQueue[qIdx++] ?? [];
-        return {
-          limit: vi.fn(() => ({
-            then(r: (v: unknown) => void) {
-              r(res());
-            },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeWhere = () => {
+          const res = () => queryQueue[qIdx++] ?? [];
+          return {
+            limit: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r(res());
+                },
+              })),
+            })),
             for: vi.fn(() => ({
               then(r: (v: unknown) => void) {
                 r(res());
               },
             })),
-          })),
-          for: vi.fn(() => ({
             then(r: (v: unknown) => void) {
               r(res());
             },
-          })),
-          then(r: (v: unknown) => void) {
-            r(res());
-          },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(makeWhere),
-            innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(makeWhere),
+              innerJoin: vi.fn(() => ({ where: vi.fn(makeWhere) })),
+            })),
           })),
-        })),
-        delete: vi.fn(() => {
-          deleteCount++;
-          return { where: vi.fn(() => Promise.resolve()) };
-        }),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            setCalls.push(vals);
+          delete: vi.fn(() => {
+            deleteCount++;
             return { where: vi.fn(() => Promise.resolve()) };
           }),
-        })),
-      };
-      return cb(tx);
-    });
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: vi.fn(() => Promise.resolve()) };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await removeMember("group-1", "member-2");
 
@@ -1405,21 +1415,23 @@ describe("removeMember", () => {
 
     const setCalls: Record<string, unknown>[] = [];
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({
-          from: makeTxSelectFrom([{ memberId: "member-3" }]),
-        })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            setCalls.push(vals);
-            return { where: vi.fn(() => Promise.resolve()) };
-          }),
-        })),
-      };
-      return cb(tx);
-    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({
+            from: makeTxSelectFrom([{ memberId: "member-3" }]),
+          })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: vi.fn(() => Promise.resolve()) };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await removeMember("group-1", "member-2");
 
@@ -1459,15 +1471,17 @@ describe("transferOwnership", () => {
     directWhereResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
     // Reset transaction to default (succeeds)
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txUpdateWhere = vi.fn(() => Promise.resolve());
-      const tx = {
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: txUpdateWhere })),
-        })),
-      };
-      return cb(tx);
-    });
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txUpdateWhere = vi.fn(() => Promise.resolve());
+        const tx = {
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: txUpdateWhere })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
   });
 
   it("returns error when caller is not the owner", async () => {
@@ -1598,33 +1612,9 @@ describe("deleteGroup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLimit.mockReset();
-    mockUpdateWhere.mockReset();
-    mockTransaction.mockClear();
+    mockDeleteWhere.mockReset();
     directWhereResults = [];
-    mockUpdateWhere.mockResolvedValue(undefined);
-    // Reset transaction to default (succeeds)
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txSelect = vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            for: vi.fn(() => ({
-              then(r: (v: unknown) => void) {
-                r([]);
-              },
-            })),
-            then(r: (v: unknown) => void) {
-              r([]);
-            },
-          })),
-        })),
-      }));
-      const txDeleteWhere = vi.fn(() => Promise.resolve());
-      const tx = {
-        select: txSelect,
-        delete: vi.fn(() => ({ where: txDeleteWhere })),
-      };
-      return cb(tx);
-    });
+    mockDeleteWhere.mockResolvedValue(undefined);
   });
 
   it("returns error when not logged in", async () => {
@@ -1643,58 +1633,21 @@ describe("deleteGroup", () => {
     expect(result.error).toBe("Only the group owner can delete the group.");
   });
 
-  it("succeeds and runs transaction for owner", async () => {
+  it("succeeds for owner using cascade delete", async () => {
     mockOwner();
+    mockDeleteWhere.mockResolvedValue(undefined);
 
     const result = await deleteGroup("group-1");
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    // Uses a single DELETE on the group row — cascades handle related data
+    expect(mockDelete).toHaveBeenCalledTimes(1);
   });
 
-  it("deletes all related data in dependency order", async () => {
+  it("returns error when delete fails", async () => {
     mockOwner();
-
-    let deleteCount = 0;
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([]);
-                },
-              })),
-              then(r: (v: unknown) => void) {
-                r([]);
-              },
-            })),
-          })),
-        })),
-        delete: vi.fn(() => {
-          deleteCount++;
-          return { where: vi.fn(() => Promise.resolve()) };
-        }),
-      };
-      return cb(tx);
-    });
-
-    const result = await deleteGroup("group-1");
-
-    expect(result.success).toBe(true);
-    // Should delete: combo_session, combo, window_ranking,
-    // session_preference, buddy_constraint,
-    // ticket_purchase_assignee, ticket_purchase, purchase_plan_entry,
-    // purchase_timeslot, sold_out_session, out_of_budget_session,
-    // reported_price, member, group
-    expect(deleteCount).toBe(14);
-  });
-
-  it("returns error when transaction fails", async () => {
-    mockOwner();
-    mockTransaction.mockRejectedValue(new Error("TX error"));
+    mockDeleteWhere.mockRejectedValue(new Error("DB error"));
 
     const result = await deleteGroup("group-1");
 
@@ -1710,32 +1663,36 @@ describe("updateDateConfig", () => {
     directWhereResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
     // Restore default mockTransaction implementation for updateDateConfig
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txSelect = vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            limit: vi.fn(() => []),
-            for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txSelect = vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => []),
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r([]);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r([]);
               },
             })),
-            then(r: (v: unknown) => void) {
-              r([]);
-            },
           })),
-        })),
-      }));
-      const txDeleteWhere = vi.fn(() => Promise.resolve());
-      const txUpdateWhere = vi.fn(() => Promise.resolve());
-      const tx = {
-        select: txSelect,
-        delete: vi.fn(() => ({ where: txDeleteWhere })),
-        update: vi.fn(() => ({ set: vi.fn(() => ({ where: txUpdateWhere })) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-      };
-      return cb(tx);
-    });
+        }));
+        const txDeleteWhere = vi.fn(() => Promise.resolve());
+        const txUpdateWhere = vi.fn(() => Promise.resolve());
+        const tx = {
+          select: txSelect,
+          delete: vi.fn(() => ({ where: txDeleteWhere })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: txUpdateWhere })),
+          })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+        };
+        return cb(tx);
+      }
+    );
   });
 
   it("returns error when not logged in", async () => {
@@ -1986,45 +1943,47 @@ describe("updateDateConfig", () => {
       { startDate: "2028-07-12", endDate: "2028-07-16", score: 150 },
     ]);
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeThenableWhere = () => {
-        const res = () => txQueryQueue[qIdx++] ?? [];
-        return {
-          limit: vi.fn(() => {
-            return res();
-          }),
-          for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeThenableWhere = () => {
+          const res = () => txQueryQueue[qIdx++] ?? [];
+          return {
+            limit: vi.fn(() => {
+              return res();
+            }),
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
             then(r: (v: unknown) => void) {
               r(res());
             },
-          })),
-          then(r: (v: unknown) => void) {
-            r(res());
-          },
+          };
         };
-      };
-      const tx = {
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(makeThenableWhere),
+        const tx = {
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
           })),
-        })),
-        delete: vi.fn(() => {
-          deleteCalled = true;
-          return { where: vi.fn(() => Promise.resolve()) };
-        }),
-        insert: vi.fn(() => ({
-          values: vi.fn(() => {
-            insertValuesCalled = true;
-            return Promise.resolve();
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(makeThenableWhere),
+            })),
+          })),
+          delete: vi.fn(() => {
+            deleteCalled = true;
+            return { where: vi.fn(() => Promise.resolve()) };
           }),
-        })),
-      };
-      return cb(tx);
-    });
+          insert: vi.fn(() => ({
+            values: vi.fn(() => {
+              insertValuesCalled = true;
+              return Promise.resolve();
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
     const result = await updateDateConfig("group-1", fd);
@@ -2053,41 +2012,43 @@ describe("updateDateConfig", () => {
     ];
     let qIdx = 0;
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeThenableWhere = () => {
-        const res = () => txQueryQueue[qIdx++] ?? [];
-        return {
-          limit: vi.fn(() => {
-            return res();
-          }),
-          for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeThenableWhere = () => {
+          const res = () => txQueryQueue[qIdx++] ?? [];
+          return {
+            limit: vi.fn(() => {
+              return res();
+            }),
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
             then(r: (v: unknown) => void) {
               r(res());
             },
-          })),
-          then(r: (v: unknown) => void) {
-            r(res());
-          },
+          };
         };
-      };
-      const tx = {
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(makeThenableWhere),
+        const tx = {
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
           })),
-        })),
-        delete: vi.fn(() => ({
-          where: vi.fn(() => Promise.resolve()),
-        })),
-        insert: vi.fn(() => ({
-          values: vi.fn(() => Promise.resolve()),
-        })),
-      };
-      return cb(tx);
-    });
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(makeThenableWhere),
+            })),
+          })),
+          delete: vi.fn(() => ({
+            where: vi.fn(() => Promise.resolve()),
+          })),
+          insert: vi.fn(() => ({
+            values: vi.fn(() => Promise.resolve()),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const fd = makeFormData({ dateMode: "consecutive", consecutiveDays: "5" });
     const result = await updateDateConfig("group-1", fd);
@@ -2160,22 +2121,24 @@ describe("removeMember — departure tracking", () => {
       })),
     }));
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const tx = {
-        select: vi.fn(() => ({ from: txFrom })),
-        delete: vi.fn(() => {
-          deleteCount++;
-          return { where: txDeleteWhere };
-        }),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            setCalls.push(vals);
-            return { where: txUpdateWhere };
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({ from: txFrom })),
+          delete: vi.fn(() => {
+            deleteCount++;
+            return { where: txDeleteWhere };
           }),
-        })),
-      };
-      return cb(tx);
-    });
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: txUpdateWhere };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     return { setCalls, getDeleteCount: () => deleteCount };
   }
@@ -3038,46 +3001,48 @@ describe("leaveGroup — departure tracking", () => {
       ],
     ];
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const makeThenableWhere = () => {
-        const res = () => txQueryResults[queryIndex++] ?? [];
-        return {
-          limit: vi.fn(() => ({
-            then(r: (v: unknown) => void) {
-              r(res());
-            },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeThenableWhere = () => {
+          const res = () => txQueryResults[queryIndex++] ?? [];
+          return {
+            limit: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r(res());
+                },
+              })),
+            })),
             for: vi.fn(() => ({
               then(r: (v: unknown) => void) {
                 r(res());
               },
             })),
-          })),
-          for: vi.fn(() => ({
             then(r: (v: unknown) => void) {
               r(res());
             },
-          })),
-          then(r: (v: unknown) => void) {
-            r(res());
-          },
+          };
         };
-      };
-      const txFrom = vi.fn(() => ({
-        where: vi.fn(makeThenableWhere),
-        innerJoin: vi.fn(() => ({ where: vi.fn(makeThenableWhere) })),
-      }));
-      const tx = {
-        select: vi.fn(() => ({ from: txFrom })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            setCalls.push(vals);
-            return { where: vi.fn(() => Promise.resolve()) };
-          }),
-        })),
-      };
-      return cb(tx);
-    });
+        const txFrom = vi.fn(() => ({
+          where: vi.fn(makeThenableWhere),
+          innerJoin: vi.fn(() => ({ where: vi.fn(makeThenableWhere) })),
+        }));
+        const tx = {
+          select: vi.fn(() => ({ from: txFrom })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: vi.fn(() => Promise.resolve()) };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await leaveGroup("group-1");
 
@@ -3270,58 +3235,60 @@ describe("generateSchedules", () => {
     ]);
 
     // Transaction mock for the write phase
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txQueryQueue: unknown[][] = [
-        // lock query: group phase re-check
-        [{ phase: "preferences" }],
-        // dateConfig query inside tx
-        [
-          {
-            dateMode: "consecutive",
-            consecutiveDays: 5,
-            startDate: null,
-            endDate: null,
-          },
-        ],
-      ];
-      let qIdx = 0;
-      const makeLimitResult = () => {
-        const val = txQueryQueue[qIdx++] ?? [];
-        return {
-          for: vi.fn(() => val),
-          then(r: (v: unknown) => void) {
-            r(val);
-          },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txQueryQueue: unknown[][] = [
+          // lock query: group phase re-check
+          [{ phase: "preferences" }],
+          // dateConfig query inside tx
+          [
+            {
+              dateMode: "consecutive",
+              consecutiveDays: 5,
+              startDate: null,
+              endDate: null,
+            },
+          ],
+        ];
+        let qIdx = 0;
+        const makeLimitResult = () => {
+          const val = txQueryQueue[qIdx++] ?? [];
+          return {
+            for: vi.fn(() => val),
+            then(r: (v: unknown) => void) {
+              r(val);
+            },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(makeLimitResult),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(makeLimitResult),
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },
             })),
-            then(r: (v: unknown) => void) {
-              r(txQueryQueue[qIdx++] ?? []);
-            },
           })),
-        })),
-        delete: vi.fn(() => ({
-          where: vi.fn(() => Promise.resolve()),
-        })),
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({
-            returning: vi.fn(() => [{ id: "combo-1" }]),
+          delete: vi.fn(() => ({
+            where: vi.fn(() => Promise.resolve()),
           })),
-        })),
-      };
-      return cb(tx);
-    });
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+          insert: vi.fn(() => ({
+            values: vi.fn(() => ({
+              returning: vi.fn(() => [{ id: "combo-1" }]),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await generateSchedules("group-1");
 
@@ -3385,49 +3352,51 @@ describe("generateSchedules", () => {
 
     // Transaction — newPhase will be "preferences" since membersWithNoCombos is non-empty
     // So window rankings computation is skipped
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txQueryQueue: unknown[][] = [
-        // lock query: group phase re-check
-        [{ phase: "preferences" }],
-      ];
-      let qIdx = 0;
-      const makeLimitResult = () => {
-        const val = txQueryQueue[qIdx++] ?? [];
-        return {
-          for: vi.fn(() => val),
-          then(r: (v: unknown) => void) {
-            r(val);
-          },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txQueryQueue: unknown[][] = [
+          // lock query: group phase re-check
+          [{ phase: "preferences" }],
+        ];
+        let qIdx = 0;
+        const makeLimitResult = () => {
+          const val = txQueryQueue[qIdx++] ?? [];
+          return {
+            for: vi.fn(() => val),
+            then(r: (v: unknown) => void) {
+              r(val);
+            },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(makeLimitResult),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(makeLimitResult),
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },
             })),
-            then(r: (v: unknown) => void) {
-              r(txQueryQueue[qIdx++] ?? []);
-            },
           })),
-        })),
-        delete: vi.fn(() => ({
-          where: vi.fn(() => Promise.resolve()),
-        })),
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({
-            returning: vi.fn(() => [{ id: "combo-1" }]),
+          delete: vi.fn(() => ({
+            where: vi.fn(() => Promise.resolve()),
           })),
-        })),
-      };
-      return cb(tx);
-    });
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+          insert: vi.fn(() => ({
+            values: vi.fn(() => ({
+              returning: vi.fn(() => [{ id: "combo-1" }]),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await generateSchedules("group-1");
 
@@ -3597,56 +3566,58 @@ describe("generateSchedules", () => {
     mockComputeWindowRankings.mockReturnValue([]);
 
     // Transaction mock
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txQueryQueue: unknown[][] = [
-        // lock query: group phase re-check
-        [{ phase: "schedule_review" }],
-        // dateConfig query inside tx
-        [
-          {
-            dateMode: "consecutive",
-            consecutiveDays: 3,
-            startDate: null,
-            endDate: null,
-          },
-        ],
-      ];
-      let qIdx = 0;
-      const makeLimitResult = () => {
-        const val = txQueryQueue[qIdx++] ?? [];
-        return {
-          for: vi.fn(() => val),
-          then(r: (v: unknown) => void) {
-            r(val);
-          },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txQueryQueue: unknown[][] = [
+          // lock query: group phase re-check
+          [{ phase: "schedule_review" }],
+          // dateConfig query inside tx
+          [
+            {
+              dateMode: "consecutive",
+              consecutiveDays: 3,
+              startDate: null,
+              endDate: null,
+            },
+          ],
+        ];
+        let qIdx = 0;
+        const makeLimitResult = () => {
+          const val = txQueryQueue[qIdx++] ?? [];
+          return {
+            for: vi.fn(() => val),
+            then(r: (v: unknown) => void) {
+              r(val);
+            },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(makeLimitResult),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(makeLimitResult),
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },
             })),
-            then(r: (v: unknown) => void) {
-              r(txQueryQueue[qIdx++] ?? []);
-            },
           })),
-        })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({
-            returning: vi.fn(() => [{ id: "combo-1" }]),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
           })),
-        })),
-      };
-      return cb(tx);
-    });
+          insert: vi.fn(() => ({
+            values: vi.fn(() => ({
+              returning: vi.fn(() => [{ id: "combo-1" }]),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await generateSchedules("group-1");
 
@@ -3726,59 +3697,61 @@ describe("generateSchedules", () => {
 
     // Track group update values
     const setCalls: Record<string, unknown>[] = [];
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txQueryQueue: unknown[][] = [
-        // lock query: group phase re-check
-        [{ phase: "schedule_review" }],
-        // dateConfig query inside tx
-        [
-          {
-            dateMode: "consecutive",
-            consecutiveDays: 3,
-            startDate: null,
-            endDate: null,
-          },
-        ],
-      ];
-      let qIdx = 0;
-      const makeLimitResult = () => {
-        const val = txQueryQueue[qIdx++] ?? [];
-        return {
-          for: vi.fn(() => val),
-          then(r: (v: unknown) => void) {
-            r(val);
-          },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txQueryQueue: unknown[][] = [
+          // lock query: group phase re-check
+          [{ phase: "schedule_review" }],
+          // dateConfig query inside tx
+          [
+            {
+              dateMode: "consecutive",
+              consecutiveDays: 3,
+              startDate: null,
+              endDate: null,
+            },
+          ],
+        ];
+        let qIdx = 0;
+        const makeLimitResult = () => {
+          const val = txQueryQueue[qIdx++] ?? [];
+          return {
+            for: vi.fn(() => val),
+            then(r: (v: unknown) => void) {
+              r(val);
+            },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(makeLimitResult),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(makeLimitResult),
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },
             })),
-            then(r: (v: unknown) => void) {
-              r(txQueryQueue[qIdx++] ?? []);
-            },
           })),
-        })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        update: vi.fn(() => ({
-          set: vi.fn((vals: Record<string, unknown>) => {
-            setCalls.push(vals);
-            return { where: vi.fn(() => Promise.resolve()) };
-          }),
-        })),
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({
-            returning: vi.fn(() => [{ id: "combo-1" }]),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: vi.fn(() => Promise.resolve()) };
+            }),
           })),
-        })),
-      };
-      return cb(tx);
-    });
+          insert: vi.fn(() => ({
+            values: vi.fn(() => ({
+              returning: vi.fn(() => [{ id: "combo-1" }]),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await generateSchedules("group-1");
 
@@ -3867,56 +3840,58 @@ describe("generateSchedules", () => {
     ]);
 
     // Transaction mock
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txQueryQueue: unknown[][] = [
-        // lock query: group phase re-check
-        [{ phase: "schedule_review" }],
-        // dateConfig query inside tx
-        [
-          {
-            dateMode: "consecutive",
-            consecutiveDays: 3,
-            startDate: null,
-            endDate: null,
-          },
-        ],
-      ];
-      let qIdx = 0;
-      const makeLimitResult = () => {
-        const val = txQueryQueue[qIdx++] ?? [];
-        return {
-          for: vi.fn(() => val),
-          then(r: (v: unknown) => void) {
-            r(val);
-          },
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txQueryQueue: unknown[][] = [
+          // lock query: group phase re-check
+          [{ phase: "schedule_review" }],
+          // dateConfig query inside tx
+          [
+            {
+              dateMode: "consecutive",
+              consecutiveDays: 3,
+              startDate: null,
+              endDate: null,
+            },
+          ],
+        ];
+        let qIdx = 0;
+        const makeLimitResult = () => {
+          const val = txQueryQueue[qIdx++] ?? [];
+          return {
+            for: vi.fn(() => val),
+            then(r: (v: unknown) => void) {
+              r(val);
+            },
+          };
         };
-      };
-      const tx = {
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(makeLimitResult),
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(makeLimitResult),
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
               then(r: (v: unknown) => void) {
                 r(txQueryQueue[qIdx++] ?? []);
               },
             })),
-            then(r: (v: unknown) => void) {
-              r(txQueryQueue[qIdx++] ?? []);
-            },
           })),
-        })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({
-            returning: vi.fn(() => [{ id: "combo-1" }]),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
           })),
-        })),
-      };
-      return cb(tx);
-    });
+          insert: vi.fn(() => ({
+            values: vi.fn(() => ({
+              returning: vi.fn(() => [{ id: "combo-1" }]),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await generateSchedules("group-1");
 

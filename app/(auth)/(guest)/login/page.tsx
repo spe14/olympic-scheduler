@@ -1,6 +1,6 @@
 "use client";
 
-import { login } from "../actions";
+import { login } from "@/app/(auth)/actions";
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import PasswordInput from "@/components/password-input";
@@ -11,7 +11,7 @@ import { inputClass } from "@/lib/constants";
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, null);
   const [email, setEmail] = useState(state?.values?.email ?? "");
-  const [password, setPassword] = useState(state?.values?.password ?? "");
+  const [password, setPassword] = useState("");
 
   const isValid = loginSchema.safeParse({ email, password }).success;
 

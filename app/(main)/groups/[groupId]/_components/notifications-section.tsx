@@ -313,7 +313,7 @@ export default function NotificationsSection() {
                 n.variant === "error"
                   ? "border-red-200 bg-red-50 text-red-600"
                   : n.variant === "warning"
-                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    ? "border-amber-200 bg-amber-50 text-amber-600"
                     : "border-[#009de5]/20 bg-[#009de5]/5 text-[#009de5]"
               }`}
             >

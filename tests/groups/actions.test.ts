@@ -22,6 +22,7 @@ const mockLimit = vi.fn();
 let directWhereResults: unknown[][] = [];
 const mockWhere = vi.fn(() => ({
   limit: mockLimit,
+  for: vi.fn(() => directWhereResults.shift() ?? []),
   then(resolve: (v: unknown) => void) {
     resolve(directWhereResults.shift() ?? []);
   },
@@ -86,6 +87,8 @@ describe("createGroup", () => {
     vi.clearAllMocks();
     directWhereResults = [];
     mockGetCurrentUser.mockResolvedValue(mockUser);
+    // Default: user group count under limit
+    directWhereResults.push([{ count: 0 }]);
     // Default: successful group creation
     mockReturning.mockResolvedValue([{ id: "group-1" }]);
     // Second insert (member) returns a chainable mock
@@ -309,6 +312,21 @@ describe("createGroup", () => {
 
     expect(result.success).toBe(true);
   });
+
+  it("returns error for whitespace-only group name", async () => {
+    const fd = makeFormData({ name: "   " });
+    const result = await createGroup(null, fd);
+
+    expect(result.error).toContain("required");
+  });
+
+  it("returns error when user has too many groups", async () => {
+    directWhereResults = [[{ count: 10 }]];
+    const fd = makeFormData({ name: "My Group" });
+    const result = await createGroup(null, fd);
+
+    expect(result.error).toContain("at most 10 groups");
+  });
 });
 
 describe("joinGroup", () => {
@@ -316,9 +334,11 @@ describe("joinGroup", () => {
     vi.clearAllMocks();
     directWhereResults = [];
     mockGetCurrentUser.mockResolvedValue(mockUser);
-    // Default: group found, no existing membership, group not full
+    // Default: user group count under limit, group found, no existing membership, group not full
+    directWhereResults.push([{ count: 0 }]); // user group count — not at limit
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group lookup
     mockLimit.mockResolvedValueOnce([]); // existing member check
+    directWhereResults.push([{ id: "group-1" }]); // FOR UPDATE lock on group
     directWhereResults.push([{ count: 5 }]); // COUNT query — not full
     mockInsert.mockImplementation(() => ({
       values: vi.fn().mockResolvedValue(undefined),
@@ -353,6 +373,7 @@ describe("joinGroup", () => {
   it("returns error when already a member (joined status)", async () => {
     mockLimit.mockReset();
     directWhereResults = [];
+    directWhereResults.push([{ count: 0 }]); // user group count
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group found
     mockLimit.mockResolvedValueOnce([{ id: "member-1", status: "joined" }]); // already member
 
@@ -366,6 +387,7 @@ describe("joinGroup", () => {
   it("returns error when already pending approval", async () => {
     mockLimit.mockReset();
     directWhereResults = [];
+    directWhereResults.push([{ count: 0 }]); // user group count
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group found
     mockLimit.mockResolvedValueOnce([
       { id: "member-1", status: "pending_approval" },
@@ -404,8 +426,10 @@ describe("joinGroup", () => {
   it("returns error when group is full", async () => {
     mockLimit.mockReset();
     directWhereResults = [];
+    directWhereResults.push([{ count: 0 }]); // user group count
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group found
     mockLimit.mockResolvedValueOnce([]); // no existing member
+    directWhereResults.push([{ id: "group-1" }]); // FOR UPDATE lock
     directWhereResults.push([{ count: 12 }]); // COUNT = 12, full
 
     const fd = makeFormData({ inviteCode: "abc123" });
@@ -418,6 +442,7 @@ describe("joinGroup", () => {
   it("returns 'already a member' over 'full' when both apply", async () => {
     mockLimit.mockReset();
     directWhereResults = [];
+    directWhereResults.push([{ count: 0 }]); // user group count
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group found
     mockLimit.mockResolvedValueOnce([{ id: "member-1", status: "joined" }]); // already member
     // COUNT query never reached
@@ -432,8 +457,10 @@ describe("joinGroup", () => {
   it("re-joins after being denied when group is not full", async () => {
     mockLimit.mockReset();
     directWhereResults = [];
+    directWhereResults.push([{ count: 0 }]); // user group count
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group found
     mockLimit.mockResolvedValueOnce([{ id: "member-1", status: "denied" }]); // denied member
+    directWhereResults.push([{ id: "group-1" }]); // FOR UPDATE lock
     directWhereResults.push([{ count: 5 }]); // COUNT — not full
     mockUpdateWhere.mockResolvedValue(undefined);
 
@@ -451,8 +478,10 @@ describe("joinGroup", () => {
   it("returns full error when denied member tries to re-join full group", async () => {
     mockLimit.mockReset();
     directWhereResults = [];
+    directWhereResults.push([{ count: 0 }]); // user group count
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group found
     mockLimit.mockResolvedValueOnce([{ id: "member-1", status: "denied" }]); // denied member
+    directWhereResults.push([{ id: "group-1" }]); // FOR UPDATE lock
     directWhereResults.push([{ count: 12 }]); // COUNT = 12, full
 
     const fd = makeFormData({ inviteCode: "abc123" });
@@ -475,8 +504,10 @@ describe("joinGroup", () => {
   it("returns error when denied re-join update fails", async () => {
     mockLimit.mockReset();
     directWhereResults = [];
+    directWhereResults.push([{ count: 0 }]); // user group count
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group found
     mockLimit.mockResolvedValueOnce([{ id: "member-1", status: "denied" }]);
+    directWhereResults.push([{ id: "group-1" }]); // FOR UPDATE lock
     directWhereResults.push([{ count: 5 }]); // not full
     mockUpdateWhere.mockRejectedValue(new Error("DB error"));
 
@@ -493,11 +524,26 @@ describe("joinGroup", () => {
     expect(result.success).toBe(true);
   });
 
+  it("lowercases invite code for case-insensitive matching", async () => {
+    const fd = makeFormData({ inviteCode: "ABC123" });
+    const result = await joinGroup(null, fd);
+
+    expect(result.success).toBe(true);
+  });
+
   it("returns error for invite code over 50 characters", async () => {
     const fd = makeFormData({ inviteCode: "a".repeat(51) });
     const result = await joinGroup(null, fd);
 
     expect(result.error).toContain("less than 50");
+  });
+
+  it("returns error when user has too many groups", async () => {
+    directWhereResults = [[{ count: 10 }]];
+    const fd = makeFormData({ inviteCode: "abc123" });
+    const result = await joinGroup(null, fd);
+
+    expect(result.error).toContain("at most 10 groups");
   });
 });
 

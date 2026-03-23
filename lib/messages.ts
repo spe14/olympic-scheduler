@@ -6,6 +6,8 @@ export const MSG_NOT_MEMBER = "You are not an active member of this group.";
 export const MSG_GROUP_NOT_FOUND = "Group not found.";
 export const MSG_GROUP_FULL =
   "This group is full. Groups are limited to 12 members.";
+export const MSG_TOO_MANY_GROUPS =
+  "You can be in at most 10 groups. Leave or delete a group to create a new one.";
 export const MSG_MEMBER_NOT_FOUND = "Member not found.";
 export const MSG_MEMBER_NOT_PENDING = "Member is not pending approval.";
 export const MSG_USERNAME_TAKEN = "This username is already taken.";

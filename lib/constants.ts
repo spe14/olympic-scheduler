@@ -4,6 +4,7 @@ export const phaseLabels: Record<string, string> = {
 };
 
 export const MAX_GROUP_MEMBERS = 12;
+export const MAX_GROUPS_PER_USER = 10;
 
 // Session timeout constants (in seconds)
 export const MAX_SESSION_DURATION = 7 * 24 * 60 * 60; // 7 days
@@ -57,19 +58,30 @@ export const btnSecondaryClass =
 export const btnDangerClass =
   "rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50";
 
-// Shared sport color palette – max 10 sports allowed per group.
-// Each entry has a solid bg for calendar blocks, a border/accent, and a text color.
+// Shared sport color palette – 20 hand-picked colors.
+// Each entry has an accent (border), light bg, dark text, and title color.
+// Colors wrap around when more than 20 sports appear.
 export const SPORT_COLORS = [
-  { accent: "#009de5", bg: "#d0edfa", text: "#006a9e", title: "#0084c2" },
-  { accent: "#10b981", bg: "#d1fae5", text: "#047857", title: "#0a996c" },
-  { accent: "#f59e0b", bg: "#fef3c7", text: "#b45309", title: "#d4780a" },
-  { accent: "#ef4444", bg: "#fee2e2", text: "#b91c1c", title: "#d53030" },
-  { accent: "#8b5cf6", bg: "#ede9fe", text: "#6d28d9", title: "#7c42e8" },
-  { accent: "#ec4899", bg: "#fce7f3", text: "#be185d", title: "#d5307b" },
-  { accent: "#14b8a6", bg: "#ccfbf1", text: "#0f766e", title: "#12978a" },
-  { accent: "#f97316", bg: "#ffedd5", text: "#c2410c", title: "#e05a11" },
-  { accent: "#6366f1", bg: "#e0e7ff", text: "#4338ca", title: "#534fe6" },
-  { accent: "#84cc16", bg: "#ecfccb", text: "#4d7c0f", title: "#69a413" },
+  { accent: "#009de5", bg: "#d0edfa", text: "#006a9e", title: "#0084c2" }, // Blue
+  { accent: "#10b981", bg: "#d1fae5", text: "#047857", title: "#0a996c" }, // Green
+  { accent: "#f59e0b", bg: "#fef3c7", text: "#b45309", title: "#d4780a" }, // Amber
+  { accent: "#ef4444", bg: "#fee2e2", text: "#b91c1c", title: "#d53030" }, // Red
+  { accent: "#8b5cf6", bg: "#ede9fe", text: "#6d28d9", title: "#7c42e8" }, // Purple
+  { accent: "#ec4899", bg: "#fce7f3", text: "#be185d", title: "#d5307b" }, // Pink
+  { accent: "#14b8a6", bg: "#ccfbf1", text: "#0f766e", title: "#12978a" }, // Teal
+  { accent: "#f97316", bg: "#ffedd5", text: "#c2410c", title: "#e05a11" }, // Orange
+  { accent: "#6366f1", bg: "#e0e7ff", text: "#4338ca", title: "#534fe6" }, // Indigo
+  { accent: "#84cc16", bg: "#ecfccb", text: "#4d7c0f", title: "#69a413" }, // Lime
+  { accent: "#06b6d4", bg: "#cffafe", text: "#0e7490", title: "#0891b2" }, // Cyan
+  { accent: "#e11d48", bg: "#ffe4e6", text: "#9f1239", title: "#be123c" }, // Rose
+  { accent: "#a855f7", bg: "#f3e8ff", text: "#7e22ce", title: "#9333ea" }, // Violet
+  { accent: "#ea580c", bg: "#fff7ed", text: "#9a3412", title: "#c2410c" }, // Dark Orange
+  { accent: "#0d9488", bg: "#f0fdfa", text: "#115e59", title: "#0f766e" }, // Dark Teal
+  { accent: "#ca8a04", bg: "#fefce8", text: "#854d0e", title: "#a16207" }, // Yellow
+  { accent: "#2563eb", bg: "#dbeafe", text: "#1e40af", title: "#1d4ed8" }, // Royal Blue
+  { accent: "#c026d3", bg: "#fae8ff", text: "#86198f", title: "#a21caf" }, // Fuchsia
+  { accent: "#16a34a", bg: "#dcfce7", text: "#166534", title: "#15803d" }, // Emerald
+  { accent: "#dc2626", bg: "#fef2f2", text: "#991b1b", title: "#b91c1c" }, // Crimson
 ];
 
 // Ordered member statuses for ordinal comparison

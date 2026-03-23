@@ -9,10 +9,17 @@ vi.mock("next/navigation", () => ({
 }));
 
 const mockUpdateUser = vi.fn();
+const mockSignOut = vi.fn().mockResolvedValue({});
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(() => ({
-    auth: { updateUser: mockUpdateUser },
+    auth: { updateUser: mockUpdateUser, signOut: mockSignOut },
   })),
+}));
+
+const mockGet = vi.fn();
+const mockDelete = vi.fn();
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(() => Promise.resolve({ get: mockGet, delete: mockDelete })),
 }));
 
 vi.mock("@/lib/db", () => ({ db: {} }));
@@ -21,6 +28,7 @@ vi.mock("@/lib/db/schema", () => ({ user: {} }));
 describe("resetPassword", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGet.mockReturnValue({ name: "password_reset", value: "1" });
   });
 
   describe("validation", () => {
@@ -87,6 +95,20 @@ describe("resetPassword", () => {
     });
   });
 
+  describe("reset cookie guard", () => {
+    it("returns error when password_reset cookie is missing", async () => {
+      mockGet.mockReturnValue(undefined);
+      const fd = makeFormData({
+        password: "newpassword123",
+        confirmPassword: "newpassword123",
+      });
+      const result = await resetPassword(null, fd);
+
+      expect(result?.error).toContain("expired");
+      expect(mockUpdateUser).not.toHaveBeenCalled();
+    });
+  });
+
   describe("password update", () => {
     it("calls updateUser with new password", async () => {
       mockUpdateUser.mockResolvedValue({ error: null });
@@ -102,7 +124,7 @@ describe("resetPassword", () => {
       });
     });
 
-    it("redirects to login on success", async () => {
+    it("signs out and redirects to login on success", async () => {
       const { redirect } = await import("next/navigation");
       mockUpdateUser.mockResolvedValue({ error: null });
 
@@ -112,7 +134,22 @@ describe("resetPassword", () => {
       });
 
       await expect(resetPassword(null, fd)).rejects.toThrow("NEXT_REDIRECT");
+      expect(mockSignOut).toHaveBeenCalled();
       expect(redirect).toHaveBeenCalledWith("/login");
+    });
+
+    it("cleans up all session cookies on success", async () => {
+      mockUpdateUser.mockResolvedValue({ error: null });
+
+      const fd = makeFormData({
+        password: "newpassword123",
+        confirmPassword: "newpassword123",
+      });
+
+      await expect(resetPassword(null, fd)).rejects.toThrow("NEXT_REDIRECT");
+      expect(mockDelete).toHaveBeenCalledWith("password_reset");
+      expect(mockDelete).toHaveBeenCalledWith("session_start_at");
+      expect(mockDelete).toHaveBeenCalledWith("last_active_at");
     });
 
     it("returns error when Supabase update fails", async () => {

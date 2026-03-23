@@ -32,6 +32,26 @@ describe("GET /api/auth/callback", () => {
     expect(mockExchangeCodeForSession).toHaveBeenCalledWith("abc123");
   });
 
+  it("sets password_reset cookie when redirecting to reset-password", async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ error: null });
+
+    const response = await GET(
+      makeRequest("/api/auth/callback?code=abc123&next=/reset-password")
+    );
+
+    const cookie = response.cookies.get("password_reset");
+    expect(cookie?.value).toBe("1");
+  });
+
+  it("does not set password_reset cookie for other redirects", async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ error: null });
+
+    const response = await GET(makeRequest("/api/auth/callback?code=abc123"));
+
+    const cookie = response.cookies.get("password_reset");
+    expect(cookie).toBeUndefined();
+  });
+
   it("redirects to / when next is not provided", async () => {
     mockExchangeCodeForSession.mockResolvedValue({ error: null });
 
@@ -50,6 +70,28 @@ describe("GET /api/auth/callback", () => {
 
     expect(response.status).toBe(307);
     expect(new URL(response.headers.get("location")!).pathname).toBe("/login");
+  });
+
+  it("prevents open redirect with absolute URL in next param", async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ error: null });
+
+    const response = await GET(
+      makeRequest("/api/auth/callback?code=abc123&next=https://evil.com")
+    );
+
+    expect(response.status).toBe(307);
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/");
+  });
+
+  it("prevents open redirect with protocol-relative URL", async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ error: null });
+
+    const response = await GET(
+      makeRequest("/api/auth/callback?code=abc123&next=//evil.com")
+    );
+
+    expect(response.status).toBe(307);
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/");
   });
 
   it("redirects to login when no code is provided", async () => {

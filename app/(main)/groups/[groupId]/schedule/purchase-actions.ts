@@ -14,7 +14,7 @@ import {
   user,
   group,
 } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types";
 import type { AvatarColor } from "@/lib/constants";
@@ -550,11 +550,9 @@ export async function reportSessionPrice(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  if (
-    data.minPrice == null &&
-    data.maxPrice == null &&
-    !data.comments?.trim()
-  ) {
+  const trimmedComments = data.comments?.trim().slice(0, 200) || null;
+
+  if (data.minPrice == null && data.maxPrice == null && !trimmedComments) {
     return { error: "At least one price or a comment is required." };
   }
   if (data.minPrice != null && data.minPrice <= 0)
@@ -575,7 +573,7 @@ export async function reportSessionPrice(
       reportedByMemberId: membership.id,
       minPrice: data.minPrice,
       maxPrice: data.maxPrice,
-      comments: data.comments || null,
+      comments: trimmedComments,
     });
   } catch {
     return { error: failedAction("report session price") };
@@ -675,8 +673,6 @@ export async function getPurchaseDataForSessions(
       reportedPrices: new Map<string, ReportedPriceData[]>(),
     };
   }
-
-  const { inArray } = await import("drizzle-orm");
 
   // 1. Purchase plan entries for this member (as purchaser)
   const planRows = await db

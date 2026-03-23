@@ -21,15 +21,6 @@ const PREFERENCE_STEP_ORDER = [
   "sessions",
 ] as const;
 
-/**
- * After state simplification, members stay at "preferences_set" after
- * generation. No status reset needed — saving preferences during
- * schedule_review just updates statusChangedAt naturally.
- */
-function shouldResetStatus(_memberStatus: string): boolean {
-  return false;
-}
-
 function shouldAdvanceStep(current: string | null, next: string): boolean {
   const currentIndex = PREFERENCE_STEP_ORDER.indexOf(
     current as (typeof PREFERENCE_STEP_ORDER)[number]
@@ -117,14 +108,9 @@ export async function saveBuddies(
           ...(shouldAdvanceStep(membership.preferenceStep, "buddies")
             ? { preferenceStep: "buddies" }
             : {}),
-          ...(shouldResetStatus(membership.status)
-            ? {
-                status: "preferences_set" as const,
-                statusChangedAt: new Date(),
-              }
-            : membership.status === "preferences_set"
-              ? { statusChangedAt: new Date() }
-              : {}),
+          ...(membership.status === "preferences_set"
+            ? { statusChangedAt: new Date() }
+            : {}),
         })
         .where(eq(member.id, membership.id));
 
@@ -210,14 +196,9 @@ export async function saveSportRankings(
           ...(shouldAdvanceStep(membership.preferenceStep, "sport_rankings")
             ? { preferenceStep: "sport_rankings" }
             : {}),
-          ...(shouldResetStatus(membership.status)
-            ? {
-                status: "preferences_set" as const,
-                statusChangedAt: new Date(),
-              }
-            : membership.status === "preferences_set"
-              ? { statusChangedAt: new Date() }
-              : {}),
+          ...(membership.status === "preferences_set"
+            ? { statusChangedAt: new Date() }
+            : {}),
         })
         .where(eq(member.id, membership.id));
 

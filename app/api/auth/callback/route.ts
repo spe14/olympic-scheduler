@@ -6,12 +6,27 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/";
 
+  // Prevent open redirect — only allow relative paths on this origin
+  const safePath = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      return NextResponse.redirect(new URL(next, request.url));
+      const response = NextResponse.redirect(new URL(safePath, request.url));
+
+      // Mark recovery sessions so /reset-password can verify the flow
+      if (safePath === "/reset-password") {
+        response.cookies.set("password_reset", "1", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 5 * 60, // 5 minutes
+        });
+      }
+
+      return response;
     }
   }
 

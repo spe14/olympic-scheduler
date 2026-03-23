@@ -16,7 +16,7 @@ const variants = {
   },
   out_of_budget: {
     bg: "bg-amber-100",
-    text: "text-amber-700",
+    text: "text-amber-600",
     icon: DollarSign,
     label: "Out of Budget",
   },

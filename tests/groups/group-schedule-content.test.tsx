@@ -441,7 +441,7 @@ describe("GroupScheduleContent — empty states", () => {
     mockGroup = makeGroup();
     mockGetGroupSchedule.mockReturnValue(new Promise(() => {}));
     render(<GroupScheduleContent />);
-    expect(screen.getByText("Loading group schedule...")).toBeDefined();
+    expect(screen.getByText("Loading...")).toBeDefined();
   });
 
   it("shows error state on fetch failure", async () => {

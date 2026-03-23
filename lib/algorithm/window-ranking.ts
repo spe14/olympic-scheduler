@@ -130,9 +130,10 @@ export function computeWindowRankings(
 
   // Sort by score desc, tie-break by lower stdev, then higher resilience, then earlier start
   windows.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    if (a.stdev !== b.stdev) return a.stdev - b.stdev;
-    if (b.resilience !== a.resilience) return b.resilience - a.resilience;
+    if (Math.abs(b.score - a.score) > 1e-9) return b.score - a.score;
+    if (Math.abs(a.stdev - b.stdev) > 1e-9) return a.stdev - b.stdev;
+    if (Math.abs(b.resilience - a.resilience) > 1e-9)
+      return b.resilience - a.resilience;
     return a.startDate.localeCompare(b.startDate);
   });
 

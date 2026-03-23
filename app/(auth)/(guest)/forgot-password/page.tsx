@@ -1,6 +1,6 @@
 "use client";
 
-import { forgotPassword } from "../actions";
+import { forgotPassword } from "@/app/(auth)/actions";
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { emailSchema } from "@/lib/validations";
@@ -41,9 +41,16 @@ export default function ForgotPasswordPage() {
 
         {/* Form card */}
         <div className="rounded-2xl border border-[#009de5]/10 bg-white p-8 shadow-xl shadow-[#009de5]/5 backdrop-blur-sm">
-          {/* General message */}
-          {state?.error && (
+          {/* Success info message */}
+          {state?.message && (
             <div className="mb-6 rounded-lg border border-[#009de5]/20 bg-[#009de5]/5 p-3 text-sm text-[#009de5]">
+              {state.message}
+            </div>
+          )}
+
+          {/* Error message */}
+          {state?.error && (
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
               {state.error}
             </div>
           )}

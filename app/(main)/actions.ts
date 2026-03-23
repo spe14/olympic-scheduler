@@ -12,12 +12,13 @@ import {
   consecutiveDaysSchema,
 } from "@/lib/validations";
 import crypto from "crypto";
-import { MAX_GROUP_MEMBERS } from "@/lib/constants";
+import { MAX_GROUP_MEMBERS, MAX_GROUPS_PER_USER } from "@/lib/constants";
 import type { ActionResult } from "@/lib/types";
 import { parseOrError } from "@/lib/utils";
 import {
   MSG_NOT_LOGGED_IN,
   MSG_GROUP_FULL,
+  MSG_TOO_MANY_GROUPS,
   failedAction,
 } from "@/lib/messages";
 
@@ -32,6 +33,20 @@ export async function createGroup(
   const user = await getCurrentUser();
   if (!user) {
     return { error: MSG_NOT_LOGGED_IN };
+  }
+
+  const [{ count: groupCount }] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(member)
+    .where(
+      and(
+        eq(member.userId, user.id),
+        notInArray(member.status, ["pending_approval", "denied"])
+      )
+    );
+
+  if (groupCount >= MAX_GROUPS_PER_USER) {
+    return { error: MSG_TOO_MANY_GROUPS };
   }
 
   const name = formData.get("name") as string;
@@ -100,7 +115,22 @@ export async function joinGroup(
     return { error: MSG_NOT_LOGGED_IN };
   }
 
-  const code = (formData.get("inviteCode") as string)?.trim() ?? "";
+  const [{ count: groupCount }] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(member)
+    .where(
+      and(
+        eq(member.userId, user.id),
+        notInArray(member.status, ["pending_approval", "denied"])
+      )
+    );
+
+  if (groupCount >= MAX_GROUPS_PER_USER) {
+    return { error: MSG_TOO_MANY_GROUPS };
+  }
+
+  const code =
+    (formData.get("inviteCode") as string)?.trim().toLowerCase() ?? "";
   const parsed = parseOrError(inviteCodeSchema, code);
   if ("error" in parsed) return parsed.error;
 
@@ -137,41 +167,50 @@ export async function joinGroup(
     }
   }
 
-  const [{ count: activeCount }] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(member)
-    .where(
-      and(
-        eq(member.groupId, groupId),
-        notInArray(member.status, ["pending_approval", "denied"])
-      )
-    );
-
-  if (activeCount >= MAX_GROUP_MEMBERS) {
-    return { error: MSG_GROUP_FULL };
-  }
-
-  if (existingMember.length > 0) {
-    // Status must be "denied" — reset to pending
-    try {
-      await db
-        .update(member)
-        .set({ status: "pending_approval" })
-        .where(eq(member.id, existingMember[0].id));
-    } catch {
-      return { error: failedAction("join group") };
-    }
-    revalidatePath("/");
-    return { success: true };
-  }
-
   try {
-    await db.insert(member).values({
-      userId: user.id,
-      groupId,
-      role: "member",
-      status: "pending_approval",
+    const result = await db.transaction(async (tx) => {
+      // Lock group row to prevent concurrent joins exceeding the limit
+      await tx
+        .select({ id: group.id })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .for("update");
+
+      const [{ count: activeCount }] = await tx
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(member)
+        .where(
+          and(
+            eq(member.groupId, groupId),
+            notInArray(member.status, ["pending_approval", "denied"])
+          )
+        );
+
+      if (activeCount >= MAX_GROUP_MEMBERS) {
+        return { full: true as const };
+      }
+
+      if (existingMember.length > 0) {
+        // Status must be "denied" — reset to pending
+        await tx
+          .update(member)
+          .set({ status: "pending_approval" })
+          .where(eq(member.id, existingMember[0].id));
+      } else {
+        await tx.insert(member).values({
+          userId: user.id,
+          groupId,
+          role: "member",
+          status: "pending_approval",
+        });
+      }
+
+      return { full: false as const };
     });
+
+    if (result.full) {
+      return { error: MSG_GROUP_FULL };
+    }
   } catch {
     return { error: failedAction("join group") };
   }
