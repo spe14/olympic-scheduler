@@ -316,8 +316,13 @@ describe("getGroupDetail", () => {
 
   it("transforms object departedMembers correctly", async () => {
     const departed = [
-      { name: "Bob", departedAt: "2028-01-01" },
-      { name: "Carol", departedAt: "2028-02-15", rejoinedAt: "2028-03-01" },
+      { userId: "user-bob", name: "Bob", departedAt: "2028-01-01" },
+      {
+        userId: "user-carol",
+        name: "Carol",
+        departedAt: "2028-02-15",
+        rejoinedAt: "2028-03-01",
+      },
     ];
     queryResults = [
       [baseMembership],

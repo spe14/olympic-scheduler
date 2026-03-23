@@ -24,6 +24,7 @@ function baseGroup(overrides: Record<string, unknown> = {}) {
     members: [
       {
         id: "owner-1",
+        userId: "user-alice",
         firstName: "Alice",
         lastName: "Smith",
         role: "owner",
@@ -33,6 +34,7 @@ function baseGroup(overrides: Record<string, unknown> = {}) {
       },
       {
         id: "member-2",
+        userId: "user-bob",
         firstName: "Bob",
         lastName: "Jones",
         role: "member",
@@ -117,7 +119,11 @@ describe("NotificationsSection", () => {
     mockGroup = baseGroup({
       phase: "preferences",
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -134,7 +140,11 @@ describe("NotificationsSection", () => {
       phase: "preferences",
       myRole: "member",
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -147,7 +157,11 @@ describe("NotificationsSection", () => {
     mockGroup = baseGroup({
       phase: "preferences",
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-07-20T10:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-07-20T10:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -158,8 +172,16 @@ describe("NotificationsSection", () => {
     mockGroup = baseGroup({
       phase: "preferences",
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
-        { name: "Diana Prince", departedAt: "2028-01-11T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
+        {
+          userId: "user-diana",
+          name: "Diana Prince",
+          departedAt: "2028-01-11T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -183,6 +205,7 @@ describe("NotificationsSection", () => {
       phase: "preferences",
       departedMembers: [
         {
+          userId: "user-charlie",
           name: "Charlie Brown",
           departedAt: "2028-01-10T12:00:00Z",
           rejoinedAt: "2028-01-12T14:00:00Z",
@@ -204,6 +227,7 @@ describe("NotificationsSection", () => {
       phase: "preferences",
       departedMembers: [
         {
+          userId: "user-charlie",
           name: "Charlie Brown",
           departedAt: "2028-01-10T12:00:00Z",
           rejoinedAt: "2028-07-25T09:00:00Z",
@@ -218,8 +242,13 @@ describe("NotificationsSection", () => {
     mockGroup = baseGroup({
       phase: "preferences",
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
         {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
+        {
+          userId: "user-diana",
           name: "Diana Prince",
           departedAt: "2028-01-11T12:00:00Z",
           rejoinedAt: "2028-01-13T12:00:00Z",
@@ -243,6 +272,7 @@ describe("NotificationsSection", () => {
       scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       departedMembers: [
         {
+          userId: "user-bob",
           name: "Bob Jones",
           departedAt: "2028-01-10T12:00:00Z",
           rejoinedAt: "2028-01-12T14:00:00Z",
@@ -251,6 +281,7 @@ describe("NotificationsSection", () => {
       members: [
         {
           id: "owner-1",
+          userId: "user-alice",
           firstName: "Alice",
           lastName: "Smith",
           role: "owner",
@@ -260,6 +291,7 @@ describe("NotificationsSection", () => {
         },
         {
           id: "member-2",
+          userId: "user-bob",
           firstName: "Bob",
           lastName: "Jones",
           role: "member",
@@ -287,7 +319,11 @@ describe("NotificationsSection", () => {
       phase: "preferences",
       affectedBuddyMembers: { "member-2": ["Charlie Brown"] },
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -303,7 +339,11 @@ describe("NotificationsSection", () => {
       phase: "preferences",
       affectedBuddyMembers: { "owner-1": ["Charlie Brown"] },
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -325,7 +365,11 @@ describe("NotificationsSection", () => {
         "member-2": ["Charlie Brown"],
       },
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -346,7 +390,11 @@ describe("NotificationsSection", () => {
       myMemberId: "member-2",
       affectedBuddyMembers: { "member-2": ["Charlie Brown"] },
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -364,7 +412,11 @@ describe("NotificationsSection", () => {
       myMemberId: "member-3",
       affectedBuddyMembers: { "member-2": ["Charlie Brown"] },
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -378,7 +430,11 @@ describe("NotificationsSection", () => {
       phase: "preferences",
       affectedBuddyMembers: { "owner-1": ["Charlie Brown"] },
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-07-18T16:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-07-18T16:00:00Z",
+        },
       ],
     });
     render(<NotificationsSection />);
@@ -467,7 +523,11 @@ describe("NotificationsSection", () => {
       scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       affectedBuddyMembers: { "member-2": ["Charlie Brown"] },
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
       members: [
         {
@@ -748,7 +808,11 @@ describe("NotificationsSection", () => {
     mockGroup = baseGroup({
       phase: "preferences",
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
     });
     const { container } = render(<NotificationsSection />);
@@ -761,6 +825,7 @@ describe("NotificationsSection", () => {
       phase: "preferences",
       departedMembers: [
         {
+          userId: "user-charlie",
           name: "Charlie Brown",
           departedAt: "2028-01-10T12:00:00Z",
           rejoinedAt: "2028-01-12T14:00:00Z",
@@ -813,7 +878,11 @@ describe("NotificationsSection", () => {
       scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       membersWithNoCombos: ["member-2"],
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
       ],
       affectedBuddyMembers: { "owner-1": ["Charlie Brown"] },
       members: [

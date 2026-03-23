@@ -106,14 +106,17 @@ export async function approveMember(
       .where(eq(member.id, memberId));
 
     const [approvedUser] = await db
-      .select({ firstName: user.firstName, lastName: user.lastName })
+      .select({
+        userId: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      })
       .from(member)
       .innerJoin(user, eq(member.userId, user.id))
       .where(eq(member.id, memberId))
       .limit(1);
 
     if (approvedUser) {
-      const name = `${approvedUser.firstName} ${approvedUser.lastName}`;
       await db.transaction(async (tx) => {
         const [grpData] = await tx
           .select({
@@ -125,11 +128,14 @@ export async function approveMember(
 
         const departed =
           (grpData?.departedMembers as {
+            userId: string;
             name: string;
             departedAt: string;
             rejoinedAt?: string;
           }[]) ?? [];
-        const departedIdx = departed.findIndex((d) => d.name === name);
+        const departedIdx = departed.findIndex(
+          (d) => d.userId === approvedUser.userId
+        );
 
         if (departedIdx !== -1) {
           const updated = departed.map((d, i) =>
@@ -262,6 +268,7 @@ async function removeMemberTransaction(
   // regardless of whether schedules have been generated.
   const [departingUser] = await tx
     .select({
+      userId: user.id,
       firstName: user.firstName,
       lastName: user.lastName,
       joinedAt: member.joinedAt,
@@ -299,6 +306,7 @@ async function removeMemberTransaction(
       // Record departed member with timestamp
       const existingDeparted =
         (grpData?.departedMembers as {
+          userId: string;
           name: string;
           departedAt: string;
           rejoinedAt?: string;
@@ -336,7 +344,10 @@ async function removeMemberTransaction(
         .update(group)
         .set({
           phase: "preferences",
-          departedMembers: [...existingDeparted, { name, departedAt }],
+          departedMembers: [
+            ...existingDeparted,
+            { userId: departingUser.userId, name, departedAt },
+          ],
           affectedBuddyMembers: updatedAffected,
           membersWithNoCombos: [],
         })
@@ -854,33 +865,69 @@ export async function generateSchedules(
       (r) => r.sessionId
     );
 
-    // Fetch session metadata for locked codes missing from any member's preferences
-    // (off-schedule purchases where the member never expressed interest)
-    const allLockedCodes = new Set<string>();
-    for (const codes of lockedByMember.values()) {
-      for (const code of codes) allLockedCodes.add(code);
+    // Find locked codes missing from each member's OWN preferences (not global).
+    // A locked session may exist in another member's preferences but not the
+    // assignee's — we still need metadata to inject it for the assignee.
+    const perMemberMissingLocked = new Set<string>();
+    for (const [memberId, codes] of lockedByMember) {
+      const memberPrefCodes = new Set(
+        sessionPrefs
+          .filter((sp) => sp.memberId === memberId)
+          .map((sp) => sp.sessionCode)
+      );
+      for (const code of codes) {
+        if (!memberPrefCodes.has(code)) {
+          perMemberMissingLocked.add(code);
+        }
+      }
     }
-    const prefSessionCodes = new Set(sessionPrefs.map((sp) => sp.sessionCode));
-    const missingLockedCodes = [...allLockedCodes].filter(
-      (c) => !prefSessionCodes.has(c)
+
+    // Build session metadata map: preferences already give us metadata for any
+    // session at least one member preferred; query the DB only for truly orphan
+    // locked codes that no member preferred at all.
+    const sessionMetadataMap = new Map<
+      string,
+      {
+        sessionCode: string;
+        sport: string;
+        zone: string;
+        sessionDate: string;
+        startTime: string;
+        endTime: string;
+      }
+    >();
+    for (const sp of sessionPrefs) {
+      if (!sessionMetadataMap.has(sp.sessionCode)) {
+        sessionMetadataMap.set(sp.sessionCode, {
+          sessionCode: sp.sessionCode,
+          sport: sp.sport,
+          zone: sp.zone,
+          sessionDate: sp.sessionDate,
+          startTime: sp.startTime,
+          endTime: sp.endTime,
+        });
+      }
+    }
+    // Fetch metadata for locked codes not in any member's preferences
+    const orphanLockedCodes = [...perMemberMissingLocked].filter(
+      (c) => !sessionMetadataMap.has(c)
     );
-    const missingLockedSessions =
-      missingLockedCodes.length > 0
-        ? await db
-            .select({
-              sessionCode: session.sessionCode,
-              sport: session.sport,
-              zone: session.zone,
-              sessionDate: session.sessionDate,
-              startTime: session.startTime,
-              endTime: session.endTime,
-            })
-            .from(session)
-            .where(inArray(session.sessionCode, missingLockedCodes))
-        : [];
-    const missingLockedMap = new Map(
-      missingLockedSessions.map((s) => [s.sessionCode, s])
-    );
+    if (orphanLockedCodes.length > 0) {
+      const orphanSessions = await db
+        .select({
+          sessionCode: session.sessionCode,
+          sport: session.sport,
+          zone: session.zone,
+          sessionDate: session.sessionDate,
+          startTime: session.startTime,
+          endTime: session.endTime,
+        })
+        .from(session)
+        .where(inArray(session.sessionCode, orphanLockedCodes));
+      for (const s of orphanSessions) {
+        sessionMetadataMap.set(s.sessionCode, s);
+      }
+    }
 
     // Assemble MemberData + track excluded sessions per member
     const excludedByMember = new Map<
@@ -920,11 +967,11 @@ export async function generateSchedules(
           interest: sp.interest,
         }));
 
-      // Inject locked sessions missing from preferences (off-schedule purchases)
+      // Inject locked sessions missing from this member's preferences
       const memberLockedCodes = lockedByMember.get(m.id) ?? [];
       for (const code of memberLockedCodes) {
         if (!candidateSessions.some((cs) => cs.sessionCode === code)) {
-          const sData = missingLockedMap.get(code);
+          const sData = sessionMetadataMap.get(code);
           if (sData) {
             candidateSessions.push({
               sessionCode: sData.sessionCode,

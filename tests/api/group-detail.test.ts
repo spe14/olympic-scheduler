@@ -223,7 +223,9 @@ describe("GET /api/groups/[groupId]", () => {
     mockLimit.mockResolvedValueOnce([
       { id: "member-1", role: "owner", status: "joined" },
     ]);
-    const departed = [{ name: "Carol", departedAt: "2028-02-01" }];
+    const departed = [
+      { userId: "user-carol", name: "Carol", departedAt: "2028-02-01" },
+    ];
     directWhereResults.push([{ ...sampleGroup, departedMembers: departed }]);
     mockOrderBy.mockResolvedValueOnce([]);
     mockOrderBy.mockResolvedValueOnce([]);

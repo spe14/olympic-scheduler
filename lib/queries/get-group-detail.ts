@@ -154,8 +154,13 @@ export const getGroupDetail = cache(async function getGroupDetail(
     departedMembers: Array.isArray(groupData.departedMembers)
       ? (groupData.departedMembers as unknown[]).map((entry) =>
           typeof entry === "string"
-            ? { name: entry, departedAt: new Date().toISOString() }
+            ? {
+                userId: "",
+                name: entry,
+                departedAt: new Date().toISOString(),
+              }
             : (entry as {
+                userId: string;
                 name: string;
                 departedAt: string;
                 rejoinedAt?: string;

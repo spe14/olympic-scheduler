@@ -35,8 +35,8 @@ export default function NotificationsSection() {
   // Departed members that have rejoined
   const departedRejoined = group.departedMembers.filter((d) => !!d.rejoinedAt);
 
-  // Set of rejoined member names for filtering newly joined
-  const rejoinedNames = new Set(departedRejoined.map((d) => d.name));
+  // Set of rejoined user IDs for filtering newly joined
+  const rejoinedUserIds = new Set(departedRejoined.map((d) => d.userId));
 
   // Members who joined after schedules were generated (no preferences yet)
   // Exclude affected buddy members and rejoined departed members
@@ -45,7 +45,7 @@ export default function NotificationsSection() {
         (m) =>
           m.status === "joined" &&
           !affectedBuddyIds.has(m.id) &&
-          !rejoinedNames.has(`${m.firstName} ${m.lastName}`)
+          !rejoinedUserIds.has(m.userId)
       )
     : [];
 

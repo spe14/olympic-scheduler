@@ -968,6 +968,7 @@ describe("leaveGroup", () => {
           firstName: "Test",
           lastName: "User",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-test",
         },
       ],
     ];
@@ -1078,7 +1079,14 @@ describe("leaveGroup", () => {
           scheduleGeneratedAt: null,
         },
       ],
-      [{ firstName: "Test", lastName: "User", joinedAt: null }],
+      [
+        {
+          firstName: "Test",
+          lastName: "User",
+          joinedAt: null,
+          userId: "user-test",
+        },
+      ],
     ];
     let qIdx = 0;
     mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
@@ -1316,6 +1324,7 @@ describe("removeMember", () => {
           firstName: "Test",
           lastName: "User",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-test",
         },
       ],
     ];
@@ -1968,6 +1977,7 @@ describe("updateDateConfig", () => {
         { memberId: "m1", day: "2028-07-12", score: 80, rank: "primary" },
         { memberId: "m1", day: "2028-07-13", score: 70, rank: "primary" },
         { memberId: "m1", day: "2028-07-12", score: 60, rank: "backup1" },
+        { memberId: "m1", day: "2028-07-12", score: 40, rank: "backup2" },
       ],
     ];
     let qIdx = 0;
@@ -2199,6 +2209,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2211,7 +2222,11 @@ describe("removeMember — departure tracking", () => {
       expect.objectContaining({
         phase: "preferences",
         departedMembers: [
-          { name: "Bob Jones", departedAt: expect.any(String) },
+          {
+            userId: "user-bob",
+            name: "Bob Jones",
+            departedAt: expect.any(String),
+          },
         ],
         affectedBuddyMembers: {},
         membersWithNoCombos: [],
@@ -2243,6 +2258,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-02-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2290,6 +2306,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2322,7 +2339,11 @@ describe("removeMember — departure tracking", () => {
       [
         {
           departedMembers: [
-            { name: "Alice Smith", departedAt: "2028-01-14T00:00:00Z" },
+            {
+              userId: "user-alice",
+              name: "Alice Smith",
+              departedAt: "2028-01-14T00:00:00Z",
+            },
           ],
           affectedBuddyMembers: {},
           scheduleGeneratedAt: new Date("2028-01-15"),
@@ -2333,6 +2354,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2343,8 +2365,16 @@ describe("removeMember — departure tracking", () => {
     expect(setCalls).toContainEqual(
       expect.objectContaining({
         departedMembers: [
-          { name: "Alice Smith", departedAt: "2028-01-14T00:00:00Z" },
-          { name: "Bob Jones", departedAt: expect.any(String) },
+          {
+            userId: "user-alice",
+            name: "Alice Smith",
+            departedAt: "2028-01-14T00:00:00Z",
+          },
+          {
+            userId: "user-bob",
+            name: "Bob Jones",
+            departedAt: expect.any(String),
+          },
         ],
       })
     );
@@ -2377,6 +2407,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2421,6 +2452,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2432,7 +2464,11 @@ describe("removeMember — departure tracking", () => {
     expect(setCalls).toContainEqual(
       expect.objectContaining({
         departedMembers: [
-          { name: "Bob Jones", departedAt: expect.any(String) },
+          {
+            userId: "user-bob",
+            name: "Bob Jones",
+            departedAt: expect.any(String),
+          },
         ],
         affectedBuddyMembers: {},
       })
@@ -2465,6 +2501,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2505,7 +2542,14 @@ describe("removeMember — departure tracking", () => {
         },
       ],
       // departingUser has null joinedAt — wasPartOfSchedule should be false
-      [{ firstName: "Bob", lastName: "Jones", joinedAt: null }],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: null,
+          userId: "user-bob",
+        },
+      ],
     ]);
 
     const result = await removeMember("group-1", "member-2");
@@ -2574,6 +2618,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-02-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2618,6 +2663,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-02-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2659,6 +2705,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2707,7 +2754,14 @@ describe("removeMember — departure tracking", () => {
           scheduleGeneratedAt: null, // no schedule generated
         },
       ],
-      [{ firstName: "Bob", lastName: "Jones", joinedAt: null }],
+      [
+        {
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: null,
+          userId: "user-bob",
+        },
+      ],
     ]);
 
     const result = await removeMember("group-1", "member-2");
@@ -2755,6 +2809,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2777,7 +2832,11 @@ describe("removeMember — departure tracking", () => {
     expect(setCalls).toContainEqual(
       expect.objectContaining({
         departedMembers: [
-          { name: "Bob Jones", departedAt: expect.any(String) },
+          {
+            userId: "user-bob",
+            name: "Bob Jones",
+            departedAt: expect.any(String),
+          },
         ],
       })
     );
@@ -2805,6 +2864,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-02-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2858,6 +2918,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-02-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2922,6 +2983,7 @@ describe("removeMember — departure tracking", () => {
           firstName: "Bob",
           lastName: "Jones",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-bob",
         },
       ],
     ]);
@@ -2971,6 +3033,7 @@ describe("leaveGroup — departure tracking", () => {
           firstName: "John",
           lastName: "Doe",
           joinedAt: new Date("2028-01-01"),
+          userId: "user-john",
         },
       ],
     ];
@@ -3026,7 +3089,13 @@ describe("leaveGroup — departure tracking", () => {
     );
     expect(setCalls).toContainEqual(
       expect.objectContaining({
-        departedMembers: [{ name: "John Doe", departedAt: expect.any(String) }],
+        departedMembers: [
+          {
+            userId: "user-john",
+            name: "John Doe",
+            departedAt: expect.any(String),
+          },
+        ],
       })
     );
   });
@@ -3552,6 +3621,127 @@ describe("generateSchedules", () => {
 
     expect(result.success).toBe(true);
     expect(mockRunScheduleGeneration).toHaveBeenCalledTimes(1);
+  });
+
+  it("stores nonConvergenceMembers when algorithm does not converge", async () => {
+    mockOwner();
+    // 1. Group data
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers
+    directWhereResults.push([
+      {
+        id: "m1",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: ["Swimming"],
+      },
+    ]);
+
+    // 3. buddies
+    directWhereResults.push([]);
+    // 4. sessionPrefs
+    directWhereResults.push([
+      {
+        memberId: "m1",
+        sessionCode: "S001",
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-12",
+        startTime: "09:00",
+        endTime: "12:00",
+        interest: "high",
+      },
+    ]);
+    // 5. travel
+    directFromResults.push([]);
+    // 6. soldOut
+    directWhereResults.push([]);
+    // 7. oob
+    directWhereResults.push([]);
+    // 8. purchaseAssignees
+    directWhereResults.push([]);
+
+    // Algorithm returns non-converged result with violations
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "primary",
+          score: 100,
+          sessionCodes: ["S001"],
+        },
+      ],
+      membersWithNoCombos: [],
+      convergence: {
+        iterations: 5,
+        converged: false,
+        violations: [
+          {
+            memberId: "m1",
+            sessionCode: "S001",
+            day: "2028-07-12",
+            type: "hardBuddies",
+            detail: "test",
+          },
+        ],
+      },
+    });
+
+    mockComputeWindowRankings.mockReturnValue([]);
+
+    // Track group update values
+    const setCalls: Record<string, unknown>[] = [];
+    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn(() => [
+                {
+                  dateMode: "consecutive",
+                  consecutiveDays: 3,
+                  startDate: null,
+                  endDate: null,
+                },
+              ]),
+              then(r: (v: unknown) => void) {
+                r([]);
+              },
+            })),
+            then(r: (v: unknown) => void) {
+              r([]);
+            },
+          })),
+        })),
+        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+        update: vi.fn(() => ({
+          set: vi.fn((vals: Record<string, unknown>) => {
+            setCalls.push(vals);
+            return { where: vi.fn(() => Promise.resolve()) };
+          }),
+        })),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => ({
+            returning: vi.fn(() => [{ id: "combo-1" }]),
+          })),
+        })),
+      };
+      return cb(tx);
+    });
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.success).toBe(true);
+    // Group update should include nonConvergenceMembers with the affected member
+    const groupUpdate = setCalls.find(
+      (call) => "nonConvergenceMembers" in call
+    );
+    expect(groupUpdate).toBeDefined();
+    expect(groupUpdate!.nonConvergenceMembers).toEqual(["m1"]);
   });
 
   it("computes window rankings with backup1 and backup2 combo scores", async () => {

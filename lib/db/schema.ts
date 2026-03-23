@@ -136,7 +136,14 @@ export const group = pgTable("groups", {
   endDate: date("end_date"),
   scheduleGeneratedAt: timestamp("schedule_generated_at"),
   departedMembers: jsonb("departed_members")
-    .$type<{ name: string; departedAt: string; rejoinedAt?: string }[]>()
+    .$type<
+      {
+        userId: string;
+        name: string;
+        departedAt: string;
+        rejoinedAt?: string;
+      }[]
+    >()
     .default([]),
   affectedBuddyMembers: jsonb("affected_buddy_members")
     .$type<Record<string, string[]>>()
@@ -329,9 +336,10 @@ export const soldOutSession = pgTable(
     sessionId: text("session_id")
       .notNull()
       .references(() => session.sessionCode, { onDelete: "cascade" }),
-    reportedByMemberId: uuid("reported_by_member_id")
-      .notNull()
-      .references(() => member.id, { onDelete: "cascade" }),
+    reportedByMemberId: uuid("reported_by_member_id").references(
+      () => member.id,
+      { onDelete: "set null" }
+    ),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [unique().on(table.groupId, table.sessionId)]

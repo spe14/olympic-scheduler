@@ -329,7 +329,11 @@ describe("GenerateScheduleSection", () => {
       phase: "preferences",
       scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-02T00:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-02T00:00:00Z",
+        },
       ],
     });
     render(<GenerateScheduleSection />);
@@ -549,6 +553,39 @@ describe("GenerateScheduleSection", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens regenerate modal with regeneration-specific text", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          statusChangedAt: "2028-01-05T00:00:00Z",
+        },
+      ],
+    });
+    render(<GenerateScheduleSection />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /Generate New Schedules/ })
+    );
+    // Modal should show regeneration-specific text
+    expect(
+      screen.getByText("Are you sure you want to regenerate schedules?")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/This will replace all existing schedules/)
+    ).toBeInTheDocument();
+    // Confirm button should also say "Generate New Schedules"
+    const modalButtons = screen.getAllByRole("button", {
+      name: "Generate New Schedules",
+    });
+    expect(modalButtons.length).toBeGreaterThanOrEqual(1);
+  });
+
   // --- Modal confirm / close behavior ---
 
   it("closes modal on successful generation", async () => {
@@ -649,7 +686,11 @@ describe("GenerateScheduleSection", () => {
       scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       membersWithNoCombos: ["member-2"],
       departedMembers: [
-        { name: "Charlie Brown", departedAt: "2028-01-01T00:00:00Z" },
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-01T00:00:00Z",
+        },
       ],
       affectedBuddyMembers: { "owner-1": ["Charlie Brown"] },
       members: [

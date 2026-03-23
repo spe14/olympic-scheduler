@@ -199,7 +199,11 @@ describe("GroupShell — sidebar nav statuses", () => {
       const group = makeGroup({
         phase: "preferences",
         departedMembers: [
-          { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+          {
+            userId: "user-charlie",
+            name: "Charlie Brown",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
         ],
       });
       render(
@@ -590,7 +594,11 @@ describe("GroupShell — sidebar nav statuses", () => {
         myStatus: "preferences_set",
         membersWithNoCombos: [],
         departedMembers: [
-          { name: "Bob Jones", departedAt: "2028-01-10T12:00:00Z" },
+          {
+            userId: "user-bob",
+            name: "Bob Jones",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
         ],
         members: [
           {
@@ -644,7 +652,11 @@ describe("GroupShell — sidebar nav statuses", () => {
         phase: "preferences",
         myStatus: "preferences_set",
         departedMembers: [
-          { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+          {
+            userId: "user-charlie",
+            name: "Charlie Brown",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
         ],
         affectedBuddyMembers: { "owner-1": ["Charlie Brown"] },
       });
@@ -870,7 +882,11 @@ describe("GroupShell — sidebar nav statuses", () => {
         phase: "preferences",
         myStatus: "preferences_set",
         departedMembers: [
-          { name: "Charlie Brown", departedAt: "2028-01-10T12:00:00Z" },
+          {
+            userId: "user-charlie",
+            name: "Charlie Brown",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
         ],
         affectedBuddyMembers: { "owner-1": ["Charlie Brown"] },
         members: [
@@ -1057,7 +1073,11 @@ describe("GroupShell — sidebar nav statuses", () => {
         phase: "preferences",
         myStatus: "preferences_set",
         departedMembers: [
-          { name: "Bob Jones", departedAt: "2028-01-10T12:00:00Z" },
+          {
+            userId: "user-bob",
+            name: "Bob Jones",
+            departedAt: "2028-01-10T12:00:00Z",
+          },
         ],
         affectedBuddyMembers: { "owner-1": ["Bob Jones"] },
         members: [

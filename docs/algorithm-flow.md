@@ -102,7 +102,8 @@ Owner sees pending members in group overview.
 **Approve:**
 
 - Sets `status = "joined"`, `joinedAt = now()`
-- If member was previously departed → marks `rejoinedAt` in `group.departedMembers`
+- If member was previously departed → matches by `userId` in `group.departedMembers`
+  and marks `rejoinedAt`
 - Checks group capacity before approving
 
 **Deny:**
@@ -136,16 +137,29 @@ When a member leaves or is removed:
 
 ```
 1. Delete all buddy_constraint rows involving this member
-2. Track affected buddies:
-     group.affectedBuddyMembers[affectedMemberId] = ["departed name"]
-3. If schedule was previously generated:
+2. Delete all session_preference rows for this member
+3. Track affected buddies:
+     group.affectedBuddyMembers[affectedMemberId] = [...existing, "departed name"]
+4. If schedule was previously generated AND departing member was part of it
+   (joinedAt ≤ scheduleGeneratedAt):
      ├─ Delete combos, comboSessions, windowRankings
      ├─ Reset all remaining active members to status = "preferences_set"
-     ├─ Record in group.departedMembers [{name, departedAt}]
+     ├─ Record in group.departedMembers [{userId, name, departedAt}]
      └─ group.phase → "preferences"
+   If schedule was previously generated but departing member joined AFTER
+   the last generation:
+     └─ No algorithm output changes (schedule remains valid without them)
+5. Delete the member row (FK cascades clean up remaining references)
 ```
 
 **Consequence:** Affected buddy members must confirm review before regeneration is allowed.
+
+**Note on purchase data:** When a member row is deleted, FK cascades delete their
+ticket purchases (and associated assignee rows), sold-out reports, out-of-budget marks,
+purchase plan entries, and timeslots. If the departing member was a ticket buyer,
+assignees of those purchases lose their locked session status on the next regeneration.
+Members with purchase data see a warning before leaving, advising them to transfer
+ticket purchases to other members first.
 
 ### Navigation Tab Warnings
 
@@ -274,7 +288,8 @@ All queries scoped to the group. Each is per-member unless noted.
 4. soldOutSessions         → group-wide set of session codes
 5. outOfBudgetSessions     → per-member sets of session codes
 6. purchaseAssignees       → per-member locked session codes (from ticketPurchaseAssignee)
-7. missingLockedSessions   → session metadata for locked codes not in any member's preferences
+7. sessionMetadataMap      → session metadata from all preferences + DB query for locked
+                              codes not in any member's preferences (orphan locked codes)
 ```
 
 ### Candidate Session Assembly (per member)
@@ -292,10 +307,10 @@ Start with: member's session preferences (from step 2)
   │
   └─ Result: candidateSessions[]
 
-Then: inject locked sessions missing from preferences
+Then: inject locked sessions missing from THIS member's preferences
   │
-  └─ For each locked code not already in candidateSessions:
-       fetch session metadata, add with interest = "high"
+  └─ For each of this member's locked codes not already in candidateSessions:
+       look up session metadata from sessionMetadataMap, add with interest = "high"
 
 Side effect: store excluded sessions per member with reason
   → { code, soldOut: bool, outOfBudget: bool }
@@ -605,9 +620,10 @@ Member edits preferences while phase = "schedule_review"
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | User tries to join a full group (12 members)          | Rejected: "Group is full"                                                                                       |
 | Denied user re-requests with same invite code         | Reset to `pending_approval`                                                                                     |
-| Member removed while schedule exists                  | Combos deleted, phase → "preferences", all members must re-generate                                             |
+| Member removed while schedule exists (was part of it) | Combos deleted, phase → "preferences", all members must re-generate                                             |
+| Member removed while schedule exists (joined after)   | Schedule preserved; only affected buddy tracking updated                                                        |
 | Buddy member departs                                  | Remaining buddy members must confirm review before generation                                                   |
-| Member rejoins after departure                        | `rejoinedAt` set; no auto-regeneration                                                                          |
+| Member rejoins after departure                        | Matched by `userId` in `departedMembers`; `rejoinedAt` set; no auto-regeneration                                |
 | Removing a ranked sport                               | All session preferences for that sport silently deleted                                                         |
 | Member has only locked sessions on one day            | Single combo; no backups possible                                                                               |
 | 4+ locked sessions on one day                         | All go in one combo with no cap; travel feasibility ignored                                                     |
@@ -625,3 +641,6 @@ Member edits preferences while phase = "schedule_review"
 | `dateMode` not configured                             | Window rankings skipped                                                                                         |
 | Specific date mode                                    | Single window (no sliding)                                                                                      |
 | Locked sessions can prevent convergence               | If a locked session causes a violation, it persists since locked sessions are never pruned                      |
+| Mutual hard buddies with divergent preferences        | Cascading pruning can strip both members' candidates; likely lands in `membersWithNoCombos`                     |
+| Buyer member departs                                  | FK cascade deletes their purchases; assignees lose locked status on next regeneration                           |
+| Sold-out reporter departs                             | Sold-out record persists (reporter field set to null); session stays excluded for all members                   |

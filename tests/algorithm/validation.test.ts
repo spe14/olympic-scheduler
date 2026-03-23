@@ -124,6 +124,37 @@ describe("validatePostGeneration", () => {
     expect(violations[0].type).toBe("hardBuddies");
   });
 
+  it("skips combo whose member is not in the members array", () => {
+    // A primary combo references "Ghost" who isn't in the members list.
+    // Validation should silently skip it, not crash or produce violations.
+    const members = [makeMember("Alice")];
+
+    const combos: DayComboResult[] = [
+      makeCombo("Ghost", "2028-07-22", "primary", ["SWM01"]),
+      makeCombo("Alice", "2028-07-22", "primary", ["SWM01"]),
+    ];
+
+    const violations = validatePostGeneration(combos, members);
+    expect(violations).toHaveLength(0);
+  });
+
+  it("detects minBuddies violation when member is the only attendee of a session", () => {
+    // Alice has SWM01 in her primary but no other member has it in any combo.
+    // With minBuddies=1, othersCount should be 0 → violation.
+    const members = [makeMember("Alice", { minBuddies: 1 }), makeMember("Bob")];
+
+    const combos: DayComboResult[] = [
+      makeCombo("Alice", "2028-07-22", "primary", ["SWM01"]),
+      makeCombo("Bob", "2028-07-22", "primary", ["GYM01"]),
+    ];
+
+    const violations = validatePostGeneration(combos, members);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].type).toBe("minBuddies");
+    expect(violations[0].memberId).toBe("Alice");
+    expect(violations[0].sessionCode).toBe("SWM01");
+  });
+
   it("skips validation for locked sessions", () => {
     // Alice needs minBuddies=2 and hard buddy Bob.
     // SWM01 is locked — even though Bob doesn't have it,
