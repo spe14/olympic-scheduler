@@ -3,6 +3,7 @@ import type { AvatarColor } from "@/lib/constants";
 export type ActionResult = {
   error?: string;
   success?: boolean;
+  data?: Record<string, unknown>;
 };
 
 /** Base member info shared across schedule, group-schedule, and purchase-tracker types. */
@@ -52,7 +53,6 @@ export type WindowRanking = {
   startDate: string;
   endDate: string;
   score: number;
-  selected: boolean;
 };
 
 export type GroupDetail = {
@@ -74,10 +74,13 @@ export type GroupDetail = {
   myTimeslot: {
     timeslotStart: Date | string;
     timeslotEnd: Date | string;
-    status: "upcoming" | "in_progress" | "completed";
   } | null;
   members: GroupDetailMember[];
-  memberTimeslots: string[];
+  memberTimeslots: {
+    memberId: string;
+    timeslotStart: Date | string;
+    timeslotEnd: Date | string;
+  }[];
   membersPurchased: string[];
   membersWithPurchaseData: string[];
   membersWithNoCombos: string[];

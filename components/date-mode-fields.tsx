@@ -1,6 +1,7 @@
 "use client";
 
 import { consecutiveDaysSchema } from "@/lib/validations";
+import { OLYMPIC_START, OLYMPIC_END } from "@/lib/schedule-utils";
 
 type DateMode = "consecutive" | "specific";
 
@@ -148,8 +149,8 @@ export function SpecificDatesInput({
           <input
             type="date"
             name={startName}
-            min="2028-07-12"
-            max="2028-07-30"
+            min={OLYMPIC_START}
+            max={OLYMPIC_END}
             value={startDate}
             onChange={(e) => onStartDateChange(e.target.value)}
             className={dateInputClass}
@@ -162,8 +163,8 @@ export function SpecificDatesInput({
           <input
             type="date"
             name={endName}
-            min="2028-07-12"
-            max="2028-07-30"
+            min={OLYMPIC_START}
+            max={OLYMPIC_END}
             value={endDate}
             onChange={(e) => onEndDateChange(e.target.value)}
             className={dateInputClass}

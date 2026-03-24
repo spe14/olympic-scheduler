@@ -1,0 +1,1 @@
+ALTER TABLE "ticket_purchase" ALTER COLUMN "price_per_ticket" DROP NOT NULL;

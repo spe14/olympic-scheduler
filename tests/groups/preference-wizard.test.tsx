@@ -291,15 +291,15 @@ describe("PreferenceWizard", () => {
   // ── URL search param overrides DB step ─────────────────────────
 
   describe("URL step parameter", () => {
-    it("uses URL step param instead of DB-derived step", async () => {
-      // DB says go to step 1, but URL says step 2
+    it("clamps URL step forward to furthest reachable step", async () => {
+      // DB says go to step 1, URL says step 2 — clamp to step 1
       setSearchParam("step", "sessions");
       await act(async () => {
         render(
           <PreferenceWizard {...defaultProps} initialPreferenceStep="buddies" />
         );
       });
-      expect(screen.getByTestId("sessions-step")).toBeDefined();
+      expect(screen.getByTestId("sport-rankings-step")).toBeDefined();
     });
 
     it("overrides to step 0 via URL when DB says step 1", async () => {
@@ -313,12 +313,13 @@ describe("PreferenceWizard", () => {
       expect(screen.getByTestId("buddies-step")).toBeDefined();
     });
 
-    it("overrides to sport_rankings step via URL", async () => {
+    it("clamps URL step to step 0 when no steps completed", async () => {
       setSearchParam("step", "sport_rankings");
       await act(async () => {
         render(<PreferenceWizard {...defaultProps} />);
       });
-      expect(screen.getByTestId("sport-rankings-step")).toBeDefined();
+      // No steps completed (initialPreferenceStep=null), so clamped to step 0
+      expect(screen.getByTestId("buddies-step")).toBeDefined();
     });
 
     it("ignores invalid URL step param and falls back to DB", async () => {
@@ -939,6 +940,118 @@ describe("PreferenceWizard", () => {
         expect(screen.getByTestId("sport-rankings-step")).toBeDefined();
       });
       expect(mockSaveBuddies).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows Saving... immediately after clicking Proceed (before ack resolves)", async () => {
+      mockGroup.phase = "schedule_review";
+      mockGroup.scheduleGeneratedAt = "2028-01-01T00:00:00Z";
+
+      // Make save hang so we can inspect the button text
+      let resolveSave: (val: { success: boolean }) => void;
+      mockSaveBuddies.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        })
+      );
+
+      await act(async () => {
+        render(<PreferenceWizard {...defaultProps} />);
+      });
+
+      // Make step 0 dirty
+      fireEvent.click(screen.getByTestId("change-budget"));
+
+      // Trigger warning
+      await act(async () => {
+        fireEvent.click(screen.getByText("Save & Continue"));
+      });
+      expect(screen.getByText("Warning")).toBeDefined();
+
+      // Click Proceed — Saving... should appear immediately
+      fireEvent.click(screen.getByText("Proceed"));
+      await waitFor(() => {
+        expect(screen.queryByText("Warning")).toBeNull();
+        expect(screen.getByText("Saving...")).toBeDefined();
+      });
+
+      // Resolve the save
+      await act(async () => {
+        resolveSave!({ success: true });
+      });
+      await waitFor(() => {
+        expect(screen.queryByText("Saving...")).toBeNull();
+      });
+    });
+
+    it("calls ackScheduleWarning after save completes, not before", async () => {
+      mockGroup.phase = "schedule_review";
+      mockGroup.scheduleGeneratedAt = "2028-01-01T00:00:00Z";
+
+      const callOrder: string[] = [];
+      mockSaveBuddies.mockImplementationOnce(async () => {
+        callOrder.push("save");
+        return { success: true };
+      });
+      mockAckScheduleWarning.mockImplementationOnce(async () => {
+        callOrder.push("ack");
+        mockGroup.myScheduleWarningAckedAt = mockGroup.scheduleGeneratedAt;
+        return { success: true };
+      });
+
+      await act(async () => {
+        render(<PreferenceWizard {...defaultProps} />);
+      });
+
+      // Make step 0 dirty
+      fireEvent.click(screen.getByTestId("change-budget"));
+
+      // Trigger warning and proceed
+      await act(async () => {
+        fireEvent.click(screen.getByText("Save & Continue"));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText("Proceed"));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("sport-rankings-step")).toBeDefined();
+      });
+
+      // Save must have been called before ack
+      expect(callOrder[0]).toBe("save");
+      expect(callOrder).toContain("ack");
+    });
+
+    it("shows error and stays on step when save fails after Proceed", async () => {
+      mockGroup.phase = "schedule_review";
+      mockGroup.scheduleGeneratedAt = "2028-01-01T00:00:00Z";
+      mockSaveBuddies.mockResolvedValueOnce({ error: "Server error" });
+
+      await act(async () => {
+        render(<PreferenceWizard {...defaultProps} />);
+      });
+
+      // Make step 0 dirty
+      fireEvent.click(screen.getByTestId("change-budget"));
+
+      // Trigger warning and proceed
+      await act(async () => {
+        fireEvent.click(screen.getByText("Save & Continue"));
+      });
+      expect(screen.getByText("Warning")).toBeDefined();
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("Proceed"));
+      });
+
+      await waitFor(() => {
+        // Dialog dismissed, error shown, still on step 0
+        expect(screen.queryByText("Warning")).toBeNull();
+        expect(screen.getByText("Server error")).toBeDefined();
+        expect(screen.getByTestId("buddies-step")).toBeDefined();
+      });
+      // Saving state should be cleared (button not stuck on "Saving...")
+      expect(screen.queryByText("Saving...")).toBeNull();
     });
 
     it("Cancel reverts changes and dismisses dialog", async () => {

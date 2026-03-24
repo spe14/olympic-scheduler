@@ -28,6 +28,12 @@ export default function GenerateScheduleModal({
           ? "This will replace all existing schedules with newly generated ones. Members will need to review their schedules again."
           : "This will generate individual schedules for all members based on their preferences. Each member will receive ranked day combos to review."}
       </p>
+      {loading && (
+        <p className="mb-4 text-sm text-slate-500">
+          This may take up to a few minutes. Do not refresh the page while
+          generation is in progress.
+        </p>
+      )}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       <div className="flex justify-end gap-3">
         <button

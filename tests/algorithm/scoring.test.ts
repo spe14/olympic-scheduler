@@ -261,6 +261,37 @@ describe("calculateSessionScore", () => {
     // score = 2.0 * 1.0 * 1.0 = 2.0
     expect(score).toBeCloseTo(2.0);
   });
+
+  it("applies PRUNED_SESSION_PENALTY (0.1x) to pruned sessions", () => {
+    const session = makeSession({
+      sport: "Swimming",
+      interest: "high",
+      pruned: true,
+    });
+    const member = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+    });
+    const softBuddyMap = new Map<string, number>();
+
+    const prunedScore = calculateSessionScore(session, member, softBuddyMap);
+    const normalScore = calculateSessionScore(
+      { ...session, pruned: undefined },
+      member,
+      softBuddyMap
+    );
+
+    expect(prunedScore).toBeCloseTo(normalScore * 0.1);
+  });
+
+  it("does not apply penalty when pruned is undefined", () => {
+    const session = makeSession({ sport: "Swimming", interest: "high" });
+    const member = makeMember("Alice", { sportRankings: ["Swimming"] });
+    const softBuddyMap = new Map<string, number>();
+
+    const score = calculateSessionScore(session, member, softBuddyMap);
+    // rank 1 of 1 → sportMult 2.0, high → 1.0, no buddies → 1.0
+    expect(score).toBeCloseTo(2.0);
+  });
 });
 
 // ---------------------------------------------------------------------------

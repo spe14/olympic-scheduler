@@ -419,66 +419,6 @@ describe("getMySchedule", () => {
     expect(session.interest).toBe("medium");
   });
 
-  it("returns timeslot data when user has a timeslot", async () => {
-    mockGetMembership.mockResolvedValue(membership);
-
-    const combos = [
-      { comboId: "combo-1", day: "2026-08-01", rank: "primary", score: 90 },
-    ];
-    const comboSessions = [
-      makeSession({ comboId: "combo-1", sessionCode: "SES-001" }),
-    ];
-    const prefs = [{ sessionId: "SES-001", interest: "high" }];
-    const timeslotData = {
-      id: "ts-1",
-      timeslotStart: new Date("2028-07-15T10:00:00Z"),
-      timeslotEnd: new Date("2028-07-15T12:00:00Z"),
-      status: "upcoming",
-    };
-
-    queryResults = [
-      combos,
-      comboSessions,
-      prefs,
-      [], // interestedRows
-      [], // scheduledRows
-      [timeslotData], // purchaseTimeslot — found
-    ];
-
-    const result = await getMySchedule("group-1");
-
-    expect(result.data).toBeDefined();
-    expect(result.timeslot).toBeDefined();
-    expect(result.timeslot!.id).toBe("ts-1");
-    expect(result.timeslot!.status).toBe("upcoming");
-  });
-
-  it("returns null timeslot when no timeslot exists", async () => {
-    mockGetMembership.mockResolvedValue(membership);
-
-    const combos = [
-      { comboId: "combo-1", day: "2026-08-01", rank: "primary", score: 90 },
-    ];
-    const comboSessions = [
-      makeSession({ comboId: "combo-1", sessionCode: "SES-001" }),
-    ];
-    const prefs = [{ sessionId: "SES-001", interest: "high" }];
-
-    queryResults = [
-      combos,
-      comboSessions,
-      prefs,
-      [], // interestedRows
-      [], // scheduledRows
-      [], // purchaseTimeslot — empty
-    ];
-
-    const result = await getMySchedule("group-1");
-
-    expect(result.data).toBeDefined();
-    expect(result.timeslot).toBeNull();
-  });
-
   it("computes primaryScore from the primary combo", async () => {
     mockGetMembership.mockResolvedValue(membership);
 
@@ -505,5 +445,26 @@ describe("getMySchedule", () => {
     expect(result.data).toBeDefined();
     expect(result.data![0].primaryScore).toBe(95);
     expect(result.data![0].combos).toHaveLength(2);
+  });
+
+  it("handles combos with no associated sessions", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    // Query 1: combos — one combo
+    const combos = [
+      { comboId: "combo-1", day: "2026-08-01", rank: "primary", score: 50 },
+    ];
+
+    // Query 2: comboSessions — empty (no sessions linked to any combo)
+    const comboSessions: unknown[] = [];
+
+    queryResults = [combos, comboSessions];
+
+    const result = await getMySchedule("group-1");
+
+    expect(result.data).toBeDefined();
+    // Day exists but the combo has no sessions
+    expect(result.data![0].day).toBe("2026-08-01");
+    expect(result.data![0].combos[0].sessions).toEqual([]);
   });
 });

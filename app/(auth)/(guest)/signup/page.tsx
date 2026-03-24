@@ -11,7 +11,7 @@ import {
   emailSchema,
   passwordSchema,
 } from "@/lib/validations";
-import { inputClass } from "@/lib/constants";
+import { inputClass, avatarColors, type AvatarColor } from "@/lib/constants";
 
 export default function SignUpPage() {
   const [state, formAction, pending] = useActionState(signUp, null);
@@ -20,6 +20,9 @@ export default function SignUpPage() {
   const [username, setUsername] = useState(state?.values?.username ?? "");
   const [email, setEmail] = useState(state?.values?.email ?? "");
   const [password, setPassword] = useState("");
+  const [avatarColor, setAvatarColor] = useState<AvatarColor>(
+    (state?.values?.avatarColor as AvatarColor) ?? "blue"
+  );
 
   const usernameResult = usernameSchema.safeParse(username);
   const usernameHints =
@@ -42,6 +45,7 @@ export default function SignUpPage() {
     username,
     email,
     password,
+    avatarColor,
   }).success;
 
   return (
@@ -208,6 +212,49 @@ export default function SignUpPage() {
                   {hint}
                 </p>
               ))}
+            </div>
+
+            {/* Avatar Color */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-600">
+                Avatar Color
+              </label>
+              <input type="hidden" name="avatarColor" value={avatarColor} />
+              <div className="flex items-center gap-3">
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+                  style={{
+                    backgroundColor: avatarColors[avatarColor].bg,
+                    color: avatarColors[avatarColor].text,
+                  }}
+                >
+                  {(firstName[0] || "J").toUpperCase()}
+                  {(lastName[0] || "D").toUpperCase()}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(avatarColors) as AvatarColor[]).map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setAvatarColor(color)}
+                      className={`h-8 w-8 rounded-full transition-all ${
+                        avatarColor === color
+                          ? "ring-2 ring-offset-2"
+                          : "hover:scale-110"
+                      }`}
+                      style={{
+                        backgroundColor: avatarColors[color].bg,
+                        ...(avatarColor === color
+                          ? ({
+                              "--tw-ring-color": avatarColors[color].ring,
+                            } as React.CSSProperties)
+                          : {}),
+                      }}
+                      title={avatarColors[color].label}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Submit */}

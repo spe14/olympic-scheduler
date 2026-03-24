@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    onConsoleLog: () => false,
     coverage: {
       provider: "v8",
       include: ["lib/**/*.ts", "app/**/*.ts"],

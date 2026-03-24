@@ -104,11 +104,15 @@ export const HOUR_HEIGHT = 64;
 
 // ── Olympic dates ───────────────────────────────────────────────────────────
 
-export const OLYMPIC_START_DATE = new Date("2028-07-12T12:00:00");
+export const OLYMPIC_START = "2028-07-12";
+export const OLYMPIC_END = "2028-07-30";
+export const OLYMPIC_DAYS_COUNT = 19;
+
+export const OLYMPIC_START_DATE = new Date(OLYMPIC_START + "T12:00:00");
 
 export const OLYMPIC_DAYS_SET = new Set<string>();
 export const OLYMPIC_DAYS_LIST: string[] = [];
-for (let i = 0; i < 19; i++) {
+for (let i = 0; i < OLYMPIC_DAYS_COUNT; i++) {
   const d = new Date(OLYMPIC_START_DATE);
   d.setDate(d.getDate() + i);
   const ds = d.toISOString().split("T")[0];
@@ -138,8 +142,8 @@ export function addDays(dateStr: string, n: number): string {
 }
 
 export function buildWeeks(): string[][] {
-  const firstOlympic = "2028-07-12";
-  const lastOlympic = "2028-07-30";
+  const firstOlympic = OLYMPIC_START;
+  const lastOlympic = OLYMPIC_END;
   const firstDate = new Date(firstOlympic + "T12:00:00");
   const dow = firstDate.getDay();
   const weekStart = addDays(firstOlympic, -dow);

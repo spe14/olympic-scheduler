@@ -14,7 +14,7 @@ import {
   user,
   group,
 } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, notInArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types";
 import type { AvatarColor } from "@/lib/constants";
@@ -27,7 +27,6 @@ export type TimeslotData = {
   id: string;
   timeslotStart: Date;
   timeslotEnd: Date;
-  status: "upcoming" | "in_progress" | "completed";
 };
 
 export async function getTimeslot(
@@ -54,7 +53,6 @@ export async function getTimeslot(
       id: row.id,
       timeslotStart: row.timeslotStart,
       timeslotEnd: row.timeslotEnd,
-      status: row.status,
     },
   };
 }
@@ -101,37 +99,23 @@ export async function saveTimeslot(
   return { success: true };
 }
 
-export async function updateTimeslotStatus(
-  groupId: string,
-  status: "upcoming" | "in_progress" | "completed"
-): Promise<ActionResult> {
-  const { membership, error: authError } = await requireMembership(groupId);
-  if (authError) return authError;
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
-  const [existing] = await db
-    .select({ id: purchaseTimeslot.id })
-    .from(purchaseTimeslot)
+/** Returns active (joined / preferences_set) member IDs for a group. */
+async function getActiveGroupMemberIds(
+  groupId: string,
+  txOrDb: { select: any } = db
+) {
+  const rows: { id: string }[] = await txOrDb
+    .select({ id: member.id })
+    .from(member)
     .where(
       and(
-        eq(purchaseTimeslot.memberId, membership.id),
-        eq(purchaseTimeslot.groupId, groupId)
+        eq(member.groupId, groupId),
+        notInArray(member.status, ["pending_approval", "denied"])
       )
-    )
-    .limit(1);
-
-  if (!existing) return { error: "No timeslot found." };
-
-  try {
-    await db
-      .update(purchaseTimeslot)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(purchaseTimeslot.id, existing.id));
-  } catch {
-    return { error: failedAction("update timeslot status") };
-  }
-
-  revalidatePath(`/groups/${groupId}/schedule`);
-  return { success: true };
+    );
+  return new Set(rows.map((r) => r.id));
 }
 
 // ── Purchase plan actions ───────────────────────────────────────────────────
@@ -147,8 +131,16 @@ export async function savePurchasePlanEntry(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  if (data.priceCeiling != null && data.priceCeiling < 0) {
-    return { error: "Price ceiling cannot be negative." };
+  if (
+    data.priceCeiling != null &&
+    (isNaN(data.priceCeiling) || data.priceCeiling < 0)
+  ) {
+    return { error: "Price ceiling must be a non-negative number." };
+  }
+
+  const activeIds = await getActiveGroupMemberIds(groupId);
+  if (!activeIds.has(data.assigneeMemberId)) {
+    return { error: "Invalid assignee: member is not active in this group." };
   }
 
   try {
@@ -206,6 +198,76 @@ export async function removePurchasePlanEntry(
   return { success: true };
 }
 
+export async function batchSavePurchasePlan(
+  groupId: string,
+  data: {
+    sessionId: string;
+    entries: { assigneeMemberId: string; priceCeiling: number | null }[];
+  }
+): Promise<ActionResult> {
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
+
+  for (const entry of data.entries) {
+    if (
+      entry.priceCeiling != null &&
+      (isNaN(entry.priceCeiling) || entry.priceCeiling < 0)
+    ) {
+      return { error: "Price ceiling must be a non-negative number." };
+    }
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      // Validate assignee member IDs belong to this group
+      if (data.entries.length > 0) {
+        const activeIds = await getActiveGroupMemberIds(groupId, tx);
+        const invalid = data.entries.find(
+          (e) => !activeIds.has(e.assigneeMemberId)
+        );
+        if (invalid) {
+          return {
+            error: "Invalid assignee: member is not active in this group.",
+          } as const;
+        }
+      }
+
+      // Remove all existing plan entries for this member+session
+      await tx
+        .delete(purchasePlanEntry)
+        .where(
+          and(
+            eq(purchasePlanEntry.groupId, groupId),
+            eq(purchasePlanEntry.memberId, membership.id),
+            eq(purchasePlanEntry.sessionId, data.sessionId)
+          )
+        );
+
+      // Insert new entries
+      if (data.entries.length > 0) {
+        await tx.insert(purchasePlanEntry).values(
+          data.entries.map((e) => ({
+            groupId,
+            memberId: membership.id,
+            sessionId: data.sessionId,
+            assigneeMemberId: e.assigneeMemberId,
+            priceCeiling: e.priceCeiling,
+          }))
+        );
+      }
+    });
+
+    if (result && "error" in result) {
+      return { error: result.error };
+    }
+  } catch {
+    return { error: failedAction("save purchase plan") };
+  }
+
+  revalidatePath(`/groups/${groupId}/schedule`);
+  return { success: true };
+}
+
 // ── Ticket purchase actions ─────────────────────────────────────────────────
 
 export async function markAsPurchased(
@@ -223,20 +285,92 @@ export async function markAsPurchased(
     return { error: "Must select at least one member to buy for." };
   }
 
+  if (
+    data.pricePerTicket != null &&
+    (isNaN(data.pricePerTicket) || data.pricePerTicket < 0)
+  ) {
+    return { error: "Price per ticket must be a non-negative number." };
+  }
+
+  for (const a of data.assignees) {
+    if (a.pricePaid != null && (isNaN(a.pricePaid) || a.pricePaid < 0)) {
+      return { error: "Price paid must be a non-negative number." };
+    }
+  }
+
+  let purchaseId: string;
   try {
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
+      // Check if session is sold out
+      const [soldOut] = await tx
+        .select({ id: soldOutSession.id })
+        .from(soldOutSession)
+        .where(
+          and(
+            eq(soldOutSession.groupId, groupId),
+            eq(soldOutSession.sessionId, data.sessionId)
+          )
+        )
+        .limit(1);
+
+      if (soldOut) {
+        return { error: "This session has been marked as sold out." } as const;
+      }
+
+      // Validate all assignee member IDs belong to this group
+      const activeIds = await getActiveGroupMemberIds(groupId, tx);
+      const invalidAssignee = data.assignees.find(
+        (a) => !activeIds.has(a.memberId)
+      );
+      if (invalidAssignee) {
+        return {
+          error: "Invalid assignee: member is not active in this group.",
+        } as const;
+      }
+
+      // Filter out assignees who already have a purchase for this session
+      const existingAssignees = await tx
+        .select({ memberId: ticketPurchaseAssignee.memberId })
+        .from(ticketPurchaseAssignee)
+        .innerJoin(
+          ticketPurchase,
+          eq(ticketPurchaseAssignee.ticketPurchaseId, ticketPurchase.id)
+        )
+        .where(
+          and(
+            eq(ticketPurchase.groupId, groupId),
+            eq(ticketPurchase.sessionId, data.sessionId),
+            inArray(
+              ticketPurchaseAssignee.memberId,
+              data.assignees.map((a) => a.memberId)
+            )
+          )
+        );
+
+      const alreadyAssigned = new Set(existingAssignees.map((e) => e.memberId));
+      const newAssignees = data.assignees.filter(
+        (a) => !alreadyAssigned.has(a.memberId)
+      );
+
+      if (newAssignees.length === 0) {
+        return {
+          error:
+            "All selected members already have a purchase for this session.",
+        } as const;
+      }
+
       const [purchase] = await tx
         .insert(ticketPurchase)
         .values({
           groupId,
           sessionId: data.sessionId,
           purchasedByMemberId: membership.id,
-          pricePerTicket: data.pricePerTicket ?? 0,
+          pricePerTicket: data.pricePerTicket ?? null,
         })
         .returning({ id: ticketPurchase.id });
 
       await tx.insert(ticketPurchaseAssignee).values(
-        data.assignees.map((a) => ({
+        newAssignees.map((a) => ({
           ticketPurchaseId: purchase.id,
           memberId: a.memberId,
           pricePaid: a.pricePaid ?? null,
@@ -246,14 +380,20 @@ export async function markAsPurchased(
         .update(group)
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
+      return { purchaseId: purchase.id } as const;
     });
+
+    if ("error" in result) {
+      return { error: result.error };
+    }
+    purchaseId = result.purchaseId;
   } catch {
     return { error: failedAction("record purchase") };
   }
 
   revalidatePath(`/groups/${groupId}/schedule`);
   revalidatePath(`/groups/${groupId}/group-schedule`);
-  return { success: true };
+  return { success: true, data: { purchaseId } };
 }
 
 export async function deletePurchase(
@@ -312,22 +452,28 @@ export async function removePurchaseAssignee(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
+  // Verify the purchase belongs to this group and was made by the caller
+  const [purchase] = await db
+    .select({
+      id: ticketPurchase.id,
+      purchasedByMemberId: ticketPurchase.purchasedByMemberId,
+    })
+    .from(ticketPurchase)
+    .where(
+      and(
+        eq(ticketPurchase.id, data.purchaseId),
+        eq(ticketPurchase.groupId, groupId)
+      )
+    )
+    .limit(1);
+
+  if (!purchase) return { success: true };
+  if (purchase.purchasedByMemberId !== membership.id) {
+    return { error: "You can only edit your own purchases." };
+  }
+
   try {
     await db.transaction(async (tx) => {
-      // Verify the purchase belongs to this group
-      const [purchase] = await tx
-        .select({ id: ticketPurchase.id })
-        .from(ticketPurchase)
-        .where(
-          and(
-            eq(ticketPurchase.id, data.purchaseId),
-            eq(ticketPurchase.groupId, groupId)
-          )
-        )
-        .limit(1);
-
-      if (!purchase) return;
-
       await tx
         .delete(ticketPurchaseAssignee)
         .where(
@@ -371,31 +517,50 @@ export async function updatePurchaseAssigneePrice(
   const { membership, error: authError } = await requireMembership(groupId);
   if (authError) return authError;
 
-  // Verify the purchase belongs to this group
-  const [purchase] = await db
-    .select({ id: ticketPurchase.id })
-    .from(ticketPurchase)
-    .where(
-      and(
-        eq(ticketPurchase.id, data.purchaseId),
-        eq(ticketPurchase.groupId, groupId)
-      )
-    )
-    .limit(1);
-
-  if (!purchase) return { error: "Purchase not found." };
+  if (data.pricePaid != null && (isNaN(data.pricePaid) || data.pricePaid < 0)) {
+    return { error: "Price must be a non-negative number." };
+  }
 
   try {
-    await db
-      .update(ticketPurchaseAssignee)
-      .set({ pricePaid: data.pricePaid })
-      .where(
-        and(
-          eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId),
-          eq(ticketPurchaseAssignee.memberId, data.memberId)
+    await db.transaction(async (tx) => {
+      // Verify the purchase belongs to this group and was made by the caller
+      const [purchase] = await tx
+        .select({
+          id: ticketPurchase.id,
+          purchasedByMemberId: ticketPurchase.purchasedByMemberId,
+        })
+        .from(ticketPurchase)
+        .where(
+          and(
+            eq(ticketPurchase.id, data.purchaseId),
+            eq(ticketPurchase.groupId, groupId)
+          )
         )
-      );
-  } catch {
+        .limit(1);
+
+      if (!purchase) throw new Error("Purchase not found.");
+      if (purchase.purchasedByMemberId !== membership.id) {
+        throw new Error("You can only edit your own purchases.");
+      }
+
+      await tx
+        .update(ticketPurchaseAssignee)
+        .set({ pricePaid: data.pricePaid })
+        .where(
+          and(
+            eq(ticketPurchaseAssignee.ticketPurchaseId, data.purchaseId),
+            eq(ticketPurchaseAssignee.memberId, data.memberId)
+          )
+        );
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    if (
+      msg === "Purchase not found." ||
+      msg === "You can only edit your own purchases."
+    ) {
+      return { error: msg };
+    }
     return { error: failedAction("update assignee price") };
   }
 
@@ -555,10 +720,10 @@ export async function reportSessionPrice(
   if (data.minPrice == null && data.maxPrice == null && !trimmedComments) {
     return { error: "At least one price or a comment is required." };
   }
-  if (data.minPrice != null && data.minPrice <= 0)
-    return { error: "Min price must be positive." };
-  if (data.maxPrice != null && data.maxPrice <= 0)
-    return { error: "Max price must be positive." };
+  if (data.minPrice != null && (isNaN(data.minPrice) || data.minPrice <= 0))
+    return { error: "Min price must be a positive number." };
+  if (data.maxPrice != null && (isNaN(data.maxPrice) || data.maxPrice <= 0))
+    return { error: "Max price must be a positive number." };
   if (
     data.minPrice != null &&
     data.maxPrice != null &&
@@ -614,6 +779,11 @@ export async function deleteOffScheduleSessionData(
             eq(reportedPrice.reportedByMemberId, membership.id)
           )
         );
+
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
     });
   } catch {
     return { error: failedAction("delete off-schedule session data") };
@@ -639,7 +809,7 @@ export type PurchaseData = {
   buyerMemberId: string;
   buyerFirstName: string;
   buyerLastName: string;
-  pricePerTicket: number;
+  pricePerTicket: number | null;
   assignees: {
     memberId: string;
     firstName: string;

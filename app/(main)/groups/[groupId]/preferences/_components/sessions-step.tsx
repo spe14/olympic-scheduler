@@ -321,9 +321,14 @@ export default function SessionsStep({
         <strong>
           Any sessions that you don&apos;t select will default to &apos;No
           Interest&apos; and be excluded from your final schedule.
-        </strong>
+        </strong>{" "}
+        Sessions for which you have already purchased tickets will appear on
+        your schedule irrespective of your preferences.
       </p>
-      <p className="mb-4 text-sm text-slate-500"></p>
+      <p className="mt-2 text-xs text-slate-400">
+        All session times are displayed in Pacific Time.
+      </p>
+      <div className="mb-4" />
 
       {/* Search */}
       <div className="relative mb-3">

@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { computeWindowRankings } from "@/lib/algorithm/window-ranking";
+import {
+  computeWindowRankings,
+  buildMemberScores,
+} from "@/lib/algorithm/window-ranking";
 import type { WindowRankingInput } from "@/lib/algorithm/window-ranking";
 
 describe("computeWindowRankings", () => {
@@ -365,5 +368,65 @@ describe("computeWindowRankings", () => {
       consecutiveDays: 20,
     });
     expect(result).toEqual([]);
+  });
+});
+
+describe("buildMemberScores", () => {
+  it("groups combos by member with primary and backup scores", () => {
+    const combos = [
+      { memberId: "m1", day: "2028-07-12", rank: "primary", score: 100 },
+      { memberId: "m1", day: "2028-07-12", rank: "backup1", score: 80 },
+      { memberId: "m1", day: "2028-07-12", rank: "backup2", score: 60 },
+      { memberId: "m2", day: "2028-07-12", rank: "primary", score: 90 },
+      { memberId: "m2", day: "2028-07-13", rank: "primary", score: 70 },
+    ];
+
+    const result = buildMemberScores(combos);
+
+    expect(result).toHaveLength(2);
+
+    const m1 = result.find((m) => m.memberId === "m1")!;
+    expect(m1.dailyScores.get("2028-07-12")).toBe(100);
+    expect(m1.dailyBackupScores?.get("2028-07-12")).toEqual({
+      b1: 80,
+      b2: 60,
+    });
+
+    const m2 = result.find((m) => m.memberId === "m2")!;
+    expect(m2.dailyScores.get("2028-07-12")).toBe(90);
+    expect(m2.dailyScores.get("2028-07-13")).toBe(70);
+    expect(m2.dailyBackupScores).toBeUndefined();
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(buildMemberScores([])).toEqual([]);
+  });
+
+  it("excludes members with only backup combos (no primary)", () => {
+    const combos = [
+      { memberId: "m1", day: "2028-07-12", rank: "primary", score: 50 },
+      { memberId: "m2", day: "2028-07-12", rank: "backup1", score: 30 },
+    ];
+
+    const result = buildMemberScores(combos);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].memberId).toBe("m1");
+  });
+
+  it("defaults backup scores to zero when only one backup rank exists for a day", () => {
+    const combos = [
+      { memberId: "m1", day: "2028-07-12", rank: "primary", score: 100 },
+      { memberId: "m1", day: "2028-07-12", rank: "backup2", score: 40 },
+    ];
+
+    const result = buildMemberScores(combos);
+
+    const m1 = result.find((m) => m.memberId === "m1")!;
+    const backups = m1.dailyBackupScores?.get("2028-07-12");
+    expect(backups).toBeDefined();
+    // backup1 was never set, so b1 defaults to 0
+    expect(backups!.b1).toBe(0);
+    expect(backups!.b2).toBe(40);
   });
 });

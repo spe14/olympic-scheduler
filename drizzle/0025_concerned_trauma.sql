@@ -1,0 +1,2 @@
+CREATE INDEX "purchase_timeslot_group_idx" ON "purchase_timeslot" USING btree ("group_id");--> statement-breakpoint
+CREATE INDEX "window_ranking_group_idx" ON "window_ranking" USING btree ("group_id");

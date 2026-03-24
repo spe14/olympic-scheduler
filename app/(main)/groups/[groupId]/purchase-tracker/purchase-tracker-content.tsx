@@ -28,6 +28,7 @@ import type {
 import {
   savePurchasePlanEntry,
   removePurchasePlanEntry,
+  batchSavePurchasePlan,
   markAsPurchased,
   markAsSoldOut,
   unmarkSoldOut,
@@ -242,11 +243,8 @@ export default function PurchaseTrackerContent() {
         if (result.data) {
           setActiveWindowId((prev) => {
             if (prev !== null) return prev; // already set
-            // Default to owner-selected window, then top-ranked, then null (show all)
-            const selected = result.data!.windowRankings.find(
-              (w) => w.selected
-            );
-            return selected?.id ?? result.data!.windowRankings[0]?.id ?? null;
+            // Default to top-ranked window, then null (show all)
+            return result.data!.windowRankings[0]?.id ?? null;
           });
         }
       }
@@ -317,6 +315,9 @@ export default function PurchaseTrackerContent() {
       <h2 className="mb-1 text-lg font-semibold text-slate-900">
         Purchase Planner & Tracker
       </h2>
+      <p className="mb-3 text-xs text-slate-400">
+        All session times are displayed in Pacific Time.
+      </p>
 
       {/* Schedule sessions by day */}
       {(() => {
@@ -769,9 +770,9 @@ function SessionRow({
   // Disabled if any row on the page is busy (including this one for non-edit buttons)
   const busy = globalBusy;
 
-  // Sync local busy state to global
+  // Sync local busy state to global — use effect for cleanup (when localBusy goes false)
   useEffect(() => {
-    onSetGlobalBusy(localBusy);
+    if (!localBusy) onSetGlobalBusy(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localBusy]);
 
@@ -1027,6 +1028,7 @@ function SessionRow({
                                     <div className="flex items-center gap-1">
                                       <button
                                         onClick={() => {
+                                          onSetGlobalBusy(true);
                                           setEditingCeiling(memberId);
                                           setEditCeilingValue(
                                             ceiling != null
@@ -1263,6 +1265,7 @@ function SessionRow({
                                           <div className="flex items-center gap-1">
                                             <button
                                               onClick={() => {
+                                                onSetGlobalBusy(true);
                                                 setEditingAssignee(
                                                   `${p.purchaseId}-${a.memberId}`
                                                 );
@@ -1594,25 +1597,16 @@ function SessionRow({
               currentMemberId={currentMemberId}
               initialCeilings={localCeilings}
               onSave={async (ceilings) => {
-                // Remove entries that were removed
-                for (const [memberId] of localCeilings) {
-                  if (!ceilings.has(memberId)) {
-                    const result = await removePurchasePlanEntry(groupId, {
-                      sessionId: s.sessionCode,
-                      assigneeMemberId: memberId,
-                    });
-                    if (result.error) return result.error;
-                  }
-                }
-                // Add/update entries
-                for (const [memberId, price] of ceilings) {
-                  const result = await savePurchasePlanEntry(groupId, {
-                    sessionId: s.sessionCode,
-                    assigneeMemberId: memberId,
-                    priceCeiling: price,
-                  });
-                  if (result.error) return result.error;
-                }
+                const result = await batchSavePurchasePlan(groupId, {
+                  sessionId: s.sessionCode,
+                  entries: [...ceilings.entries()].map(
+                    ([assigneeMemberId, priceCeiling]) => ({
+                      assigneeMemberId,
+                      priceCeiling,
+                    })
+                  ),
+                });
+                if (result.error) return result.error;
                 onOverride({ ceilings });
                 setActiveModal(null);
                 return null;
@@ -1686,25 +1680,27 @@ function SessionRow({
                     ? Math.round(
                         prices.reduce((sum, p) => sum + p, 0) / prices.length
                       )
-                    : 0;
+                    : undefined;
                 const result = await markAsPurchased(groupId, {
                   sessionId: s.sessionCode,
-                  pricePerTicket: avgPrice || undefined,
+                  pricePerTicket: avgPrice,
                   assignees: assignees.map((a) => ({
                     memberId: a.memberId,
                     pricePaid: a.price,
                   })),
                 });
                 if (result.error) return result.error;
+                const newPurchaseId =
+                  (result.data?.purchaseId as string) ?? crypto.randomUUID();
                 onOverride({
                   purchases: [
                     ...localPurchases,
                     {
-                      purchaseId: crypto.randomUUID(),
+                      purchaseId: newPurchaseId,
                       buyerMemberId: currentMemberId,
                       buyerFirstName: "You",
                       buyerLastName: "",
-                      pricePerTicket: avgPrice,
+                      pricePerTicket: avgPrice ?? null,
                       assignees: assignees.map((a) => {
                         const m = members.find(
                           (m) => m.memberId === a.memberId
@@ -3300,25 +3296,27 @@ function OffScheduleSessionCard({
                 ? Math.round(
                     prices.reduce((sum, p) => sum + p, 0) / prices.length
                   )
-                : 0;
+                : undefined;
             const result = await markAsPurchased(groupId, {
               sessionId: s.sessionCode,
-              pricePerTicket: avgPrice || undefined,
+              pricePerTicket: avgPrice,
               assignees: assignees.map((a) => ({
                 memberId: a.memberId,
                 pricePaid: a.price,
               })),
             });
             if (result.error) return result.error;
+            const newPurchaseId =
+              (result.data?.purchaseId as string) ?? crypto.randomUUID();
             onOverride({
               purchases: [
                 ...localPurchases,
                 {
-                  purchaseId: crypto.randomUUID(),
+                  purchaseId: newPurchaseId,
                   buyerMemberId: currentMemberId,
                   buyerFirstName: "You",
                   buyerLastName: "",
-                  pricePerTicket: avgPrice,
+                  pricePerTicket: avgPrice ?? null,
                   assignees: assignees.map((a) => {
                     const m = members.find((mm) => mm.memberId === a.memberId);
                     return {

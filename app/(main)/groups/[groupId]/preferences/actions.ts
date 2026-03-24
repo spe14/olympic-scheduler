@@ -43,33 +43,12 @@ export async function saveBuddies(
 
   const { minBuddies, buddies } = data;
 
-  // Fetch eligible members (active, not self)
-  const validMembers = await db
-    .select({ id: member.id })
-    .from(member)
-    .where(
-      and(
-        eq(member.groupId, groupId),
-        notInArray(member.status, ["pending_approval", "denied"])
-      )
-    );
-
-  const otherMemberCount = validMembers.filter(
-    (m) => m.id !== membership.id
-  ).length;
-
   if (
     typeof minBuddies !== "number" ||
     minBuddies < 0 ||
     !Number.isInteger(minBuddies)
   ) {
     return { error: "Minimum buddies must be a non-negative integer." };
-  }
-
-  if (minBuddies > otherMemberCount) {
-    return {
-      error: `Minimum buddies cannot exceed ${otherMemberCount} (other group members).`,
-    };
   }
 
   const hardBuddyCount = buddies.filter((b) => b.type === "hard").length;
@@ -85,21 +64,43 @@ export async function saveBuddies(
     return { error: "Duplicate buddy selections." };
   }
 
-  // Validate buddy IDs are real members in this group (not self, not pending)
-  if (buddyIds.length > 0) {
-    const validIds = new Set(validMembers.map((m) => m.id));
-    for (const buddyId of buddyIds) {
-      if (buddyId === membership.id) {
-        return { error: "You cannot select yourself as a buddy." };
-      }
-      if (!validIds.has(buddyId)) {
-        return { error: "Invalid buddy selection." };
-      }
-    }
+  // Self-buddy check (doesn't require DB)
+  if (buddyIds.includes(membership.id)) {
+    return { error: "You cannot select yourself as a buddy." };
   }
 
   try {
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
+      // Fetch eligible members inside transaction for consistency
+      const validMembers = await tx
+        .select({ id: member.id })
+        .from(member)
+        .where(
+          and(
+            eq(member.groupId, groupId),
+            notInArray(member.status, ["pending_approval", "denied"])
+          )
+        );
+
+      const otherMemberCount = validMembers.filter(
+        (m) => m.id !== membership.id
+      ).length;
+
+      if (minBuddies > otherMemberCount) {
+        return {
+          error: `Minimum buddies cannot exceed ${otherMemberCount} (other group members).`,
+        };
+      }
+
+      // Validate buddy IDs are real members in this group
+      if (buddyIds.length > 0) {
+        const validIds = new Set(validMembers.map((m) => m.id));
+        for (const buddyId of buddyIds) {
+          if (!validIds.has(buddyId)) {
+            return { error: "Invalid buddy selection." };
+          }
+        }
+      }
       // Update member preferences
       await tx
         .update(member)
@@ -146,7 +147,13 @@ export async function saveBuddies(
           .set({ affectedBuddyMembers: remaining })
           .where(eq(group.id, groupId));
       }
+
+      return null;
     });
+
+    if (result?.error) {
+      return result;
+    }
   } catch {
     return { error: failedAction("save preferences") };
   }
@@ -284,36 +291,36 @@ export async function saveSessionPreferences(
     }
   }
 
-  // Fetch member's sport rankings to validate sessions are within ranked sports
-  const [memberData] = await db
-    .select({ sportRankings: member.sportRankings })
-    .from(member)
-    .where(eq(member.id, membership.id))
-    .limit(1);
-
-  const rankedSports = (memberData?.sportRankings as string[]) ?? [];
-  if (rankedSports.length === 0) {
-    return { error: "You must complete sport rankings first." };
-  }
-
-  // Validate all session IDs exist and belong to ranked sports
-  const validSessions = await db
-    .select({ sessionCode: session.sessionCode, sport: session.sport })
-    .from(session)
-    .where(inArray(session.sport, rankedSports));
-
-  const validSessionMap = new Map(
-    validSessions.map((s) => [s.sessionCode, s.sport])
-  );
-
-  for (const pref of preferences) {
-    if (!validSessionMap.has(pref.sessionId)) {
-      return { error: `Invalid session: ${pref.sessionId}` };
-    }
-  }
-
   try {
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
+      // Fetch member's sport rankings inside transaction for consistency
+      const [memberData] = await tx
+        .select({ sportRankings: member.sportRankings })
+        .from(member)
+        .where(eq(member.id, membership.id))
+        .limit(1);
+
+      const rankedSports = (memberData?.sportRankings as string[]) ?? [];
+      if (rankedSports.length === 0) {
+        return { error: "You must complete sport rankings first." };
+      }
+
+      // Validate all session IDs exist and belong to ranked sports
+      const validSessions = await tx
+        .select({ sessionCode: session.sessionCode, sport: session.sport })
+        .from(session)
+        .where(inArray(session.sport, rankedSports));
+
+      const validSessionMap = new Map(
+        validSessions.map((s) => [s.sessionCode, s.sport])
+      );
+
+      for (const pref of preferences) {
+        if (!validSessionMap.has(pref.sessionId)) {
+          return { error: `Invalid session: ${pref.sessionId}` };
+        }
+      }
+
       // Delete old session preferences
       await tx
         .delete(sessionPreference)
@@ -354,7 +361,13 @@ export async function saveSessionPreferences(
           .set({ affectedBuddyMembers: remaining })
           .where(eq(group.id, groupId));
       }
+
+      return null;
     });
+
+    if (result?.error) {
+      return result;
+    }
   } catch {
     return { error: failedAction("save session preferences") };
   }

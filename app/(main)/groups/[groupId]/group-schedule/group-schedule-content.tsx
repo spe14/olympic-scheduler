@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useGroup } from "../_components/group-context";
 import { useSidePanel } from "../_components/side-panel-context";
 import { getGroupSchedule } from "./actions";
@@ -92,6 +92,7 @@ export default function GroupScheduleContent() {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const fetchCounterRef = useRef(0);
   const [selectedSession, setSelectedSession] = useState<{
     session: GroupSession;
     day: string;
@@ -165,15 +166,27 @@ export default function GroupScheduleContent() {
 
   const fetchSchedule = () => {
     if (!hasSchedules || group.membersWithNoCombos.length > 0) return;
+    setError("");
     setLoading(true);
-    getGroupSchedule(group.id).then((result) => {
-      setLoading(false);
-      if (result.error) {
-        setError(result.error);
-      } else {
-        setSchedule(result.data ?? []);
-      }
-    });
+    const fetchId = ++fetchCounterRef.current;
+    getGroupSchedule(group.id)
+      .then((result) => {
+        if (fetchId !== fetchCounterRef.current) return;
+        if (result.error) {
+          setError(result.error);
+        } else {
+          setSchedule(result.data ?? []);
+        }
+      })
+      .catch(() => {
+        if (fetchId !== fetchCounterRef.current) return;
+        setError("Failed to load group schedule.");
+      })
+      .finally(() => {
+        if (fetchId === fetchCounterRef.current) {
+          setLoading(false);
+        }
+      });
   };
 
   useEffect(() => {
@@ -421,7 +434,15 @@ export default function GroupScheduleContent() {
     }
     return groups;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayMode, daySessionMap, selectedMembers, filterMode, searchQuery]);
+  }, [
+    displayMode,
+    daySessionMap,
+    selectedMembers,
+    filterMode,
+    purchasedFilter,
+    soldOutFilter,
+    searchQuery,
+  ]);
 
   // State 1: No schedules
   if (!hasSchedules) {
@@ -629,6 +650,9 @@ export default function GroupScheduleContent() {
             })}
           </p>
         )}
+        <p className="mt-1 text-xs text-slate-400">
+          All session times are displayed in Pacific Time.
+        </p>
       </div>
 
       {/* Calendar navigation — only in calendar mode */}
@@ -1129,7 +1153,6 @@ function GroupScheduleSidebar({
     startDate: string;
     endDate: string;
     score: number;
-    selected: boolean;
   }[];
   activeWindowId: string | null;
   onSelectWindow: (id: string) => void;
@@ -1242,7 +1265,7 @@ function GroupScheduleSidebar({
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                     isActive
                       ? "border-[#009de5] bg-[#009de5]/5 text-[#009de5]"
-                      : `border-slate-200 text-slate-500${isClickable ? "hover:bg-slate-50" : ""}`
+                      : `border-slate-200 text-slate-500 ${isClickable ? "hover:bg-slate-50" : ""}`
                   }`}
                 >
                   <div className="flex items-center gap-2">

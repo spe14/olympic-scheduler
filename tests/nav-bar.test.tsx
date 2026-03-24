@@ -56,6 +56,12 @@ function openDropdownAndGet(label: string) {
 
 // ─── Tests ──────────────────────────────────────────────────────────
 
+// Suppress jsdom "Not implemented: navigation" noise on the virtual console
+const vc = (window as any)._virtualConsole;
+if (vc) {
+  vc.removeAllListeners("jsdomError");
+}
+
 describe("NavBar navigation guards", () => {
   beforeEach(() => {
     vi.clearAllMocks();

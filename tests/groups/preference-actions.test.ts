@@ -61,7 +61,7 @@ const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
 const mockInsertValues = vi.fn(() => Promise.resolve());
 const mockInsert = vi.fn(() => ({ values: mockInsertValues }));
 
-const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
+const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<unknown>) => {
   const txUpdateWhere = vi.fn(() => Promise.resolve());
   const txDeleteWhere = vi.fn(() => Promise.resolve());
   const txInsertValues = vi.fn(() => Promise.resolve());
@@ -72,16 +72,27 @@ const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
     delete: vi.fn(() => ({ where: txDeleteWhere })),
     insert: vi.fn(() => ({ values: txInsertValues })),
     select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-          for: vi.fn(() => ({
+      from: vi.fn(() => {
+        const result = txSelectResults.shift() ?? [
+          { affectedBuddyMembers: {} },
+        ];
+        return {
+          where: vi.fn(() => ({
+            limit: vi.fn(() => result),
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(result);
+              },
+            })),
             then(r: (v: unknown) => void) {
-              r([{ affectedBuddyMembers: {} }]);
+              r(result);
             },
           })),
-        })),
-      })),
+          then(r: (v: unknown) => void) {
+            r(result);
+          },
+        };
+      }),
     })),
   };
   return cb(tx);
@@ -128,6 +139,10 @@ vi.mock("@/lib/db/schema", () => ({
   },
 }));
 
+// Queue for transaction select results (saveBuddies/saveSessionPreferences
+// now query inside the transaction)
+let txSelectResults: unknown[][] = [];
+
 const mockUser = { id: "user-1", authId: "auth-123" };
 
 // Helper: getMembership returns active member
@@ -156,33 +171,47 @@ describe("saveBuddies", () => {
     mockLimit.mockReset();
     mockUpdateWhere.mockReset();
     mockTransaction.mockClear();
-    directWhereResults = [];
+    txSelectResults = [];
+    txSelectResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txUpdateWhere = vi.fn(() => Promise.resolve());
-      const txDeleteWhere = vi.fn(() => Promise.resolve());
-      const txInsertValues = vi.fn(() => Promise.resolve());
-      const tx = {
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: txUpdateWhere })),
-        })),
-        delete: vi.fn(() => ({ where: txDeleteWhere })),
-        insert: vi.fn(() => ({ values: txInsertValues })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
-                },
-              })),
-            })),
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txUpdateWhere = vi.fn(() => Promise.resolve());
+        const txDeleteWhere = vi.fn(() => Promise.resolve());
+        const txInsertValues = vi.fn(() => Promise.resolve());
+        const tx = {
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: txUpdateWhere })),
           })),
-        })),
-      };
-      return cb(tx);
-    });
+          delete: vi.fn(() => ({ where: txDeleteWhere })),
+          insert: vi.fn(() => ({ values: txInsertValues })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
+                then(r: (v: unknown) => void) {
+                  r(result);
+                },
+              };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
   });
 
   it("returns error when not authenticated", async () => {
@@ -210,7 +239,7 @@ describe("saveBuddies", () => {
   // minBuddies validation
   it("returns error for negative minBuddies", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const result = await saveBuddies("group-1", {
       minBuddies: -1,
@@ -224,7 +253,7 @@ describe("saveBuddies", () => {
 
   it("returns error for non-integer minBuddies", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const result = await saveBuddies("group-1", {
       minBuddies: 1.5,
@@ -239,7 +268,7 @@ describe("saveBuddies", () => {
   it("returns error when minBuddies exceeds other member count", async () => {
     mockActiveMember();
     // 2 members total, self is member-1, so 1 other member
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const result = await saveBuddies("group-1", {
       minBuddies: 2,
@@ -251,7 +280,7 @@ describe("saveBuddies", () => {
 
   it("accepts minBuddies equal to other member count", async () => {
     mockActiveMember();
-    directWhereResults.push([
+    txSelectResults.push([
       { id: "member-1" },
       { id: "member-2" },
       { id: "member-3" },
@@ -267,7 +296,7 @@ describe("saveBuddies", () => {
 
   it("accepts minBuddies of 0", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }]);
+    txSelectResults.push([{ id: "member-1" }]);
 
     const result = await saveBuddies("group-1", {
       minBuddies: 0,
@@ -280,7 +309,7 @@ describe("saveBuddies", () => {
   // Buddy validation
   it("returns error for duplicate buddy selections", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const result = await saveBuddies("group-1", {
       minBuddies: 1,
@@ -295,7 +324,7 @@ describe("saveBuddies", () => {
 
   it("returns error when selecting self as buddy", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const result = await saveBuddies("group-1", {
       minBuddies: 1,
@@ -307,7 +336,7 @@ describe("saveBuddies", () => {
 
   it("returns error when minBuddies is less than hard buddy count", async () => {
     mockActiveMember();
-    directWhereResults.push([
+    txSelectResults.push([
       { id: "member-1" },
       { id: "member-2" },
       { id: "member-3" },
@@ -326,7 +355,7 @@ describe("saveBuddies", () => {
 
   it("accepts minBuddies equal to hard buddy count", async () => {
     mockActiveMember();
-    directWhereResults.push([
+    txSelectResults.push([
       { id: "member-1" },
       { id: "member-2" },
       { id: "member-3" },
@@ -345,7 +374,7 @@ describe("saveBuddies", () => {
 
   it("returns error for invalid buddy member ID", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const result = await saveBuddies("group-1", {
       minBuddies: 1,
@@ -357,7 +386,7 @@ describe("saveBuddies", () => {
 
   it("saves with valid buddies and verifies transaction operations", async () => {
     mockActiveMember();
-    directWhereResults.push([
+    txSelectResults.push([
       { id: "member-1" },
       { id: "member-2" },
       { id: "member-3" },
@@ -370,24 +399,36 @@ describe("saveBuddies", () => {
     }));
     const txInsertValuesMock = vi.fn(() => Promise.resolve());
     const txInsertMock = vi.fn(() => ({ values: txInsertValuesMock }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: txUpdateMock,
-        delete: txDeleteMock,
-        insert: txInsertMock,
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: txUpdateMock,
+          delete: txDeleteMock,
+          insert: txInsertMock,
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
                 then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
+                  r(result);
                 },
-              })),
-            })),
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveBuddies("group-1", {
@@ -420,29 +461,41 @@ describe("saveBuddies", () => {
 
   it("saves with empty buddies list and skips insert", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }]);
+    txSelectResults.push([{ id: "member-1" }]);
 
     const txInsertMock = vi.fn(() => ({ values: vi.fn() }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: txInsertMock,
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
-                },
-              })),
-            })),
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
           })),
-        })),
-      })
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: txInsertMock,
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
+                then(r: (v: unknown) => void) {
+                  r(result);
+                },
+              };
+            }),
+          })),
+        })
     );
 
     const result = await saveBuddies("group-1", {
@@ -458,27 +511,39 @@ describe("saveBuddies", () => {
 
   it("does not reset status when re-editing after preferences_set", async () => {
     mockActiveMember({ status: "preferences_set", preferenceStep: "sessions" });
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: vi.fn(() => ({ set: txSetMock })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: vi.fn(() => ({ set: txSetMock })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
                 then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
+                  r(result);
                 },
-              })),
-            })),
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveBuddies("group-1", {
@@ -493,27 +558,39 @@ describe("saveBuddies", () => {
 
   it("does not reset status when member is in preferences_set (shouldResetStatus always false)", async () => {
     mockActiveMember({ status: "preferences_set", preferenceStep: "sessions" });
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: vi.fn(() => ({ set: txSetMock })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: vi.fn(() => ({ set: txSetMock })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
                 then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
+                  r(result);
                 },
-              })),
-            })),
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveBuddies("group-1", {
@@ -528,27 +605,39 @@ describe("saveBuddies", () => {
 
   it("does not reset status when member is in joined status", async () => {
     mockActiveMember({ status: "joined", preferenceStep: null });
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: vi.fn(() => ({ set: txSetMock })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: vi.fn(() => ({ set: txSetMock })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
                 then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
+                  r(result);
                 },
-              })),
-            })),
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveBuddies("group-1", {
@@ -564,27 +653,39 @@ describe("saveBuddies", () => {
   it("does not overwrite preferenceStep when already at a higher step", async () => {
     // preferenceStep is "sessions" — saving buddies should NOT set preferenceStep: "buddies"
     mockActiveMember({ preferenceStep: "sessions" });
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: vi.fn(() => ({ set: txSetMock })),
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: vi.fn(() => ({ set: txSetMock })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
                 then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
+                  r(result);
                 },
-              })),
-            })),
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveBuddies("group-1", {
@@ -599,7 +700,7 @@ describe("saveBuddies", () => {
 
   it("returns error when transaction fails", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
     mockTransaction.mockRejectedValue(new Error("TX error"));
 
     const result = await saveBuddies("group-1", {
@@ -612,7 +713,7 @@ describe("saveBuddies", () => {
 
   it("clears member affectedBuddyMembers entry on save", async () => {
     mockActiveMember();
-    directWhereResults.push([{ id: "member-1" }, { id: "member-2" }]);
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
 
     const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
     const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
@@ -626,20 +727,36 @@ describe("saveBuddies", () => {
         r([{ affectedBuddyMembers: affectedData }]);
       },
     }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        update: txUpdateMock,
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: txSelectLimit,
-              for: txSelectFor,
-            })),
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: txUpdateMock,
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: affectedData },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
+                then(r: (v: unknown) => void) {
+                  r(result);
+                },
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveBuddies("group-1", {
@@ -919,44 +1036,58 @@ describe("saveSessionPreferences", () => {
     mockUpdateWhere.mockReset();
     mockTransaction.mockClear();
     directWhereResults = [];
+    txSelectResults = [];
     mockUpdateWhere.mockResolvedValue(undefined);
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) => {
-      const txUpdateWhere = vi.fn(() => Promise.resolve());
-      const txDeleteWhere = vi.fn(() => Promise.resolve());
-      const txInsertValues = vi.fn(() => Promise.resolve());
-      const tx = {
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: txUpdateWhere })),
-        })),
-        delete: vi.fn(() => ({ where: txDeleteWhere })),
-        insert: vi.fn(() => ({ values: txInsertValues })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
-                },
-              })),
-            })),
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txUpdateWhere = vi.fn(() => Promise.resolve());
+        const txDeleteWhere = vi.fn(() => Promise.resolve());
+        const txInsertValues = vi.fn(() => Promise.resolve());
+        const tx = {
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: txUpdateWhere })),
           })),
-        })),
-      };
-      return cb(tx);
-    });
+          delete: vi.fn(() => ({ where: txDeleteWhere })),
+          insert: vi.fn(() => ({ values: txInsertValues })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
+                then(r: (v: unknown) => void) {
+                  r(result);
+                },
+              };
+            }),
+          })),
+        };
+        return cb(tx);
+      }
+    );
   });
 
-  // Helper: mock sport rankings query (the second select call)
+  // Helper: mock sport rankings query (first tx.select call)
   function mockSportRankings(sports: string[]) {
-    mockLimit.mockResolvedValueOnce([{ sportRankings: sports }]);
+    txSelectResults.push([{ sportRankings: sports }]);
   }
 
-  // Helper: mock valid sessions query
+  // Helper: mock valid sessions query (second tx.select call)
   function mockValidSessions(
     sessions: { sessionCode: string; sport: string }[]
   ) {
-    directWhereResults.push(sessions);
+    txSelectResults.push(sessions);
   }
 
   it("returns error when not authenticated", async () => {
@@ -1029,7 +1160,7 @@ describe("saveSessionPreferences", () => {
 
   it("returns error when sport rankings are empty", async () => {
     mockActiveMember({ preferenceStep: "sport_rankings" });
-    mockLimit.mockResolvedValueOnce([{ sportRankings: [] }]);
+    txSelectResults.push([{ sportRankings: [] }]);
 
     const result = await saveSessionPreferences("group-1", {
       preferences: [{ sessionId: "s1", interest: "high" }],
@@ -1063,24 +1194,36 @@ describe("saveSessionPreferences", () => {
     const txInsertValues = vi.fn(() => Promise.resolve());
     const txUpdateWhere = vi.fn(() => Promise.resolve());
     const txSetMock = vi.fn(() => ({ where: txUpdateWhere }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        delete: vi.fn(() => ({ where: txDeleteWhere })),
-        insert: vi.fn(() => ({ values: txInsertValues })),
-        update: vi.fn(() => ({ set: txSetMock })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          delete: vi.fn(() => ({ where: txDeleteWhere })),
+          insert: vi.fn(() => ({ values: txInsertValues })),
+          update: vi.fn(() => ({ set: txSetMock })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
                 then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
+                  r(result);
                 },
-              })),
-            })),
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveSessionPreferences("group-1", {
@@ -1120,26 +1263,38 @@ describe("saveSessionPreferences", () => {
     mockSportRankings(["Tennis"]);
     mockValidSessions([{ sessionCode: "s1", sport: "Tennis" }]);
 
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        })),
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn(() => [{ affectedBuddyMembers: {} }]),
-              for: vi.fn(() => ({
-                then(r: (v: unknown) => void) {
-                  r([{ affectedBuddyMembers: {} }]);
-                },
-              })),
-            })),
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
           })),
-        })),
-      })
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: {} },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
+                then(r: (v: unknown) => void) {
+                  r(result);
+                },
+              };
+            }),
+          })),
+        })
     );
 
     const result = await saveSessionPreferences("group-1", {
@@ -1178,20 +1333,36 @@ describe("saveSessionPreferences", () => {
         r([{ affectedBuddyMembers: affectedData }]);
       },
     }));
-    mockTransaction.mockImplementation((cb: (tx: unknown) => Promise<void>) =>
-      cb({
-        delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
-        insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
-        update: txUpdateMock,
-        select: vi.fn(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: txSelectLimit,
-              for: txSelectFor,
-            })),
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          update: txUpdateMock,
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: affectedData },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
+                then(r: (v: unknown) => void) {
+                  r(result);
+                },
+              };
+            }),
           })),
-        })),
-      })
+        })
     );
 
     const result = await saveSessionPreferences("group-1", {

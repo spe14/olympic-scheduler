@@ -347,6 +347,24 @@ describe("updateAvatarColor", () => {
     expect(result.success).toBe(true);
   });
 
+  it("returns success for valid color 'purple'", async () => {
+    const result = await updateAvatarColor("purple");
+
+    expect(result.success).toBe(true);
+  });
+
+  it("returns success for valid color 'orange'", async () => {
+    const result = await updateAvatarColor("orange");
+
+    expect(result.success).toBe(true);
+  });
+
+  it("returns success for valid color 'teal'", async () => {
+    const result = await updateAvatarColor("teal");
+
+    expect(result.success).toBe(true);
+  });
+
   it("returns error for invalid color", async () => {
     const result = await updateAvatarColor("red" as any);
 

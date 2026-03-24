@@ -10,7 +10,14 @@ export const MAX_GROUPS_PER_USER = 10;
 export const MAX_SESSION_DURATION = 7 * 24 * 60 * 60; // 7 days
 export const INACTIVITY_TIMEOUT = 30 * 60; // 30 minutes
 
-export type AvatarColor = "blue" | "yellow" | "pink" | "green";
+export type AvatarColor =
+  | "blue"
+  | "yellow"
+  | "pink"
+  | "green"
+  | "purple"
+  | "orange"
+  | "teal";
 
 export const avatarColors: Record<
   AvatarColor,
@@ -39,6 +46,24 @@ export const avatarColors: Record<
     text: "#059669",
     ring: "#059669",
     label: "Green",
+  },
+  purple: {
+    bg: "rgba(139, 92, 246, 0.2)",
+    text: "#7c3aed",
+    ring: "#7c3aed",
+    label: "Purple",
+  },
+  orange: {
+    bg: "rgba(249, 115, 22, 0.2)",
+    text: "#ea580c",
+    ring: "#ea580c",
+    label: "Orange",
+  },
+  teal: {
+    bg: "rgba(20, 184, 166, 0.2)",
+    text: "#0d9488",
+    ring: "#0d9488",
+    label: "Teal",
   },
 };
 

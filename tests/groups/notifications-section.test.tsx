@@ -190,6 +190,35 @@ describe("NotificationsSection", () => {
     ).toBeInTheDocument();
   });
 
+  it("formats three or more departed members with Oxford comma", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      departedMembers: [
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
+        {
+          userId: "user-diana",
+          name: "Diana Prince",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
+        {
+          userId: "user-eve",
+          name: "Eve Adams",
+          departedAt: "2028-01-10T12:00:00Z",
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.getByText(
+        /Charlie Brown, Diana Prince, and Eve Adams recently left the group/
+      )
+    ).toBeInTheDocument();
+  });
+
   it("does not show departed message when list is empty", () => {
     mockGroup = baseGroup({ departedMembers: [] });
     render(<NotificationsSection />);
@@ -556,6 +585,113 @@ describe("NotificationsSection", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("persists newly joined notification after member sets preferences", () => {
+    mockGroup = baseGroup({
+      phase: "schedule_review",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          joinedAt: "2027-12-01T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "preferences_set",
+          joinedAt: "2028-01-02T00:00:00Z",
+          statusChangedAt: "2028-01-03T00:00:00Z",
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    // Notification persists even after member sets preferences
+    expect(
+      screen.getByText(/Bob Jones recently joined the group/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Regenerate schedules to include them/)
+    ).toBeInTheDocument();
+  });
+
+  it("shows 'wait for preferences' when new member has not set preferences", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          joinedAt: "2027-12-01T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "joined",
+          joinedAt: "2028-01-02T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-3",
+          firstName: "Carol",
+          lastName: "White",
+          role: "member",
+          status: "preferences_set",
+          joinedAt: "2028-01-02T00:00:00Z",
+          statusChangedAt: "2028-01-04T00:00:00Z",
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.getByText(/Wait for remaining members to enter their preferences/)
+    ).toBeInTheDocument();
+  });
+
+  it("excludes pre-generation joined member from newly joined notification", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      scheduleGeneratedAt: "2028-01-10T00:00:00Z",
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          joinedAt: "2027-12-01T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "joined",
+          joinedAt: "2028-01-05T00:00:00Z",
+          statusChangedAt: null,
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    // Bob joined BEFORE schedule generation — not a post-generation joiner
+    expect(
+      screen.queryByText(/recently joined the group/)
+    ).not.toBeInTheDocument();
+  });
+
   it("does not show newly joined when no scheduleGeneratedAt", () => {
     mockGroup = baseGroup({
       phase: "preferences",
@@ -759,7 +895,9 @@ describe("NotificationsSection", () => {
       ],
     });
     render(<NotificationsSection />);
+    // Post-generation joiner appears in "newly joined" notification, not "updated preferences"
     expect(screen.queryByText(/updated.*preferences/)).not.toBeInTheDocument();
+    expect(screen.getByText(/recently joined/)).toBeInTheDocument();
   });
 
   it("updated-preferences notification uses most recent statusChangedAt", () => {
@@ -870,9 +1008,9 @@ describe("NotificationsSection", () => {
     expect(container.querySelector(".border-red-200")).not.toBeInTheDocument();
   });
 
-  // --- Message ordering ---
+  // --- Message ordering (oldest to newest by timestamp) ---
 
-  it("renders notifications in correct order: no-combos, departed, affected, joined, updated", () => {
+  it("renders notifications sorted oldest to newest by timestamp", () => {
     mockGroup = baseGroup({
       phase: "preferences",
       scheduleGeneratedAt: "2028-01-01T00:00:00Z",
@@ -918,24 +1056,110 @@ describe("NotificationsSection", () => {
     const { container } = render(<NotificationsSection />);
 
     const html = container.innerHTML;
-    const noCombosPos = html.indexOf("no sessions on their schedules");
-    const departedPos = html.indexOf("recently left the group");
+    const noCombosPos = html.indexOf("no sessions on their schedules"); // Jan 1
+    const joinedPos = html.indexOf("recently joined the group"); // Jan 2
+    const updatedPos = html.indexOf("updated"); // Jan 6
+    const departedPos = html.indexOf("recently left the group"); // Jan 10
     const affectedPos = html.indexOf(
       "automatically removed from your required buddies list"
-    );
-    const joinedPos = html.indexOf("recently joined the group");
-    const updatedPos = html.indexOf("updated");
+    ); // Jan 10
 
     expect(noCombosPos).toBeGreaterThan(-1);
-    expect(departedPos).toBeGreaterThan(-1);
-    expect(affectedPos).toBeGreaterThan(-1);
     expect(joinedPos).toBeGreaterThan(-1);
     expect(updatedPos).toBeGreaterThan(-1);
+    expect(departedPos).toBeGreaterThan(-1);
+    expect(affectedPos).toBeGreaterThan(-1);
 
-    expect(noCombosPos).toBeLessThan(departedPos);
-    expect(departedPos).toBeLessThan(affectedPos);
-    expect(affectedPos).toBeLessThan(joinedPos);
+    // Sorted by timestamp: Jan 1 < Jan 2 < Jan 6 < Jan 10
+    expect(noCombosPos).toBeLessThan(joinedPos);
     expect(joinedPos).toBeLessThan(updatedPos);
+    expect(updatedPos).toBeLessThan(departedPos);
+    expect(departedPos).toBeLessThan(affectedPos);
+  });
+
+  it("older notifications appear before newer ones regardless of type", () => {
+    // departed (Jan 3) should appear before newly joined (Jan 15)
+    // even though newly joined is pushed later in the code
+    mockGroup = baseGroup({
+      phase: "preferences",
+      scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+      departedMembers: [
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-03T00:00:00Z",
+        },
+      ],
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          joinedAt: "2027-12-01T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "joined",
+          joinedAt: "2028-01-15T00:00:00Z",
+          statusChangedAt: null,
+        },
+      ],
+    });
+    const { container } = render(<NotificationsSection />);
+
+    const html = container.innerHTML;
+    const departedPos = html.indexOf("recently left the group");
+    const joinedPos = html.indexOf("recently joined the group");
+
+    expect(departedPos).toBeGreaterThan(-1);
+    expect(joinedPos).toBeGreaterThan(-1);
+    expect(departedPos).toBeLessThan(joinedPos);
+  });
+
+  it("newer notification of a higher-priority type appears after older lower-priority one", () => {
+    // newly joined (Jan 15) should appear after no-combos (Jan 10)
+    // when sorted by timestamp (oldest first)
+    mockGroup = baseGroup({
+      phase: "preferences",
+      scheduleGeneratedAt: "2028-01-10T00:00:00Z",
+      membersWithNoCombos: ["member-2"],
+      members: [
+        {
+          id: "owner-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          role: "owner",
+          status: "preferences_set",
+          joinedAt: "2027-12-01T00:00:00Z",
+          statusChangedAt: null,
+        },
+        {
+          id: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          role: "member",
+          status: "joined",
+          joinedAt: "2028-01-15T00:00:00Z",
+          statusChangedAt: null,
+        },
+      ],
+    });
+    const { container } = render(<NotificationsSection />);
+
+    const html = container.innerHTML;
+    const noCombosPos = html.indexOf("no sessions on their schedules"); // Jan 10
+    const joinedPos = html.indexOf("recently joined the group"); // Jan 15
+
+    expect(joinedPos).toBeGreaterThan(-1);
+    expect(noCombosPos).toBeGreaterThan(-1);
+    // no-combos (Jan 10) appears before newly joined (Jan 15) — oldest first
+    expect(noCombosPos).toBeLessThan(joinedPos);
   });
 
   // --- Purchase changes (AMBER) ---
@@ -1051,9 +1275,11 @@ describe("NotificationsSection", () => {
       ],
     });
     render(<NotificationsSection />);
+    // Member with null joinedAt cannot be compared to scheduleGeneratedAt,
+    // so they are excluded from the newly-joined notification
     expect(
-      screen.getByText(/Bob Jones recently joined the group/)
-    ).toBeInTheDocument();
+      screen.queryByText(/Bob Jones recently joined the group/)
+    ).not.toBeInTheDocument();
   });
 
   // --- Non-convergence (AMBER) ---

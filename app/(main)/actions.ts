@@ -3,7 +3,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { group, member } from "@/lib/db/schema";
-import { eq, and, notInArray, sql } from "drizzle-orm";
+import { eq, and, inArray, notInArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import {
   groupNameSchema,
@@ -33,20 +33,6 @@ export async function createGroup(
   const user = await getCurrentUser();
   if (!user) {
     return { error: MSG_NOT_LOGGED_IN };
-  }
-
-  const [{ count: groupCount }] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(member)
-    .where(
-      and(
-        eq(member.userId, user.id),
-        notInArray(member.status, ["pending_approval", "denied"])
-      )
-    );
-
-  if (groupCount >= MAX_GROUPS_PER_USER) {
-    return { error: MSG_TOO_MANY_GROUPS };
   }
 
   const name = formData.get("name") as string;
@@ -84,7 +70,21 @@ export async function createGroup(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
+      const [{ count: groupCount }] = await tx
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(member)
+        .where(
+          and(
+            eq(member.userId, user.id),
+            notInArray(member.status, ["pending_approval", "denied"])
+          )
+        );
+
+      if (groupCount >= MAX_GROUPS_PER_USER) {
+        return { limitReached: true as const };
+      }
+
       const [newGroup] = await tx
         .insert(group)
         .values(groupValues)
@@ -97,7 +97,13 @@ export async function createGroup(
         status: "joined",
         joinedAt: new Date(),
       });
+
+      return { limitReached: false as const };
     });
+
+    if (result.limitReached) {
+      return { error: MSG_TOO_MANY_GROUPS };
+    }
   } catch {
     return { error: failedAction("create group") };
   }
@@ -113,20 +119,6 @@ export async function joinGroup(
   const user = await getCurrentUser();
   if (!user) {
     return { error: MSG_NOT_LOGGED_IN };
-  }
-
-  const [{ count: groupCount }] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(member)
-    .where(
-      and(
-        eq(member.userId, user.id),
-        notInArray(member.status, ["pending_approval", "denied"])
-      )
-    );
-
-  if (groupCount >= MAX_GROUPS_PER_USER) {
-    return { error: MSG_TOO_MANY_GROUPS };
   }
 
   const code =
@@ -176,6 +168,21 @@ export async function joinGroup(
         .where(eq(group.id, groupId))
         .for("update");
 
+      // Check user group count inside transaction to prevent race conditions
+      const [{ count: groupCount }] = await tx
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(member)
+        .where(
+          and(
+            eq(member.userId, user.id),
+            notInArray(member.status, ["pending_approval", "denied"])
+          )
+        );
+
+      if (groupCount >= MAX_GROUPS_PER_USER) {
+        return { limitReached: true as const, full: false };
+      }
+
       const [{ count: activeCount }] = await tx
         .select({ count: sql<number>`COUNT(*)::int` })
         .from(member)
@@ -187,7 +194,7 @@ export async function joinGroup(
         );
 
       if (activeCount >= MAX_GROUP_MEMBERS) {
-        return { full: true as const };
+        return { full: true as const, limitReached: false };
       }
 
       if (existingMember.length > 0) {
@@ -195,7 +202,12 @@ export async function joinGroup(
         await tx
           .update(member)
           .set({ status: "pending_approval" })
-          .where(eq(member.id, existingMember[0].id));
+          .where(
+            and(
+              eq(member.id, existingMember[0].id),
+              eq(member.status, "denied")
+            )
+          );
       } else {
         await tx.insert(member).values({
           userId: user.id,
@@ -205,9 +217,12 @@ export async function joinGroup(
         });
       }
 
-      return { full: false as const };
+      return { full: false as const, limitReached: false };
     });
 
+    if (result.limitReached) {
+      return { error: MSG_TOO_MANY_GROUPS };
+    }
     if (result.full) {
       return { error: MSG_GROUP_FULL };
     }
@@ -245,7 +260,14 @@ export async function removeMembership(
   }
 
   try {
-    await db.delete(member).where(eq(member.id, memberId));
+    await db
+      .delete(member)
+      .where(
+        and(
+          eq(member.id, memberId),
+          inArray(member.status, ["pending_approval", "denied"])
+        )
+      );
   } catch {
     return { error: failedAction("remove membership") };
   }

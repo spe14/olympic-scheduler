@@ -129,7 +129,9 @@ export default function PreferenceWizard({
     ? STEPS.findIndex((s) => s.key === stepFromUrl)
     : -1;
 
-  const initialStepIndex = urlStepIndex >= 0 ? urlStepIndex : initial.step;
+  // Clamp URL step so it can't jump past the furthest reachable step
+  const initialStepIndex =
+    urlStepIndex >= 0 ? Math.min(urlStepIndex, initial.step) : initial.step;
   const [currentStep, setCurrentStep] = useState(initialStepIndex);
   const [completedSteps, setCompletedSteps] = useState(initial.completed);
   const [visitedSteps, setVisitedSteps] = useState<Set<number>>(
@@ -137,15 +139,20 @@ export default function PreferenceWizard({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  // Track sessions loading: stores the sessions identity at the time loading
-  // started. When sessions prop changes (server re-fetch), loading clears
-  // automatically since sessions !== sessionsWhenLoadingStarted.
-  const [sessionsWhenLoadingStarted, setSessionsWhenLoadingStarted] = useState<
-    unknown[] | null
-  >(null);
+  // Track sessions loading: stores the sessions.length at the time loading
+  // started. When sessions prop changes (server re-fetch after sport ranking
+  // save), the length will differ and loading clears. A monotonic counter is
+  // bumped on each load-start so that even if sessions.length stays the same,
+  // loading clears once the counter advances past the snapshot.
+  const [sessionsLoadingSnapshot, setSessionsLoadingSnapshot] = useState<{
+    length: number;
+    counter: number;
+  } | null>(null);
+  const [sessionsCounter, setSessionsCounter] = useState(0);
   const sessionsLoading =
-    sessionsWhenLoadingStarted !== null &&
-    sessionsWhenLoadingStarted === sessions;
+    sessionsLoadingSnapshot !== null &&
+    sessionsLoadingSnapshot.length === sessions.length &&
+    sessionsLoadingSnapshot.counter === sessionsCounter;
 
   const navigateToStep = useCallback((stepIndex: number) => {
     setCurrentStep(stepIndex);
@@ -394,20 +401,26 @@ export default function PreferenceWizard({
 
   // ── Save orchestration ──────────────────────────────────────
 
-  // Pure save-then-advance, no phase warning concern
-  async function saveAndAdvance() {
+  // Pure save-then-advance, no phase warning concern.
+  // Returns true if save succeeded and step advanced.
+  async function saveAndAdvance(): Promise<boolean> {
     // Mark sessions as loading if sport rankings changed — the server will
     // re-fetch sessions for the updated sports after the save action
     if (currentStep === 1 && isCurrentStepDirty()) {
-      setSessionsWhenLoadingStarted(sessions);
+      setSessionsCounter((c) => c + 1);
+      setSessionsLoadingSnapshot({
+        length: sessions.length,
+        counter: sessionsCounter + 1,
+      });
     }
     const saved = await saveCurrentStep();
     if (!saved) {
-      setSessionsWhenLoadingStarted(null);
-      return;
+      setSessionsLoadingSnapshot(null);
+      return false;
     }
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
     navigateToStep(currentStep + 1);
+    return true;
   }
 
   // Main button handler — thin orchestrator
@@ -431,8 +444,15 @@ export default function PreferenceWizard({
 
   async function handlePhaseWarningProceed() {
     setShowPhaseWarning(false);
-    await ackScheduleWarning(group.id);
-    saveAndAdvance();
+    setSaving(true);
+    const saved = await saveAndAdvance();
+    // Safety: saveCurrentStep may early-return without resetting saving
+    setSaving(false);
+    // Only ack after successful save to avoid clearing the warning when
+    // the user's preferences weren't actually persisted
+    if (saved) {
+      ackScheduleWarning(group.id);
+    }
   }
 
   function revertAllStepsToSaved() {
@@ -455,8 +475,16 @@ export default function PreferenceWizard({
   }
 
   async function handleConfirmReview() {
-    await confirmAffectedBuddyReview(group.id);
-    router.refresh();
+    try {
+      const result = await confirmAffectedBuddyReview(group.id);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Failed to confirm review. Please try again.");
+    }
   }
 
   function handleBack() {
@@ -719,6 +747,9 @@ export default function PreferenceWizard({
                       : "Save & Continue"}
                 </button>
               </div>
+            )}
+            {currentStep === 3 && error && (
+              <p className="text-base text-red-600">{error}</p>
             )}
           </div>
         </div>

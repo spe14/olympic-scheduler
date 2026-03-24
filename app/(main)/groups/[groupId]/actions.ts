@@ -31,8 +31,12 @@ import {
 import { MAX_GROUP_MEMBERS } from "@/lib/constants";
 import type { ActionResult } from "@/lib/types";
 import { runScheduleGeneration } from "@/lib/algorithm/runner";
-import { computeWindowRankings } from "@/lib/algorithm/window-ranking";
+import {
+  computeWindowRankings,
+  buildMemberScores,
+} from "@/lib/algorithm/window-ranking";
 import type { MemberData, TravelEntry } from "@/lib/algorithm/types";
+import { OLYMPIC_DAYS_LIST } from "@/lib/schedule-utils";
 import { groupBy, parseOrError } from "@/lib/utils";
 import {
   MSG_GROUP_FULL,
@@ -111,8 +115,13 @@ export async function approveMember(
       await tx
         .update(member)
         .set({ status: "joined", joinedAt: new Date() })
-        .where(eq(member.id, memberId));
+        .where(
+          and(eq(member.id, memberId), eq(member.status, "pending_approval"))
+        );
 
+      // Only fetch user data if the UPDATE actually took effect (status is now "joined").
+      // Guards against concurrent denyMember changing the status between the
+      // pre-transaction check and the UPDATE, which would be a 0-row no-op.
       const [approvedUser] = await tx
         .select({
           userId: user.id,
@@ -121,7 +130,7 @@ export async function approveMember(
         })
         .from(member)
         .innerJoin(user, eq(member.userId, user.id))
-        .where(eq(member.id, memberId))
+        .where(and(eq(member.id, memberId), eq(member.status, "joined")))
         .limit(1);
 
       if (approvedUser) {
@@ -194,46 +203,15 @@ export async function denyMember(
     await db
       .update(member)
       .set({ status: "denied" })
-      .where(eq(member.id, memberId));
+      .where(
+        and(eq(member.id, memberId), eq(member.status, "pending_approval"))
+      );
   } catch {
     return { error: failedAction("deny member's join request") };
   }
 
   revalidatePath(`/groups/${groupId}`);
   return { success: true };
-}
-
-async function memberHasPurchaseData(
-  groupId: string,
-  memberId: string
-): Promise<boolean> {
-  const [asBuyer] = await db
-    .select({ id: ticketPurchase.id })
-    .from(ticketPurchase)
-    .where(
-      and(
-        eq(ticketPurchase.groupId, groupId),
-        eq(ticketPurchase.purchasedByMemberId, memberId)
-      )
-    )
-    .limit(1);
-  if (asBuyer) return true;
-
-  const [asAssignee] = await db
-    .select({ memberId: ticketPurchaseAssignee.memberId })
-    .from(ticketPurchaseAssignee)
-    .innerJoin(
-      ticketPurchase,
-      eq(ticketPurchaseAssignee.ticketPurchaseId, ticketPurchase.id)
-    )
-    .where(
-      and(
-        eq(ticketPurchase.groupId, groupId),
-        eq(ticketPurchaseAssignee.memberId, memberId)
-      )
-    )
-    .limit(1);
-  return !!asAssignee;
 }
 
 async function removeMemberTransaction(
@@ -284,11 +262,19 @@ async function removeMemberTransaction(
       firstName: user.firstName,
       lastName: user.lastName,
       joinedAt: member.joinedAt,
+      role: member.role,
     })
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
     .where(eq(member.id, departingMemberId))
     .limit(1);
+
+  // Guard against concurrent ownership transfer: if the departing member
+  // became the owner between the pre-check and acquiring the group lock,
+  // abort to prevent leaving the group ownerless.
+  if (departingUser?.role === "owner") {
+    throw new Error("Cannot remove the group owner.");
+  }
 
   // Record affected buddy members (regardless of whether departing member was part of schedule).
   // Each affected member maps to an array of departed buddy names (supports multiple departures).
@@ -338,14 +324,17 @@ async function removeMemberTransaction(
 
       await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
 
-      // 8. Reset all remaining active members to preferences_set
+      // 8. Reset remaining members who had completed preferences —
+      //    only bump statusChangedAt for members already at "preferences_set".
+      //    Members still at "joined" (haven't entered preferences) must stay
+      //    at "joined" so the UI correctly shows them as not ready.
       await tx
         .update(member)
         .set({ status: "preferences_set", statusChangedAt: new Date() })
         .where(
           and(
             eq(member.groupId, groupId),
-            notInArray(member.status, ["pending_approval", "denied"]),
+            eq(member.status, "preferences_set"),
             notInArray(member.id, [departingMemberId])
           )
         );
@@ -406,7 +395,14 @@ export async function leaveGroup(groupId: string): Promise<ActionResult> {
     await db.transaction(async (tx) => {
       await removeMemberTransaction(tx, groupId, membership.id);
     });
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    if (msg === "Cannot remove the group owner.") {
+      return {
+        error:
+          "You became the group owner while leaving. Please refresh the page.",
+      };
+    }
     return { error: failedAction("leave group") };
   }
 
@@ -458,7 +454,13 @@ export async function removeMember(
     await db.transaction(async (tx) => {
       await removeMemberTransaction(tx, groupId, targetMemberId);
     });
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    if (msg === "Cannot remove the group owner.") {
+      return {
+        error: "This member is now the group owner and cannot be removed.",
+      };
+    }
     return { error: failedAction("remove member") };
   }
 
@@ -537,39 +539,7 @@ export async function updateDateConfig(
           .where(eq(combo.groupId, groupId));
 
         if (allCombos.length > 0) {
-          // Build member scores with primary and backup scores
-          const memberScoreMap = new Map<string, Map<string, number>>();
-          const memberBackupMap = new Map<
-            string,
-            Map<string, { b1: number; b2: number }>
-          >();
-          for (const c of allCombos) {
-            if (c.rank === "primary") {
-              if (!memberScoreMap.has(c.memberId)) {
-                memberScoreMap.set(c.memberId, new Map());
-              }
-              memberScoreMap.get(c.memberId)!.set(c.day, c.score);
-            } else if (c.rank === "backup1" || c.rank === "backup2") {
-              if (!memberBackupMap.has(c.memberId)) {
-                memberBackupMap.set(c.memberId, new Map());
-              }
-              const existing = memberBackupMap.get(c.memberId)!.get(c.day) ?? {
-                b1: 0,
-                b2: 0,
-              };
-              if (c.rank === "backup1") existing.b1 = c.score;
-              else existing.b2 = c.score;
-              memberBackupMap.get(c.memberId)!.set(c.day, existing);
-            }
-          }
-
-          const memberScores = [...memberScoreMap.entries()].map(
-            ([memberId, dailyScores]) => ({
-              memberId,
-              dailyScores,
-              dailyBackupScores: memberBackupMap.get(memberId),
-            })
-          );
+          const memberScores = buildMemberScores(allCombos);
 
           const rankings = computeWindowRankings({
             memberScores,
@@ -581,12 +551,11 @@ export async function updateDateConfig(
 
           if (rankings.length > 0) {
             await tx.insert(windowRanking).values(
-              rankings.map((r, i) => ({
+              rankings.map((r) => ({
                 groupId,
                 startDate: r.startDate,
                 endDate: r.endDate,
                 score: r.score,
-                selected: i === 0,
               }))
             );
           }
@@ -654,7 +623,29 @@ export async function transferOwnership(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
+      // Lock group row to prevent concurrent member departures during transfer
+      await tx
+        .select({ id: group.id })
+        .from(group)
+        .where(eq(group.id, groupId))
+        .for("update");
+
+      // Re-verify target member inside transaction to prevent race with leaveGroup/removeMember
+      const [txTarget] = await tx
+        .select({ id: member.id, status: member.status })
+        .from(member)
+        .where(and(eq(member.id, targetMemberId), eq(member.groupId, groupId)))
+        .limit(1);
+
+      if (
+        !txTarget ||
+        txTarget.status === "pending_approval" ||
+        txTarget.status === "denied"
+      ) {
+        return { gone: true as const };
+      }
+
       await tx
         .update(member)
         .set({ role: "member" })
@@ -663,7 +654,13 @@ export async function transferOwnership(
         .update(member)
         .set({ role: "owner" })
         .where(eq(member.id, targetMemberId));
+
+      return { gone: false as const };
     });
+
+    if (result.gone) {
+      return { error: MSG_MEMBER_NOT_FOUND };
+    }
   } catch {
     return { error: failedAction("transfer ownership") };
   }
@@ -957,14 +954,7 @@ export async function generateSchedules(
       };
     });
 
-    // All 19 Olympic days: Jul 12 - Jul 30, 2028
-    const days: string[] = [];
-    const start = new Date("2028-07-12T12:00:00");
-    for (let i = 0; i < 19; i++) {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      days.push(d.toISOString().split("T")[0]);
-    }
+    const days = OLYMPIC_DAYS_LIST;
 
     const travelData: TravelEntry[] = travelEntries.map((t) => ({
       originZone: t.originZone,
@@ -973,8 +963,23 @@ export async function generateSchedules(
       transitMinutes: t.transitMinutes,
     }));
 
+    // Capture timestamp before running the algorithm so that any preference
+    // changes made during generation will have statusChangedAt > this value,
+    // which lets the existing notification logic detect mid-generation edits.
+    const generationTimestamp = new Date();
+
     // Run algorithm
     const result = runScheduleGeneration(membersData, travelData, days);
+
+    // Only treat timeout as fatal if the first full pass didn't complete
+    // (some members have no combos). If timeout happened during convergence
+    // refinement, all members have usable combos — treat as non-convergence.
+    if (result.convergence.timedOut && result.membersWithNoCombos.length > 0) {
+      return {
+        error:
+          "Schedule generation timed out. Try reducing the number of session preferences or buddy constraints and try again.",
+      };
+    }
 
     // Write results in transaction (lock group row to prevent concurrent departures)
     await db.transaction(async (tx) => {
@@ -989,6 +994,22 @@ export async function generateSchedules(
         (locked.phase !== "preferences" && locked.phase !== "schedule_review")
       ) {
         throw new Error("Group state changed during generation");
+      }
+
+      // Verify active member count hasn't changed since we started
+      const [{ count: currentActiveCount }] = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(member)
+        .where(
+          and(
+            eq(member.groupId, groupId),
+            notInArray(member.status, ["pending_approval", "denied"])
+          )
+        );
+      if (Number(currentActiveCount) !== memberIds.length) {
+        throw new Error(
+          "Group membership changed during schedule generation. Please try again."
+        );
       }
 
       // Cleanup existing data
@@ -1034,6 +1055,8 @@ export async function generateSchedules(
           : "schedule_review";
 
       // Extract unique member IDs affected by non-convergence violations
+      // (includes timeout-during-convergence, where all members have combos
+      // but refinement didn't finish)
       const nonConvergenceMembers = result.convergence.converged
         ? []
         : [...new Set(result.convergence.violations.map((v) => v.memberId))];
@@ -1042,7 +1065,7 @@ export async function generateSchedules(
         .update(group)
         .set({
           phase: newPhase,
-          scheduleGeneratedAt: new Date(),
+          scheduleGeneratedAt: generationTimestamp,
           purchaseDataChangedAt: null,
           departedMembers: [],
           affectedBuddyMembers: {},
@@ -1073,36 +1096,7 @@ export async function generateSchedules(
           .limit(1);
 
         if (dateConfig?.dateMode) {
-          // Extract combo scores per member per day (primary + backups)
-          const memberScores = activeMembers.map((m) => {
-            const dailyScores = new Map<string, number>();
-            const dailyBackupScores = new Map<
-              string,
-              { b1: number; b2: number }
-            >();
-            for (const c of result.combos) {
-              if (c.memberId === m.id) {
-                if (c.rank === "primary") {
-                  dailyScores.set(c.day, c.score);
-                } else if (c.rank === "backup1") {
-                  const existing = dailyBackupScores.get(c.day) ?? {
-                    b1: 0,
-                    b2: 0,
-                  };
-                  existing.b1 = c.score;
-                  dailyBackupScores.set(c.day, existing);
-                } else if (c.rank === "backup2") {
-                  const existing = dailyBackupScores.get(c.day) ?? {
-                    b1: 0,
-                    b2: 0,
-                  };
-                  existing.b2 = c.score;
-                  dailyBackupScores.set(c.day, existing);
-                }
-              }
-            }
-            return { memberId: m.id, dailyScores, dailyBackupScores };
-          });
+          const memberScores = buildMemberScores(result.combos);
 
           const rankings = computeWindowRankings({
             memberScores,
@@ -1114,12 +1108,11 @@ export async function generateSchedules(
 
           if (rankings.length > 0) {
             await tx.insert(windowRanking).values(
-              rankings.map((r, i) => ({
+              rankings.map((r) => ({
                 groupId,
                 startDate: r.startDate,
                 endDate: r.endDate,
                 score: r.score,
-                selected: i === 0, // auto-select top window
               }))
             );
           }
@@ -1135,7 +1128,10 @@ export async function generateSchedules(
           ? result.membersWithNoCombos
           : undefined,
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("changed during")) {
+      return { error: err.message };
+    }
     return { error: failedAction("generate schedules") };
   }
 }

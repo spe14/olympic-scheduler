@@ -334,12 +334,12 @@ describe("joinGroup", () => {
     vi.clearAllMocks();
     directWhereResults = [];
     mockGetCurrentUser.mockResolvedValue(mockUser);
-    // Default: user group count under limit, group found, no existing membership, group not full
-    directWhereResults.push([{ count: 0 }]); // user group count — not at limit
+    // Default: group found, no existing membership, user group count under limit, group not full
     mockLimit.mockResolvedValueOnce([{ id: "group-1" }]); // group lookup
     mockLimit.mockResolvedValueOnce([]); // existing member check
     directWhereResults.push([{ id: "group-1" }]); // FOR UPDATE lock on group
-    directWhereResults.push([{ count: 5 }]); // COUNT query — not full
+    directWhereResults.push([{ count: 0 }]); // user group count — not at limit (now inside tx)
+    directWhereResults.push([{ count: 5 }]); // active member COUNT — not full
     mockInsert.mockImplementation(() => ({
       values: vi.fn().mockResolvedValue(undefined),
     }));
@@ -539,7 +539,11 @@ describe("joinGroup", () => {
   });
 
   it("returns error when user has too many groups", async () => {
-    directWhereResults = [[{ count: 10 }]];
+    // FOR UPDATE lock, then user group count returns at-limit
+    directWhereResults = [
+      [{ id: "group-1" }], // FOR UPDATE lock on group
+      [{ count: 10 }], // user group count — at limit
+    ];
     const fd = makeFormData({ inviteCode: "abc123" });
     const result = await joinGroup(null, fd);
 

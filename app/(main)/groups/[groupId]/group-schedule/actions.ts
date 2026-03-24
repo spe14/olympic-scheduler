@@ -1,18 +1,9 @@
 "use server";
 
-import { requireOwnerMembership, requireMembership } from "@/lib/auth";
+import { requireMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
-import {
-  combo,
-  comboSession,
-  member,
-  session,
-  windowRanking,
-} from "@/lib/db/schema";
+import { combo, comboSession, member, session } from "@/lib/db/schema";
 import { eq, and, inArray, notInArray } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
-import type { ActionResult } from "@/lib/types";
-import { failedAction } from "@/lib/messages";
 import type { AvatarColor } from "@/lib/constants";
 import type { BaseMemberInfo } from "@/lib/types";
 import {
@@ -159,44 +150,4 @@ export async function getGroupSchedule(groupId: string): Promise<{
   });
 
   return { data };
-}
-
-export async function selectWindow(
-  groupId: string,
-  windowId: string
-): Promise<ActionResult> {
-  const { membership: ownership, error: authError } =
-    await requireOwnerMembership(groupId, "select a window");
-  if (authError) return authError;
-
-  try {
-    await db.transaction(async (tx) => {
-      // Deselect current
-      await tx
-        .update(windowRanking)
-        .set({ selected: false })
-        .where(
-          and(
-            eq(windowRanking.groupId, groupId),
-            eq(windowRanking.selected, true)
-          )
-        );
-
-      // Select new
-      await tx
-        .update(windowRanking)
-        .set({ selected: true })
-        .where(
-          and(
-            eq(windowRanking.id, windowId),
-            eq(windowRanking.groupId, groupId)
-          )
-        );
-    });
-  } catch {
-    return { error: failedAction("select window") };
-  }
-
-  revalidatePath(`/groups/${groupId}`);
-  return { success: true };
 }

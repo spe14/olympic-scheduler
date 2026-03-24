@@ -82,6 +82,14 @@ export default function GroupShell({
   const hasNewlyJoinedMembers =
     !!group.scheduleGeneratedAt &&
     activeMembers.some((m) => m.status === "joined");
+  const hasNewMembersWithPrefs =
+    !!group.scheduleGeneratedAt &&
+    activeMembers.some(
+      (m) =>
+        m.status === "preferences_set" &&
+        m.joinedAt &&
+        new Date(m.joinedAt) > new Date(group.scheduleGeneratedAt!)
+    );
   const hasNoCombosNotUpdated = group.membersWithNoCombos.some((id) => {
     const m = activeMembers.find((am) => am.id === id);
     if (!m) return false;
@@ -101,6 +109,7 @@ export default function GroupShell({
     hasDepartedMembers ||
     hasAffectedBuddyMembers ||
     hasNewlyJoinedMembers ||
+    hasNewMembersWithPrefs ||
     hasNoCombosNotUpdated ||
     hasPurchaseChanges;
 
@@ -181,14 +190,7 @@ export default function GroupShell({
       status: !inScheduleReview
         ? { type: "warning", tooltip: "Schedules have not been generated yet." }
         : group.myTimeslot
-          ? group.myTimeslot.status === "completed"
-            ? { type: "complete" }
-            : group.myTimeslot.status === "in_progress"
-              ? {
-                  type: "warning",
-                  tooltip: "Your purchase timeslot is in progress.",
-                }
-              : { type: "complete" }
+          ? { type: "complete" }
           : {
               type: "warning",
               tooltip: "You haven't entered your purchase timeslot yet.",

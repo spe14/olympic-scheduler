@@ -162,6 +162,34 @@
       "when": 1774299484218,
       "tag": "0022_giant_ben_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1774310600366,
+      "tag": "0023_natural_jasper_sitwell",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1774313708624,
+      "tag": "0024_soft_sphinx",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1774327473147,
+      "tag": "0025_concerned_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1774376849671,
+      "tag": "0026_big_lethal_legion",
+      "breakpoints": true
     }
   ]
 }

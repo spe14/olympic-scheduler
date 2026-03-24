@@ -354,6 +354,48 @@ describe("GroupShell — sidebar nav statuses", () => {
       expect(hasWarningIcon(getNavItem("Overview"))).toBe(true);
     });
 
+    it("shows warning when post-generation joiner has set preferences", () => {
+      const group = makeGroup({
+        phase: "schedule_review",
+        myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+        members: [
+          {
+            id: "owner-1",
+            userId: "user-1",
+            firstName: "Alice",
+            lastName: "Smith",
+            username: "alice",
+            avatarColor: "blue",
+            role: "owner",
+            status: "preferences_set",
+            joinedAt: "2027-12-01T00:00:00Z",
+            statusChangedAt: null,
+            createdAt: "2027-12-01T00:00:00Z",
+          },
+          {
+            id: "member-2",
+            userId: "user-2",
+            firstName: "Bob",
+            lastName: "Jones",
+            username: "bob",
+            avatarColor: "red",
+            role: "member",
+            status: "preferences_set",
+            joinedAt: "2028-01-02T00:00:00Z",
+            statusChangedAt: "2028-01-03T00:00:00Z",
+            createdAt: "2028-01-02T00:00:00Z",
+          },
+        ],
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      expect(hasWarningIcon(getNavItem("Overview"))).toBe(true);
+    });
+
     it("shows warning when no-combo member has not updated in preferences phase (post-generation)", () => {
       const group = makeGroup({
         phase: "preferences",
@@ -764,35 +806,12 @@ describe("GroupShell — sidebar nav statuses", () => {
       );
     });
 
-    it("shows in-progress warning when timeslot is in progress", () => {
+    it("shows check when timeslot exists", () => {
       const group = makeGroup({
         phase: "schedule_review",
         myTimeslot: {
           timeslotStart: "2028-07-01T10:00:00Z",
           timeslotEnd: "2028-07-01T12:00:00Z",
-          status: "in_progress",
-        },
-      });
-      render(
-        <GroupShell group={group}>
-          <div />
-        </GroupShell>
-      );
-      expect(hasWarningIcon(getNavItem("Purchase Planner & Tracker"))).toBe(
-        true
-      );
-      expect(getTooltipText(getNavItem("Purchase Planner & Tracker"))).toBe(
-        "Your purchase timeslot is in progress."
-      );
-    });
-
-    it("shows check when timeslot is completed", () => {
-      const group = makeGroup({
-        phase: "schedule_review",
-        myTimeslot: {
-          timeslotStart: "2028-07-01T10:00:00Z",
-          timeslotEnd: "2028-07-01T12:00:00Z",
-          status: "completed",
         },
       });
       render(

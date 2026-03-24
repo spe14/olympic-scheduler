@@ -1,0 +1,1 @@
+ALTER TABLE "window_ranking" DROP COLUMN "selected";

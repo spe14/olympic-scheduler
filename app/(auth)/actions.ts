@@ -32,6 +32,7 @@ export async function signUp(
     username: formData.get("username") as string,
     firstName: formData.get("firstName") as string,
     lastName: formData.get("lastName") as string,
+    avatarColor: (formData.get("avatarColor") as string) || "blue",
   };
 
   const result = signUpSchema.safeParse(raw);
@@ -42,7 +43,8 @@ export async function signUp(
     return { fieldErrors: parseFieldErrors(result.error), values: safeValues };
   }
 
-  const { email, password, username, firstName, lastName } = result.data;
+  const { email, password, username, firstName, lastName, avatarColor } =
+    result.data;
 
   // Check username availability before creating the auth user
   const existingUser = await db
@@ -104,6 +106,7 @@ export async function signUp(
           username,
           firstName,
           lastName,
+          avatarColor,
         });
       } catch (recoverErr) {
         await supabase.auth.signOut();
@@ -133,10 +136,11 @@ export async function signUp(
         username,
         firstName,
         lastName,
+        avatarColor,
       })
       .onConflictDoUpdate({
         target: user.authId,
-        set: { email, username, firstName, lastName },
+        set: { email, username, firstName, lastName, avatarColor },
       });
   } catch (err) {
     await supabase.auth.signOut();

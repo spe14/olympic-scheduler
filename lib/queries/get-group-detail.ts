@@ -66,7 +66,6 @@ export const getGroupDetail = cache(async function getGroupDetail(
       startDate: windowRanking.startDate,
       endDate: windowRanking.endDate,
       score: windowRanking.score,
-      selected: windowRanking.selected,
     })
     .from(windowRanking)
     .where(eq(windowRanking.groupId, groupId))
@@ -99,12 +98,9 @@ export const getGroupDetail = cache(async function getGroupDetail(
       memberId: purchaseTimeslot.memberId,
       timeslotStart: purchaseTimeslot.timeslotStart,
       timeslotEnd: purchaseTimeslot.timeslotEnd,
-      status: purchaseTimeslot.status,
     })
     .from(purchaseTimeslot)
     .where(eq(purchaseTimeslot.groupId, groupId));
-  const memberTimeslots = new Set(timeslotRows.map((r) => r.memberId));
-
   const myTimeslotRow = timeslotRows.find(
     (r) => r.memberId === myMembership.id
   );
@@ -140,12 +136,15 @@ export const getGroupDetail = cache(async function getGroupDetail(
       ? {
           timeslotStart: myTimeslotRow.timeslotStart,
           timeslotEnd: myTimeslotRow.timeslotEnd,
-          status: myTimeslotRow.status,
         }
       : null,
     purchaseDataChangedAt: groupData.purchaseDataChangedAt ?? null,
     members,
-    memberTimeslots: [...memberTimeslots],
+    memberTimeslots: timeslotRows.map((r) => ({
+      memberId: r.memberId,
+      timeslotStart: r.timeslotStart,
+      timeslotEnd: r.timeslotEnd,
+    })),
     membersPurchased,
     membersWithPurchaseData: [...membersWithPurchaseData],
     windowRankings,

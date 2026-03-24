@@ -5,7 +5,15 @@ import { updateAvatarColor } from "../actions";
 import UserAvatar from "@/components/user-avatar";
 import { avatarColors, type AvatarColor } from "@/lib/constants";
 
-const colors: AvatarColor[] = ["blue", "yellow", "pink", "green"];
+const colors: AvatarColor[] = [
+  "blue",
+  "yellow",
+  "pink",
+  "green",
+  "purple",
+  "orange",
+  "teal",
+];
 
 export default function AvatarColorPicker({
   initialColor,

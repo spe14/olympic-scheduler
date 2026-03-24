@@ -123,7 +123,15 @@ export async function updatePassword(
   return { success: true };
 }
 
-const validAvatarColors: AvatarColor[] = ["blue", "yellow", "pink", "green"];
+const validAvatarColors: AvatarColor[] = [
+  "blue",
+  "yellow",
+  "pink",
+  "green",
+  "purple",
+  "orange",
+  "teal",
+];
 
 export async function updateAvatarColor(
   color: AvatarColor

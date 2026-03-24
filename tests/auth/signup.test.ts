@@ -284,6 +284,51 @@ describe("signUp", () => {
       expect(mockInsert).toHaveBeenCalled();
     });
 
+    it("returns username-taken when orphaned user recovery insert fails with username constraint", async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: null },
+        error: { message: "User already registered" },
+      });
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: { id: "auth-orphan" } },
+        error: null,
+      });
+      // First call: username check (no match), second call: DB user check (no match)
+      mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      // Recovery insert fails with username constraint
+      mockValues.mockRejectedValueOnce(
+        new Error(
+          'duplicate key value violates unique constraint "users_username_unique"'
+        )
+      );
+
+      const fd = makeFormData(validFields);
+      const result = await signUp(null, fd);
+
+      expect(result?.error).toContain("username is already taken");
+      expect(mockSignOut).toHaveBeenCalled();
+    });
+
+    it("returns generic error when orphaned user recovery insert fails with non-username error", async () => {
+      mockSignUp.mockResolvedValue({
+        data: { user: null },
+        error: { message: "User already registered" },
+      });
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: { id: "auth-orphan" } },
+        error: null,
+      });
+      mockLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      // Recovery insert fails with a generic error
+      mockValues.mockRejectedValueOnce(new Error("connection timeout"));
+
+      const fd = makeFormData(validFields);
+      const result = await signUp(null, fd);
+
+      expect(result?.error).toContain("Sign up failed");
+      expect(mockSignOut).toHaveBeenCalled();
+    });
+
     it("returns supabase error message for other auth errors", async () => {
       mockSignUp.mockResolvedValue({
         data: { user: null },

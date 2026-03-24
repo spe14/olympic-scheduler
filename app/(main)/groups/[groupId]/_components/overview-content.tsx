@@ -12,6 +12,7 @@ import NotificationsSection from "./notifications-section";
 import GenerateScheduleSection from "./generate-schedule-section";
 import TimeslotForm from "../schedule/_components/timeslot-form";
 import { Clock } from "lucide-react";
+import Tooltip from "@/components/tooltip";
 
 export default function OverviewContent() {
   const group = useGroup();
@@ -44,7 +45,9 @@ export default function OverviewContent() {
     })
   );
 
-  const timeslotMemberIds = new Set(group.memberTimeslots);
+  const timeslotMap = new Map(
+    group.memberTimeslots.map((t) => [t.memberId, t])
+  );
   const purchasedMemberIds = new Set(group.membersPurchased);
   const purchaseDataMemberIds = new Set(group.membersWithPurchaseData);
 
@@ -83,10 +86,9 @@ export default function OverviewContent() {
             }
             isAffectedBuddy={affectedBuddyIds.has(m.id)}
             isNoCombosNotUpdated={noCombosNotUpdatedIds.has(m.id)}
-            hasTimeslot={timeslotMemberIds.has(m.id)}
-            hasPurchased={
-              timeslotMemberIds.has(m.id) && purchasedMemberIds.has(m.id)
-            }
+            hasTimeslot={timeslotMap.has(m.id)}
+            timeslot={timeslotMap.get(m.id) ?? null}
+            hasPurchased={timeslotMap.has(m.id) && purchasedMemberIds.has(m.id)}
             hasPurchaseData={purchaseDataMemberIds.has(m.id)}
             myTimeslot={m.id === group.myMemberId ? group.myTimeslot : null}
           />
@@ -130,6 +132,7 @@ function ActiveMemberRow({
   isAffectedBuddy,
   isNoCombosNotUpdated,
   hasTimeslot,
+  timeslot,
   hasPurchased,
   hasPurchaseData,
   myTimeslot,
@@ -143,6 +146,7 @@ function ActiveMemberRow({
   isAffectedBuddy: boolean;
   isNoCombosNotUpdated: boolean;
   hasTimeslot: boolean;
+  timeslot: { timeslotStart: Date | string; timeslotEnd: Date | string } | null;
   hasPurchased: boolean;
   hasPurchaseData: boolean;
   myTimeslot: GroupDetail["myTimeslot"];
@@ -175,8 +179,8 @@ function ActiveMemberRow({
         isCurrentUser
           ? {
               backgroundColor: avatarColors[m.avatarColor ?? "blue"].bg.replace(
-                /[\d.]+\)$/,
-                "0.07)"
+                /,\s*[\d.]+\)$/,
+                ", 0.07)"
               ),
             }
           : undefined
@@ -202,6 +206,15 @@ function ActiveMemberRow({
           >
             {m.role === "owner" ? "Owner" : "Member"}
           </span>
+          {timeslot && (
+            <Tooltip label="Assigned Purchase Timeslot">
+              <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                <Clock size={12} />
+                {formatTimeslot(timeslot.timeslotStart)} –{" "}
+                {formatTimeslot(timeslot.timeslotEnd)}
+              </span>
+            </Tooltip>
+          )}
           {isOwner && m.role !== "owner" && (
             <button
               onClick={() => setShowConfirm(true)}
@@ -430,6 +443,17 @@ function PendingMemberRow({
   );
 }
 
+function formatTimeslot(date: Date | string): string {
+  const d = new Date(date);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function TimeslotModal({
   groupId,
   myTimeslot,
@@ -446,7 +470,6 @@ function TimeslotModal({
         id: "",
         timeslotStart: new Date(myTimeslot.timeslotStart),
         timeslotEnd: new Date(myTimeslot.timeslotEnd),
-        status: myTimeslot.status,
       }
     : null;
 

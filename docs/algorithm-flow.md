@@ -8,17 +8,18 @@ Traces every user action from first visit through schedule generation and purcha
 
 ### Sign Up
 
-**User provides:** first name, last name, username, email, password
+**User provides:** first name, last name, username, email, password, avatar color
 
 **Validation:**
 
 - Username must be unique
 - Password: min 8 chars
+- Avatar color must be one of: blue, yellow, pink, green, purple, orange, teal
 
 **System:**
 
 - Creates Supabase auth user
-- Inserts `users` row (authId, email, username, firstName, lastName, avatarColor = "blue")
+- Inserts `users` row (authId, email, username, firstName, lastName, avatarColor)
 - Redirects to home `/`
 
 **Errors:**
@@ -67,8 +68,9 @@ User sees three sections:
 **System:**
 
 - Generates 8-char invite code (`crypto.randomBytes(4).toString("hex")`)
-- Inserts `groups` row: `phase = "preferences"`, date config, invite code
-- Inserts `member` row: `role = "owner"`, `status = "joined"`, `joinedAt = now()`
+- Single transaction: checks user group count (≤ 10), inserts `groups` row
+  (`phase = "preferences"`, date config, invite code), inserts `member` row
+  (`role = "owner"`, `status = "joined"`, `joinedAt = now()`)
 - Owner lands on group overview
 
 ---
@@ -87,13 +89,23 @@ Is invite code valid?
 └─ YES → Does user already have a membership?
      ├─ status = "pending_approval" → "You already have a pending request"
      ├─ status = "joined" or "preferences_set" → "You are already a member"
-     ├─ status = "denied" → Reset to "pending_approval" (re-request)
-     └─ No existing membership → Check group capacity
+     ├─ status = "denied" → Transaction resets to "pending_approval"
+     │    (UPDATE WHERE includes status = "denied" guard; no-op if status changed concurrently)
+     └─ No existing membership → Transaction (locks group row FOR UPDATE):
+          ├─ User already in ≥ 10 active groups → "You can be in at most 10 groups"
           ├─ ≥ 12 active members → "Group is full"
-          └─ < 12 → Insert member: role = "member", status = "pending_approval"
+          └─ Both checks pass → Insert member: role = "member", status = "pending_approval"
 ```
 
 User now sees group in "Pending Requests" on home page.
+
+### Withdraw Pending Request
+
+User can cancel a pending or denied membership from the home page.
+
+- DELETE includes `status IN ("pending_approval", "denied")` guard — no-op if
+  a concurrent approval changed the status to `"joined"` between the pre-check
+  and the DELETE.
 
 ### Owner Approves / Denies
 
@@ -101,14 +113,17 @@ Owner sees pending members in group overview.
 
 **Approve:**
 
-- Sets `status = "joined"`, `joinedAt = now()`
+- Transaction locks group row (`FOR UPDATE`) and checks group capacity
+- UPDATE sets `status = "joined"`, `joinedAt = now()` with
+  `WHERE status = "pending_approval"` guard — no-op if status changed concurrently
 - If member was previously departed → matches by `userId` in `group.departedMembers`
-  and marks `rejoinedAt`
-- Checks group capacity before approving
+  and marks `rejoinedAt` (only runs if the UPDATE took effect, verified by
+  querying `status = "joined"` afterward)
 
 **Deny:**
 
-- Sets `status = "denied"`
+- UPDATE sets `status = "denied"` with `WHERE status = "pending_approval"` guard —
+  no-op if status changed concurrently
 - Denied user can re-request via the same invite code
 
 ---
@@ -123,7 +138,8 @@ Shows group state, members, and available actions based on role and phase.
 - Update group name
 - Update date configuration (can trigger window ranking recomputation)
 - Remove members
-- Transfer ownership
+- Transfer ownership (locks group row and re-verifies target member inside
+  transaction to prevent concurrent departure from leaving the group ownerless)
 - Generate schedules (when conditions are met)
 
 ### Member Actions
@@ -136,6 +152,9 @@ Shows group state, members, and available actions based on role and phase.
 When a member leaves or is removed:
 
 ```
+0. Lock group row (FOR UPDATE) and verify departing member's role
+   └─ If role = "owner" → abort transaction (prevents concurrent
+      transferOwnership from leaving group ownerless)
 1. Delete all buddy_constraint rows involving this member
 2. Delete all session_preference rows for this member
 3. Track affected buddies:
@@ -143,7 +162,8 @@ When a member leaves or is removed:
 4. If schedule was previously generated AND departing member was part of it
    (joinedAt ≤ scheduleGeneratedAt):
      ├─ Delete combos, comboSessions, windowRankings
-     ├─ Reset all remaining active members to status = "preferences_set"
+     ├─ Reset members already at "preferences_set" (bump statusChangedAt only;
+     │    members still at "joined" stay at "joined" since they have no preferences)
      ├─ Record in group.departedMembers [{userId, name, departedAt}]
      └─ group.phase → "preferences"
    If schedule was previously generated but departing member joined AFTER
@@ -155,11 +175,12 @@ When a member leaves or is removed:
 **Consequence:** Affected buddy members must confirm review before regeneration is allowed.
 
 **Note on purchase data:** When a member row is deleted, FK cascades delete their
-ticket purchases (and associated assignee rows), sold-out reports, out-of-budget marks,
-purchase plan entries, and timeslots. If the departing member was a ticket buyer,
-assignees of those purchases lose their locked session status on the next regeneration.
-Members with purchase data see a warning before leaving, advising them to transfer
-ticket purchases to other members first.
+ticket purchases (and associated assignee rows), out-of-budget marks, purchase plan
+entries, and timeslots. Sold-out records are NOT deleted — the `reportedByMemberId`
+field is set to null, preserving the sold-out status for the group. If the departing
+member was a ticket buyer, assignees of those purchases lose their locked session
+status on the next regeneration. Members with purchase data see a warning before
+leaving, advising them to transfer ticket purchases to other members first.
 
 ### Navigation Tab Warnings
 
@@ -187,8 +208,10 @@ Available once member `status = "joined"`. Four sequential steps.
 - Cannot set minBuddies > number of other active members
 - minBuddies must be ≥ count of hard buddies
 
-**System:**
+**System (single transaction):**
 
+- Validates buddy member IDs against current active members (inside transaction
+  for consistency with concurrent departures)
 - Replaces all `buddy_constraint` rows for this member
 - Updates `member.minBuddies` and `member.preferenceStep`
 - Clears member from `group.affectedBuddyMembers` if present
@@ -198,7 +221,8 @@ Available once member `status = "joined"`. Four sequential steps.
 
 - Warning modal appears: "Changes require regeneration"
 - User cancels → reverts to saved state
-- User proceeds → `ackScheduleWarning()`, then saves normally
+- User proceeds → saves preferences; `ackScheduleWarning()` fires only if save
+  succeeds (prevents clearing the warning when preferences weren't persisted)
 
 **Constraint semantics:**
 
@@ -236,8 +260,10 @@ Available once member `status = "joined"`. Four sequential steps.
 - Rate each: High / Medium / Low interest
 - Must select ≥ 1 session
 
-**System:**
+**System (single transaction):**
 
+- Validates sport rankings and session IDs inside transaction for consistency
+  with concurrent member/data changes
 - Replaces all `session_preference` rows for this member
 - Sets `member.status = "preferences_set"` (generation gate)
 - Updates `statusChangedAt`
@@ -276,6 +302,22 @@ Generation is blocked if ANY of these fail:
 | `group.phase` not in `[preferences, schedule_review]` | Phase error                             |
 | `group.affectedBuddyMembers` is non-empty             | "All affected members must review"      |
 | Any active member has `status ≠ preferences_set`      | "All members must have preferences set" |
+
+**Post-algorithm guards** (checked after the algorithm completes, before writing results):
+
+| Guard                                                          | Error                              |
+| -------------------------------------------------------------- | ---------------------------------- |
+| Algorithm timed out AND some members have no combos            | "Schedule generation timed out..." |
+| Active member count changed during generation (TOCTOU check)   | "Group membership changed..."      |
+| Group phase changed during generation (inside `FOR UPDATE` tx) | "Group state changed..."           |
+
+### In-Progress Guard
+
+While schedule generation is running, the modal prevents accidental interruption:
+
+- Browser refresh / tab close / back / forward → `beforeunload` confirmation prompt
+- Modal close (X button) and Cancel button → blocked during generation
+- Network failure or unexpected error → loading state always resets via try/finally
 
 ### Data Assembly
 
@@ -336,6 +378,8 @@ Side effect: store excluded sessions per member with reason
   - `lockedSessionCodes` (purchased sessions for this member)
 - `TravelEntry[]` — zone-to-zone driving times
 - `days[]` — 19 Olympic days (2028-07-12 through 2028-07-30)
+- `options?` — optional configuration:
+  - `timeoutMs` — algorithm timeout in milliseconds (default: 5 minutes)
 
 #### Convergence Loop (max 5 iterations)
 
@@ -385,6 +429,7 @@ for iteration = 1 to 5:
   │     │    │    combo.score = Σ sessionScore
   │     │    │
   │     │    │    sessionScore = sportMultiplier × interestAdjustment × softBuddyBonus
+  │     │    │      (× 0.1 pruned penalty during backup enhancement only)
   │     │    │
   │     │    │    sportMultiplier: 2.0 for rank 1 → 1.0 for last rank
   │     │    │      Formula: 2.0 - ((rank-1) / (totalSports-1))
@@ -425,9 +470,47 @@ for iteration = 1 to 5:
        │    Prune violating sessions (NEVER prune locked)
        │    → loop back to step 1
        │
-       └─ Violations AND iteration = 5:
-            → RETURN PARTIAL (converged = false, violations included)
+       ├─ Violations AND iteration = 5:
+       │    → CONTINUE TO BACKUP ENHANCEMENT (converged = false, violations included)
+       │
+       └─ TIMEOUT (5-minute limit):
+            Checked at start of each iteration (after first) and between members.
+            Returns immediately with last completed iteration's results (no backup
+            enhancement — the `return` exits before the enhancement phase).
+            ├─ All members have combos (timeout during refinement):
+            │    → RETURN results to caller; treated as non-convergence
+            │      (schedule saved, affected members see amber warning)
+            └─ Some members missing combos (timeout during first pass):
+                 → RETURN FATAL ERROR (schedule generation timed out; nothing saved)
 ```
+
+#### Backup Enhancement
+
+After the convergence loop, if any member had sessions pruned during convergence,
+their backup combos (B1/B2) are regenerated from a wider pool while keeping their
+primary combos unchanged.
+
+```
+For each member with pruned sessions:
+  │
+  ├─ Build wide pool = final-iteration filtered sessions ∪ convergence-pruned sessions
+  │    Only sessions that were explicitly pruned by the convergence loop are re-included;
+  │    sessions naturally filtered out (e.g. interest count dropped) are excluded.
+  │    Pruned sessions are marked with 0.1× scoring penalty so they never outrank
+  │    valid sessions in combo scoring.
+  │
+  ├─ For each day with a primary combo:
+  │    Generate day combos from wide pool
+  │    Force the existing primary combo (unchanged)
+  │    Pick new B1/B2 from the enhanced scored combos
+  │
+  └─ Members without pruning keep their original combos
+```
+
+This improves backup quality for non-converging members by allowing pruned sessions
+back into backups (with a heavy penalty) without affecting the validated primaries.
+Note: backup enhancement does NOT run on timeout — only on normal convergence exit
+(success or max iterations reached).
 
 #### Why Validation Only Checks Primary Combos
 
@@ -460,6 +543,11 @@ so users can judge for themselves and adjust preferences if needed.
 ### Post-Generation Storage (single DB transaction)
 
 ```
+0. Lock group row (SELECT ... FOR UPDATE) and verify:
+   - Phase hasn't changed since pre-generation check
+   - Active member count matches algorithm input (TOCTOU guard)
+   Either mismatch → abort transaction with error
+
 1. Delete existing combos + comboSessions + windowRankings for group
 
 2. Insert new combos (memberId, day, rank, score) + comboSession rows
@@ -469,7 +557,10 @@ so users can judge for themselves and adjust preferences if needed.
    └─ all members have combos         → phase = "schedule_review"
 
 4. Update group:
-   - phase, scheduleGeneratedAt = now
+   - phase, scheduleGeneratedAt = generationTimestamp
+     (captured BEFORE algorithm execution so that any preference changes
+     made during generation have statusChangedAt > scheduleGeneratedAt,
+     which lets the notification logic detect mid-generation edits)
    - purchaseDataChangedAt = null (reset)
    - departedMembers = [], affectedBuddyMembers = {}
    - membersWithNoCombos = [...ids]
@@ -479,7 +570,7 @@ so users can judge for themselves and adjust preferences if needed.
    member.excludedSessionCodes = [{code, soldOut, outOfBudget}, ...]
 
 6. If phase = "schedule_review" AND dateMode configured:
-   Compute window rankings → auto-select top-ranked window
+   Compute window rankings and insert them (sorted by score desc)
 ```
 
 ---
@@ -525,9 +616,10 @@ Each session shows:
 - Reported prices
 
 **Non-convergence warning:** If the algorithm couldn't fully satisfy a member's
-buddy/minBuddies constraints (5 iterations exhausted), an amber warning banner
-appears above their schedule advising them to adjust preferences if unsatisfied.
-A matching notification also appears in the Notifications section on the overview page.
+buddy/minBuddies constraints (5 iterations exhausted or timeout during convergence
+refinement), an amber warning banner appears above their schedule advising them to
+adjust preferences if unsatisfied. A matching notification also appears in the
+Notifications section on the overview page.
 
 **No schedule placeholder:** If schedules have not been generated yet, a placeholder
 message is shown instead of the schedule.
@@ -552,13 +644,36 @@ Full functionality available once `phase = "schedule_review"`.
 | Report Price                     | Group-wide (informational)    | None                                                                |
 | Save Purchase Plan Entry         | Per-purchaser (informational) | None                                                                |
 
+### Server-Side Purchase Guards
+
+`markAsPurchased` enforces the following inside a single transaction:
+
+1. **Sold-out check:** Rejects if the session is in the `soldOutSession` table for
+   this group.
+2. **Assignee membership check:** Validates that all assignee `memberId` values are
+   active members of the group (status not `pending_approval` or `denied`). Prevents
+   cross-group member ID references.
+3. **Duplicate assignee check:** Queries existing `ticketPurchaseAssignee` rows for
+   the session. Filters out any assignees who already have a purchase. If all
+   requested assignees are duplicates, returns an error.
+4. **Price validation:** `pricePerTicket` and each assignee's `pricePaid` must be
+   non-negative and not `NaN` (if provided). All other price-accepting actions
+   (`savePurchasePlanEntry`, `batchSavePurchasePlan`, `updatePurchaseAssigneePrice`,
+   `reportSessionPrice`) also validate for `NaN` alongside their existing negative
+   checks.
+
+`savePurchasePlanEntry` and `batchSavePurchasePlan` also validate that
+`assigneeMemberId` values are active group members before writing plan entries.
+
 ### How Purchases Create Locked Sessions
 
 ```
-ticketPurchase (buyer, session, price)
+ticketPurchase (buyer, session, price?)
   └─ ticketPurchaseAssignee (memberId, ticketPurchaseId)
        └─ lockedByMember = Map<memberId, sessionCode[]>
 ```
+
+`pricePerTicket` is nullable — price may be unknown at the time of purchase recording.
 
 **The buyer is NOT automatically an attendee.** Only explicit assignees get locked sessions. If Alice buys for Bob and Carol, only Bob and Carol have locked sessions — not Alice (unless she's also listed as an assignee).
 
@@ -589,6 +704,34 @@ These actions set `group.purchaseDataChangedAt`:
 
 Signals to the UI that regeneration may be beneficial.
 
+### Purchase Timeslots
+
+Members declare a purchase timeslot — the time window during which they plan to buy
+tickets. This is informational for group coordination and has no algorithm effect.
+
+**Storage:** One row per member per group in `purchaseTimeslot` table, enforced by a
+UNIQUE constraint on `(memberId, groupId)`.
+
+**Save/edit behavior:** Uses UPSERT — first save inserts, subsequent edits update the
+existing row in place. The row is never deleted on edit, so "hasTimeslot" remains true.
+
+**Independence from purchases:** `ticketPurchase` records have no foreign key to
+`purchaseTimeslot`. Editing a timeslot has zero effect on existing purchase records.
+
+**Multiple purchase windows:** A member can enter timeslot A, purchase tickets, then
+edit to timeslot B and purchase more tickets. Because:
+
+- The timeslot UPSERT only changes start/end times; the row persists
+- Purchase records are unaffected by timeslot edits
+- No global ticket cap prevents further purchases (only per-session duplicate check)
+
+**Overview status columns:** Both "Timeslot Assigned?" and "Purchased Tickets?" remain
+checked after a timeslot edit. "Purchased Tickets?" requires both a timeslot row AND at
+least one `ticketPurchase` where the member is the buyer — both survive the edit.
+
+**UI display:** Each member's timeslot (date + time range) is shown inline next to their
+name/role tag on the overview page.
+
 ---
 
 ## 11. Regeneration
@@ -596,11 +739,23 @@ Signals to the UI that regeneration may be beneficial.
 Owner can regenerate when something changed since last generation:
 
 - Member updated preferences (`statusChangedAt > scheduleGeneratedAt`)
+- New member joined and set preferences after generation (`joinedAt > scheduleGeneratedAt`)
 - Member departed or rejoined
-- Purchase data changed (`purchaseDataChangedAt` is non-null)
+- Purchase data changed (`purchaseDataChangedAt > scheduleGeneratedAt`)
 - Member previously had no combos but has since updated preferences
 
 Regeneration replaces all previous combos and window rankings with fresh results.
+
+### Newly-Joined Notification Lifecycle
+
+A "recently joined" notification persists for post-generation joiners throughout their
+full lifecycle until schedules are regenerated or the member departs:
+
+- **Status = `"joined"`** (no preferences yet): "X recently joined. Wait for them to
+  enter their preferences and then regenerate schedules."
+- **Status = `"preferences_set"`**: "X recently joined. Regenerate schedules to include them."
+
+These members are excluded from the "updated preferences" notification to avoid duplication.
 
 ### Schedule Warning Flow
 
@@ -616,31 +771,34 @@ Member edits preferences while phase = "schedule_review"
 
 ## Edge Case Summary
 
-| Scenario                                              | Outcome                                                                                                         |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| User tries to join a full group (12 members)          | Rejected: "Group is full"                                                                                       |
-| Denied user re-requests with same invite code         | Reset to `pending_approval`                                                                                     |
-| Member removed while schedule exists (was part of it) | Combos deleted, phase → "preferences", all members must re-generate                                             |
-| Member removed while schedule exists (joined after)   | Schedule preserved; only affected buddy tracking updated                                                        |
-| Buddy member departs                                  | Remaining buddy members must confirm review before generation                                                   |
-| Member rejoins after departure                        | Matched by `userId` in `departedMembers`; `rejoinedAt` set; no auto-regeneration                                |
-| Removing a ranked sport                               | All session preferences for that sport silently deleted                                                         |
-| Member has only locked sessions on one day            | Single combo; no backups possible                                                                               |
-| 4+ locked sessions on one day                         | All go in one combo with no cap; travel feasibility ignored                                                     |
-| Locked sessions travel-infeasible with unlocked       | Falls back to locked-only combo                                                                                 |
-| Locked session not in member's preferences            | Injected with interest = "high"                                                                                 |
-| Another member's purchased session                    | Does NOT appear on your schedule unless you independently expressed interest                                    |
-| All sessions filtered by buddy constraints            | Member in `membersWithNoCombos`; phase stays "preferences"                                                      |
-| Hard buddy doesn't exist in group                     | Ignored in filter (no MemberData match)                                                                         |
-| 5 convergence iterations exhausted                    | Returns partial solution, `converged = false`; affected members see warning on My Schedule and in Notifications |
-| Sold-out session: member A purchased, member B didn't | Kept for A (locked), excluded for B                                                                             |
-| Out-of-budget session purchased by the same member    | Kept (locked overrides OOB)                                                                                     |
-| Session sold out AFTER generation                     | Still on schedule, but sold-out indicator shows in purchase tracker                                             |
-| Member has 0 sessions on a day                        | No combo for that day (not an error)                                                                            |
-| All members have 0 combos                             | `membersWithNoCombos` = everyone; phase = "preferences"                                                         |
-| `dateMode` not configured                             | Window rankings skipped                                                                                         |
-| Specific date mode                                    | Single window (no sliding)                                                                                      |
-| Locked sessions can prevent convergence               | If a locked session causes a violation, it persists since locked sessions are never pruned                      |
-| Mutual hard buddies with divergent preferences        | Cascading pruning can strip both members' candidates; likely lands in `membersWithNoCombos`                     |
-| Buyer member departs                                  | FK cascade deletes their purchases; assignees lose locked status on next regeneration                           |
-| Sold-out reporter departs                             | Sold-out record persists (reporter field set to null); session stays excluded for all members                   |
+| Scenario                                              | Outcome                                                                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| User tries to join a full group (12 members)          | Rejected: "Group is full"                                                                                           |
+| Denied user re-requests with same invite code         | Reset to `pending_approval`                                                                                         |
+| Member removed while schedule exists (was part of it) | Combos deleted, phase → "preferences", all members must re-generate                                                 |
+| Member removed while schedule exists (joined after)   | Schedule preserved; only affected buddy tracking updated                                                            |
+| Buddy member departs                                  | Remaining buddy members must confirm review before generation                                                       |
+| Member rejoins after departure                        | Matched by `userId` in `departedMembers`; `rejoinedAt` set; no auto-regeneration                                    |
+| Removing a ranked sport                               | All session preferences for that sport silently deleted                                                             |
+| Member has only locked sessions on one day            | Single combo; no backups possible                                                                                   |
+| 4+ locked sessions on one day                         | All go in one combo with no cap; travel feasibility ignored                                                         |
+| Locked sessions travel-infeasible with unlocked       | Falls back to locked-only combo                                                                                     |
+| Locked session not in member's preferences            | Injected with interest = "high"                                                                                     |
+| Another member's purchased session                    | Does NOT appear on your schedule unless you independently expressed interest                                        |
+| All sessions filtered by buddy constraints            | Member in `membersWithNoCombos`; phase stays "preferences"                                                          |
+| Hard buddy doesn't exist in group                     | Ignored in filter (no MemberData match)                                                                             |
+| Convergence not reached (5 iterations or timeout)     | Returns best-effort solution, `converged = false`; affected members see warning on My Schedule and in Notifications |
+| Sold-out session: member A purchased, member B didn't | Kept for A (locked), excluded for B                                                                                 |
+| Out-of-budget session purchased by the same member    | Kept (locked overrides OOB)                                                                                         |
+| Session sold out AFTER generation                     | Still on schedule, but sold-out indicator shows in purchase tracker                                                 |
+| Member has 0 sessions on a day                        | No combo for that day (not an error)                                                                                |
+| All members have 0 combos                             | `membersWithNoCombos` = everyone; phase = "preferences"                                                             |
+| `dateMode` not configured                             | Window rankings skipped                                                                                             |
+| Specific date mode                                    | Single window (no sliding)                                                                                          |
+| Locked sessions can prevent convergence               | If a locked session causes a violation, it persists since locked sessions are never pruned                          |
+| Mutual hard buddies with divergent preferences        | Cascading pruning can strip both members' candidates; likely lands in `membersWithNoCombos`                         |
+| Buyer member departs                                  | FK cascade deletes their purchases; assignees lose locked status on next regeneration                               |
+| Timeout during first pass (some members unprocessed)  | Fatal error returned; no schedule saved; user advised to reduce preferences/constraints                             |
+| Timeout during convergence refinement                 | Treated as non-convergence; best-effort schedule saved (no backup enhancement); amber warning for affected members  |
+| New member joins and sets preferences post-generation | "Recently joined" notification persists; regeneration button enabled for owner                                      |
+| Sold-out reporter departs                             | Sold-out record persists (reporter field set to null); session stays excluded for all members                       |

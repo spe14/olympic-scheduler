@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   generateDayCombos,
   assignRankedCombos,
+  assignRankedCombosWithForcedPrimary,
   generateAllMemberCombos,
   buildSoftBuddyInterestMap,
 } from "@/lib/algorithm/combos";
@@ -1173,5 +1174,100 @@ describe("buildSoftBuddyInterestMap", () => {
 
     // Ghost not in map → no bonus
     expect(map.get("SWM01")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assignRankedCombosWithForcedPrimary
+// ---------------------------------------------------------------------------
+
+describe("assignRankedCombosWithForcedPrimary", () => {
+  function makeScoredCombo(codes: string[], score: number): ScoredCombo {
+    return {
+      sessions: codes.map((c) => ({
+        sessionCode: c,
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-12",
+        startTime: "10:00",
+        endTime: "12:00",
+        interest: "high" as const,
+      })),
+      score,
+      sportMultiplierSum: score,
+      sessionCount: codes.length,
+    };
+  }
+
+  it("keeps forced primary and picks backups from enhanced pool", () => {
+    const primary = {
+      memberId: "A",
+      day: "2028-07-12",
+      rank: "primary" as const,
+      score: 5,
+      sessionCodes: ["S1"],
+    };
+    const enhanced = [
+      makeScoredCombo(["S1"], 5),
+      makeScoredCombo(["S2"], 3), // has new session vs primary → B1
+      makeScoredCombo(["S3"], 2), // has new session vs primary and B1 → B2
+    ];
+
+    const result = assignRankedCombosWithForcedPrimary(
+      primary,
+      enhanced,
+      "A",
+      "2028-07-12"
+    );
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual(primary);
+    expect(result[1].rank).toBe("backup1");
+    expect(result[1].sessionCodes).toEqual(["S2"]);
+    expect(result[2].rank).toBe("backup2");
+    expect(result[2].sessionCodes).toEqual(["S3"]);
+  });
+
+  it("returns only primary when no combo differs", () => {
+    const primary = {
+      memberId: "A",
+      day: "2028-07-12",
+      rank: "primary" as const,
+      score: 5,
+      sessionCodes: ["S1"],
+    };
+    const enhanced = [makeScoredCombo(["S1"], 5)];
+
+    const result = assignRankedCombosWithForcedPrimary(
+      primary,
+      enhanced,
+      "A",
+      "2028-07-12"
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(primary);
+  });
+
+  it("returns primary + B1 when only one differing combo exists", () => {
+    const primary = {
+      memberId: "A",
+      day: "2028-07-12",
+      rank: "primary" as const,
+      score: 5,
+      sessionCodes: ["S1"],
+    };
+    const enhanced = [makeScoredCombo(["S1"], 5), makeScoredCombo(["S2"], 3)];
+
+    const result = assignRankedCombosWithForcedPrimary(
+      primary,
+      enhanced,
+      "A",
+      "2028-07-12"
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[1].rank).toBe("backup1");
+    expect(result[1].sessionCodes).toEqual(["S2"]);
   });
 });

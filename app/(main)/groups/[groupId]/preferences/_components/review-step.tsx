@@ -77,8 +77,11 @@ export default function ReviewStep({
       <h2 className="text-lg font-semibold text-slate-900">
         Review Your Preferences
       </h2>
-      <p className="mb-6 mt-1 text-sm text-slate-500">
+      <p className="mb-1 mt-1 text-sm text-slate-500">
         You can go back to any step to make changes.
+      </p>
+      <p className="mb-6 text-xs text-slate-400">
+        All session times are displayed in Pacific Time.
       </p>
 
       {/* Budget & Buddies + Sport Rankings side by side */}
@@ -101,8 +104,13 @@ export default function ReviewStep({
                   type="button"
                   onClick={async () => {
                     setConfirming(true);
-                    await onConfirmReview();
-                    setConfirming(false);
+                    try {
+                      await onConfirmReview();
+                    } catch {
+                      // Error handled by parent
+                    } finally {
+                      setConfirming(false);
+                    }
                   }}
                   disabled={confirming}
                   className="mt-2 rounded-lg bg-[#009de5] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
@@ -236,7 +244,9 @@ export default function ReviewStep({
           </div>
         </div>
         <p className="mb-3 text-sm text-[#d97706]">
-          Only the sessions listed below may appear on your schedule.
+          Only the sessions listed below may appear on your schedule. Sessions
+          for which you have already purchased tickets will appear on your
+          schedule irrespective of your preferences.
         </p>
         {loading ? (
           <p className="py-4 text-center text-sm text-slate-400">

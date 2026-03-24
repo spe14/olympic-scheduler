@@ -6,6 +6,8 @@ export type CandidateSession = {
   startTime: string;
   endTime: string;
   interest: "low" | "medium" | "high";
+  /** Marked true for sessions re-included in backup generation after convergence pruning */
+  pruned?: boolean;
 };
 
 export type MemberData = {
@@ -53,6 +55,7 @@ export type ConvergenceInfo = {
   iterations: number;
   converged: boolean;
   violations: ConstraintViolation[];
+  timedOut?: boolean;
 };
 
 export type GenerationResult = {

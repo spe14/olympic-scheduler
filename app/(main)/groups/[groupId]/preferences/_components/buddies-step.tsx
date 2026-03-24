@@ -28,7 +28,10 @@ export default function BuddiesStep({
   const [buddies, setBuddies] = useState<BuddySelection[]>(initialBuddies);
 
   const eligibleMembers = group.members.filter(
-    (m) => m.status !== "pending_approval" && m.id !== group.myMemberId
+    (m) =>
+      m.status !== "pending_approval" &&
+      m.status !== "denied" &&
+      m.id !== group.myMemberId
   );
 
   const hardBuddyCount = buddies.filter((b) => b.type === "hard").length;
@@ -112,6 +115,16 @@ export default function BuddiesStep({
             " max-w-xs disabled:cursor-not-allowed disabled:opacity-50"
           }
           value={minBuddies}
+          onKeyDown={(e) => {
+            if (
+              e.key === "-" ||
+              e.key === "e" ||
+              e.key === "E" ||
+              e.key === "+"
+            ) {
+              e.preventDefault();
+            }
+          }}
           onChange={(e) => {
             const val = parseInt(e.target.value, 10);
             const clamped = isNaN(val)

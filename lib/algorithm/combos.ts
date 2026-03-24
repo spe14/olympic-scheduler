@@ -152,6 +152,53 @@ export function assignRankedCombos(
   return results;
 }
 
+/**
+ * Like assignRankedCombos but keeps a forced primary combo (from convergence)
+ * and picks backup1/backup2 from an enhanced pool that may include pruned sessions.
+ */
+export function assignRankedCombosWithForcedPrimary(
+  forcedPrimary: DayComboResult,
+  enhancedSortedCombos: ScoredCombo[],
+  memberId: string,
+  day: string
+): DayComboResult[] {
+  const results: DayComboResult[] = [forcedPrimary];
+  const primaryCodes = new Set(forcedPrimary.sessionCodes);
+
+  // B1 must have at least 1 session not in primary
+  const b1 = enhancedSortedCombos.find((c) =>
+    c.sessions.some((s) => !primaryCodes.has(s.sessionCode))
+  );
+  if (b1) {
+    results.push({
+      memberId,
+      day,
+      rank: "backup1",
+      score: b1.score,
+      sessionCodes: b1.sessions.map((s) => s.sessionCode),
+    });
+
+    const b1Codes = new Set(b1.sessions.map((s) => s.sessionCode));
+    const b2 = enhancedSortedCombos.find(
+      (c) =>
+        c !== b1 &&
+        c.sessions.some((s) => !b1Codes.has(s.sessionCode)) &&
+        c.sessions.some((s) => !primaryCodes.has(s.sessionCode))
+    );
+    if (b2) {
+      results.push({
+        memberId,
+        day,
+        rank: "backup2",
+        score: b2.score,
+        sessionCodes: b2.sessions.map((s) => s.sessionCode),
+      });
+    }
+  }
+
+  return results;
+}
+
 export function generateAllMemberCombos(
   memberData: MemberData,
   filteredSessions: CandidateSession[],

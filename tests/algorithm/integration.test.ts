@@ -4557,4 +4557,460 @@ describe("runScheduleGeneration - end-to-end", () => {
       ).toBe(true);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Timeout
+  // -------------------------------------------------------------------------
+
+  describe("timeout", () => {
+    it("returns timedOut: true when timeoutMs is exceeded", () => {
+      // Use -1 timeout so isTimedOut() is true immediately
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+          ],
+        }),
+        makeMember("B", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+          ],
+        }),
+      ];
+
+      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS, {
+        timeoutMs: -1,
+      });
+
+      expect(result.convergence.timedOut).toBe(true);
+    });
+
+    it("does not set timedOut when completing within timeout", () => {
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+          ],
+        }),
+      ];
+
+      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS, {
+        timeoutMs: 60000,
+      });
+
+      expect(result.convergence.timedOut).toBeUndefined();
+      expect(result.convergence.converged).toBe(true);
+    });
+
+    it("skips per-member backup enhancement when timeout occurs mid-enhancement", () => {
+      // Scenario: A→hardBuddy B, B→hardBuddy C. All prefer S1+S2, C only has S2.
+      // Iteration 1: A's primary with S1 fails validation → S1 pruned from A.
+      // Iteration 2: converges (A only has S2).
+      // Backup enhancement: mock Date.now so the outer check passes but
+      // the per-member check for A times out, skipping A's enhancement.
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["B"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+        makeMember("B", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["C"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+        makeMember("C", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+      ];
+
+      // Mock Date.now: allow convergence loop (2 iterations × 3 members = 8 calls
+      // including the startTime capture and iteration check) + outer enhancement
+      // check (call 9) to pass, then timeout on per-member enhancement (call 10+).
+      let callCount = 0;
+      const spy = vi.spyOn(Date, "now").mockImplementation(() => {
+        callCount++;
+        return callCount <= 9 ? 1000 : 200000;
+      });
+
+      try {
+        const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS, {
+          timeoutMs: 100000,
+        });
+
+        // A had pruned sessions but enhancement was skipped due to timeout
+        // S1 should NOT appear in A's backups (enhancement skipped)
+        const aBackups = result.combos.filter(
+          (c) =>
+            c.memberId === "A" && c.rank !== "primary" && c.day === "2028-07-22"
+        );
+        const backupCodes = aBackups.flatMap((c) => c.sessionCodes);
+        expect(backupCodes).not.toContain("S1");
+
+        // A's primary should still have S2 (the converged result)
+        const aPrimary = result.combos.find(
+          (c) => c.memberId === "A" && c.rank === "primary"
+        );
+        expect(aPrimary).toBeDefined();
+        expect(aPrimary!.sessionCodes).toContain("S2");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Backup enhancement with pruned sessions
+  // -------------------------------------------------------------------------
+
+  describe("backup enhancement", () => {
+    it("includes pruned sessions in backup combos after convergence", () => {
+      // A has hardBuddy B, B has hardBuddy C.
+      // All three prefer S1 and S2.
+      // C does NOT prefer S1 → B's hard buddy filter removes S1 from B's
+      // filtered set → A's primary with S1 fails validation (B has no combo
+      // with S1) → S1 is pruned from A → backup enhancement re-includes S1.
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["B"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+        makeMember("B", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["C"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+        makeMember("C", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+      ];
+
+      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS);
+
+      // A's primary should have S2 (the session that satisfies all constraints)
+      const aPrimary = result.combos.filter(
+        (c) =>
+          c.memberId === "A" && c.rank === "primary" && c.day === "2028-07-22"
+      );
+      expect(aPrimary).toHaveLength(1);
+      expect(aPrimary[0].sessionCodes).toContain("S2");
+
+      // A's backup should include S1 (the pruned session re-included)
+      const aBackups = result.combos.filter(
+        (c) =>
+          c.memberId === "A" && c.rank !== "primary" && c.day === "2028-07-22"
+      );
+      const backupCodes = aBackups.flatMap((c) => c.sessionCodes);
+      expect(backupCodes).toContain("S1");
+    });
+
+    it("does not enhance backups when no sessions were pruned", () => {
+      // Both members prefer the same sessions — no violations, no pruning
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+        makeMember("B", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+      ];
+
+      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS);
+
+      expect(result.convergence.converged).toBe(true);
+      const aDay = result.combos.filter(
+        (c) => c.memberId === "A" && c.day === "2028-07-22"
+      );
+      expect(aDay.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("excludes naturally filtered sessions from enhanced backups", () => {
+      // A has minBuddies=1. A prefers S1, S2, S3. B prefers S1 only. C prefers S2 only.
+      // After filter: S1 (A+B=2 interested, passes minBuddies=1), S2 (A+C=2, passes),
+      //   S3 (A only=1, fails minBuddies=1 because 0 others).
+      // A also has hardBuddy B. B only has S1 in filtered set.
+      // A's primary: {S1, S2}. Validation: S1 — B has S1 ✓. S2 — B must have S2 in
+      //   any combo. B only has S1, no S2 → hardBuddies violation on S2.
+      // S2 pruned from A. Next iteration: A has only S1 in candidates.
+      // Backup enhancement: S2 is convergence-pruned (re-included with penalty).
+      //   S3 was naturally filtered (not in prunedCodes) — should NOT appear.
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          minBuddies: 1,
+          hardBuddies: ["B"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+            makeSession(
+              "S3",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "18:00",
+              "20:00"
+            ),
+          ],
+        }),
+        makeMember("B", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S1",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "09:00",
+              "11:00"
+            ),
+          ],
+        }),
+        makeMember("C", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            makeSession(
+              "S2",
+              "Swimming",
+              "SoFi Stadium Zone",
+              "2028-07-22",
+              "14:00",
+              "16:00"
+            ),
+          ],
+        }),
+      ];
+
+      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS);
+
+      // S3 should NOT appear anywhere in A's combos (was naturally filtered, not pruned)
+      const aCombos = result.combos.filter(
+        (c) => c.memberId === "A" && c.day === "2028-07-22"
+      );
+      const allCodes = aCombos.flatMap((c) => c.sessionCodes);
+      expect(allCodes).not.toContain("S3");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Locked sessions
+  // -------------------------------------------------------------------------
+
+  describe("locked sessions", () => {
+    it("locked sessions skip buddy constraint validation", () => {
+      // Alice has minBuddies=1, but her locked session has no other attendees.
+      // The locked session should still appear in her combo without a violation.
+      const alice = makeMember("Alice", {
+        sportRankings: ["Swimming"],
+        minBuddies: 1,
+        lockedSessionCodes: ["LOCK-01"],
+        candidateSessions: [
+          makeSession(
+            "LOCK-01",
+            "Swimming",
+            "SoFi Stadium Zone",
+            "2028-07-22",
+            "10:00",
+            "12:00"
+          ),
+          makeSession(
+            "SWM-02",
+            "Swimming",
+            "SoFi Stadium Zone",
+            "2028-07-22",
+            "14:00",
+            "16:00"
+          ),
+        ],
+      });
+      const bob = makeMember("Bob", {
+        sportRankings: ["Swimming"],
+        candidateSessions: [
+          makeSession(
+            "SWM-02",
+            "Swimming",
+            "SoFi Stadium Zone",
+            "2028-07-22",
+            "14:00",
+            "16:00"
+          ),
+        ],
+      });
+
+      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+        "2028-07-22",
+      ]);
+
+      const alicePrimary = result.combos.find(
+        (c) => c.memberId === "Alice" && c.rank === "primary"
+      );
+      expect(alicePrimary).toBeDefined();
+      // Locked session must be present
+      expect(alicePrimary!.sessionCodes).toContain("LOCK-01");
+      // Should converge (locked session skips minBuddies check)
+      expect(result.convergence.converged).toBe(true);
+    });
+  });
 });

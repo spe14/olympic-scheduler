@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   getTimeslot,
   saveTimeslot,
-  updateTimeslotStatus,
   savePurchasePlanEntry,
   removePurchasePlanEntry,
+  batchSavePurchasePlan,
   markAsPurchased,
   deletePurchase,
   removePurchaseAssignee,
@@ -138,8 +138,13 @@ const mockTransaction = vi.fn(async (cb: (tx: unknown) => Promise<void>) => {
     then: (resolve: (v: unknown) => void) =>
       resolve(txQueryResults.shift() ?? []),
   }));
+  const txSelectInnerJoin: ReturnType<typeof vi.fn> = vi.fn(() => ({
+    innerJoin: txSelectInnerJoin,
+    where: txSelectWhere,
+  }));
   const txSelectFrom = vi.fn(() => ({
     where: txSelectWhere,
+    innerJoin: txSelectInnerJoin,
   }));
   const txSelect = vi.fn(() => ({ from: txSelectFrom }));
 
@@ -211,7 +216,12 @@ vi.mock("@/lib/db/schema", () => ({
     comments: "comments",
     createdAt: "created_at",
   },
-  member: { id: "id", userId: "user_id" },
+  member: {
+    id: "id",
+    userId: "user_id",
+    groupId: "group_id",
+    status: "status",
+  },
   user: {
     id: "id",
     firstName: "first_name",
@@ -225,6 +235,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   and: vi.fn(),
   inArray: vi.fn(),
+  notInArray: vi.fn(),
 }));
 
 vi.mock("@/lib/utils", () => ({
@@ -278,13 +289,11 @@ describe("getTimeslot", () => {
       id: "ts-1",
       timeslotStart: new Date("2028-07-15T10:00:00Z"),
       timeslotEnd: new Date("2028-07-15T12:00:00Z"),
-      status: "upcoming" as const,
     };
     queryResults = [[timeslot]];
     const result = await getTimeslot("group-1");
     expect(result.data).toBeDefined();
     expect(result.data!.id).toBe("ts-1");
-    expect(result.data!.status).toBe("upcoming");
   });
 });
 
@@ -353,44 +362,6 @@ describe("saveTimeslot", () => {
   });
 });
 
-describe("updateTimeslotStatus", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    queryResults = [];
-  });
-
-  it("returns error when not a member", async () => {
-    mockGetMembership.mockResolvedValue(null);
-    const result = await updateTimeslotStatus("group-1", "in_progress");
-    expect(result).toEqual({
-      error: "You are not an active member of this group.",
-    });
-  });
-
-  it("returns error when no timeslot found", async () => {
-    mockGetMembership.mockResolvedValue(membership);
-    queryResults = [[]];
-    const result = await updateTimeslotStatus("group-1", "in_progress");
-    expect(result).toEqual({ error: "No timeslot found." });
-  });
-
-  it("updates status successfully", async () => {
-    mockGetMembership.mockResolvedValue(membership);
-    queryResults = [[{ id: "ts-1" }]];
-    const result = await updateTimeslotStatus("group-1", "completed");
-    expect(result).toEqual({ success: true });
-    expect(mockUpdate).toHaveBeenCalled();
-  });
-
-  it("returns error when db update fails", async () => {
-    mockGetMembership.mockResolvedValue(membership);
-    queryResults = [[{ id: "ts-1" }]];
-    mockUpdateWhere.mockRejectedValueOnce(new Error("DB error"));
-    const result = await updateTimeslotStatus("group-1", "in_progress");
-    expect(result.error).toContain("update timeslot status");
-  });
-});
-
 describe("savePurchasePlanEntry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -411,6 +382,8 @@ describe("savePurchasePlanEntry", () => {
 
   it("saves plan entry and returns success", async () => {
     mockGetMembership.mockResolvedValue(membership);
+    // Active members query
+    queryResults = [[{ id: "member-1" }, { id: "member-2" }]];
     const result = await savePurchasePlanEntry("group-1", {
       sessionId: "SES-001",
       assigneeMemberId: "member-2",
@@ -422,6 +395,7 @@ describe("savePurchasePlanEntry", () => {
 
   it("saves plan entry with null price ceiling", async () => {
     mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ id: "member-1" }, { id: "member-2" }]];
     const result = await savePurchasePlanEntry("group-1", {
       sessionId: "SES-001",
       assigneeMemberId: "member-2",
@@ -432,6 +406,7 @@ describe("savePurchasePlanEntry", () => {
 
   it("returns error when db insert fails", async () => {
     mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ id: "member-1" }, { id: "member-2" }]];
     mockOnConflictDoUpdate.mockRejectedValueOnce(new Error("DB error"));
     const result = await savePurchasePlanEntry("group-1", {
       sessionId: "SES-001",
@@ -439,6 +414,35 @@ describe("savePurchasePlanEntry", () => {
       priceCeiling: 100,
     });
     expect(result.error).toContain("save purchase plan entry");
+  });
+
+  it("rejects assignee not in group", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // Active members query returns only member-1
+    queryResults = [[{ id: "member-1" }]];
+    const result = await savePurchasePlanEntry("group-1", {
+      sessionId: "SES-001",
+      assigneeMemberId: "member-999",
+      priceCeiling: 100,
+    });
+    expect(result).toEqual({
+      error: "Invalid assignee: member is not active in this group.",
+    });
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects negative price ceiling", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    const result = await savePurchasePlanEntry("group-1", {
+      sessionId: "SES-001",
+      assigneeMemberId: "member-2",
+      priceCeiling: -10,
+    });
+
+    expect(result).toEqual({
+      error: "Price ceiling must be a non-negative number.",
+    });
   });
 });
 
@@ -480,6 +484,93 @@ describe("removePurchasePlanEntry", () => {
   });
 });
 
+describe("batchSavePurchasePlan", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryResults = [];
+    txQueryResults = [];
+  });
+
+  it("returns error when not a member", async () => {
+    mockGetMembership.mockResolvedValue(null);
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [{ assigneeMemberId: "member-2", priceCeiling: 100 }],
+    });
+    expect(result).toEqual({
+      error: "You are not an active member of this group.",
+    });
+  });
+
+  it("returns error when any entry has negative price ceiling", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [
+        { assigneeMemberId: "member-2", priceCeiling: 100 },
+        { assigneeMemberId: "member-3", priceCeiling: -5 },
+      ],
+    });
+    expect(result).toEqual({
+      error: "Price ceiling must be a non-negative number.",
+    });
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it("saves entries in a transaction and returns success", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // Active members query inside tx
+    txQueryResults = [
+      [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
+    ];
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [
+        { assigneeMemberId: "member-2", priceCeiling: 150 },
+        { assigneeMemberId: "member-3", priceCeiling: null },
+      ],
+    });
+    expect(result).toEqual({ success: true });
+    expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("handles empty entries array (deletion only)", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [],
+    });
+    expect(result).toEqual({ success: true });
+    expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("rejects assignee not in group", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // Active members query returns only member-1 and member-2
+    txQueryResults = [[{ id: "member-1" }, { id: "member-2" }]];
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [
+        { assigneeMemberId: "member-2", priceCeiling: 100 },
+        { assigneeMemberId: "member-999", priceCeiling: null },
+      ],
+    });
+    expect(result).toEqual({
+      error: "Invalid assignee: member is not active in this group.",
+    });
+  });
+
+  it("returns error when transaction fails", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [{ assigneeMemberId: "member-2", priceCeiling: 100 }],
+    });
+    expect(result.error).toContain("save purchase plan");
+  });
+});
+
 describe("markAsPurchased", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -509,8 +600,14 @@ describe("markAsPurchased", () => {
     });
   });
 
-  it("creates purchase with transaction and returns success", async () => {
+  it("creates purchase with transaction and returns success with purchaseId", async () => {
     mockGetMembership.mockResolvedValue(membership);
+    // Sold-out check, active members, existing assignees
+    txQueryResults = [
+      [],
+      [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
+      [],
+    ];
     const result = await markAsPurchased("group-1", {
       sessionId: "SES-001",
       pricePerTicket: 200,
@@ -519,8 +616,22 @@ describe("markAsPurchased", () => {
         { memberId: "member-3", pricePaid: null },
       ],
     });
-    expect(result).toEqual({ success: true });
+    expect(result.success).toBe(true);
+    expect(result.data?.purchaseId).toBe("purchase-id");
     expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("rejects assignee not in group", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // Sold-out check empty, active members only has member-1 and member-2
+    txQueryResults = [[], [{ id: "member-1" }, { id: "member-2" }]];
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      assignees: [{ memberId: "member-999" }],
+    });
+    expect(result).toEqual({
+      error: "Invalid assignee: member is not active in this group.",
+    });
   });
 
   it("returns error when transaction fails", async () => {
@@ -604,9 +715,10 @@ describe("removePurchaseAssignee", () => {
 
   it("deletes assignee and keeps purchase when other assignees remain", async () => {
     mockGetMembership.mockResolvedValue(membership);
-    // tx query 1: purchase exists
-    // tx query 2: remaining assignees exist (non-empty)
-    txQueryResults = [[{ id: "p-1" }], [{ memberId: "member-3" }]];
+    // query: purchase exists and belongs to caller
+    queryResults = [[{ id: "p-1", purchasedByMemberId: "member-1" }]];
+    // tx query: remaining assignees exist (non-empty)
+    txQueryResults = [[{ memberId: "member-3" }]];
     const result = await removePurchaseAssignee("group-1", {
       purchaseId: "p-1",
       memberId: "member-2",
@@ -617,9 +729,10 @@ describe("removePurchaseAssignee", () => {
 
   it("deletes purchase when no assignees remain after removal", async () => {
     mockGetMembership.mockResolvedValue(membership);
-    // tx query 1: purchase exists
-    // tx query 2: no remaining assignees
-    txQueryResults = [[{ id: "p-1" }], []];
+    // query: purchase exists and belongs to caller
+    queryResults = [[{ id: "p-1", purchasedByMemberId: "member-1" }]];
+    // tx query: no remaining assignees
+    txQueryResults = [[]];
     const result = await removePurchaseAssignee("group-1", {
       purchaseId: "p-1",
       memberId: "member-2",
@@ -628,20 +741,33 @@ describe("removePurchaseAssignee", () => {
     expect(mockTransaction).toHaveBeenCalledOnce();
   });
 
-  it("does nothing inside transaction when purchase not found in group", async () => {
+  it("returns success when purchase not found in group", async () => {
     mockGetMembership.mockResolvedValue(membership);
-    // tx query 1: purchase not found
-    txQueryResults = [[]];
+    // query: purchase not found
+    queryResults = [[]];
     const result = await removePurchaseAssignee("group-1", {
       purchaseId: "nonexistent",
       memberId: "member-2",
     });
     expect(result).toEqual({ success: true });
-    expect(mockTransaction).toHaveBeenCalledOnce();
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it("returns error when purchase belongs to another member", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // query: purchase exists but belongs to a different member
+    queryResults = [[{ id: "p-1", purchasedByMemberId: "member-other" }]];
+    const result = await removePurchaseAssignee("group-1", {
+      purchaseId: "p-1",
+      memberId: "member-2",
+    });
+    expect(result).toEqual({ error: "You can only edit your own purchases." });
+    expect(mockTransaction).not.toHaveBeenCalled();
   });
 
   it("returns error when transaction fails", async () => {
     mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ id: "p-1", purchasedByMemberId: "member-1" }]];
     mockTransaction.mockRejectedValueOnce(new Error("DB error"));
     const result = await removePurchaseAssignee("group-1", {
       purchaseId: "p-1",
@@ -655,6 +781,7 @@ describe("updatePurchaseAssigneePrice", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryResults = [];
+    txQueryResults = [];
   });
 
   it("returns error when not a member", async () => {
@@ -669,9 +796,19 @@ describe("updatePurchaseAssigneePrice", () => {
     });
   });
 
+  it("returns error when price is negative", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await updatePurchaseAssigneePrice("group-1", {
+      purchaseId: "p-1",
+      memberId: "member-2",
+      pricePaid: -10,
+    });
+    expect(result).toEqual({ error: "Price must be a non-negative number." });
+  });
+
   it("returns error when purchase not found", async () => {
     mockGetMembership.mockResolvedValue(membership);
-    queryResults = [[]];
+    txQueryResults = [[]];
     const result = await updatePurchaseAssigneePrice("group-1", {
       purchaseId: "p-1",
       memberId: "member-2",
@@ -680,21 +817,32 @@ describe("updatePurchaseAssigneePrice", () => {
     expect(result).toEqual({ error: "Purchase not found." });
   });
 
+  it("returns error when purchase belongs to another member", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[{ id: "p-1", purchasedByMemberId: "member-other" }]];
+    const result = await updatePurchaseAssigneePrice("group-1", {
+      purchaseId: "p-1",
+      memberId: "member-2",
+      pricePaid: 50,
+    });
+    expect(result).toEqual({ error: "You can only edit your own purchases." });
+  });
+
   it("updates price and returns success", async () => {
     mockGetMembership.mockResolvedValue(membership);
-    queryResults = [[{ id: "p-1" }]];
+    txQueryResults = [[{ id: "p-1", purchasedByMemberId: "member-1" }]];
     const result = await updatePurchaseAssigneePrice("group-1", {
       purchaseId: "p-1",
       memberId: "member-2",
       pricePaid: 75,
     });
     expect(result).toEqual({ success: true });
-    expect(mockUpdate).toHaveBeenCalled();
+    expect(mockTransaction).toHaveBeenCalled();
   });
 
   it("allows setting price to null", async () => {
     mockGetMembership.mockResolvedValue(membership);
-    queryResults = [[{ id: "p-1" }]];
+    txQueryResults = [[{ id: "p-1", purchasedByMemberId: "member-1" }]];
     const result = await updatePurchaseAssigneePrice("group-1", {
       purchaseId: "p-1",
       memberId: "member-2",
@@ -703,10 +851,9 @@ describe("updatePurchaseAssigneePrice", () => {
     expect(result).toEqual({ success: true });
   });
 
-  it("returns error when db update fails", async () => {
+  it("returns error when transaction fails", async () => {
     mockGetMembership.mockResolvedValue(membership);
-    queryResults = [[{ id: "p-1" }]];
-    mockUpdateWhere.mockRejectedValueOnce(new Error("DB error"));
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
     const result = await updatePurchaseAssigneePrice("group-1", {
       purchaseId: "p-1",
       memberId: "member-2",
@@ -901,7 +1048,7 @@ describe("reportSessionPrice", () => {
       maxPrice: null,
       comments: null,
     });
-    expect(result).toEqual({ error: "Min price must be positive." });
+    expect(result).toEqual({ error: "Min price must be a positive number." });
   });
 
   it("returns error when max price is zero or negative", async () => {
@@ -912,7 +1059,7 @@ describe("reportSessionPrice", () => {
       maxPrice: -5,
       comments: null,
     });
-    expect(result).toEqual({ error: "Max price must be positive." });
+    expect(result).toEqual({ error: "Max price must be a positive number." });
   });
 
   it("returns error when min price exceeds max price", async () => {

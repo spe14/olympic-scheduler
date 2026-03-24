@@ -72,6 +72,9 @@ export const avatarColorEnum = pgEnum("avatar_color_enum", [
   "yellow",
   "pink",
   "green",
+  "purple",
+  "orange",
+  "teal",
 ]);
 
 export const dateModeEnum = pgEnum("date_mode_enum", [
@@ -249,17 +252,20 @@ export const comboSession = pgTable(
   (table) => [primaryKey({ columns: [table.comboId, table.sessionId] })]
 );
 
-export const windowRanking = pgTable("window_ranking", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  groupId: uuid("group_id")
-    .notNull()
-    .references(() => group.id, { onDelete: "cascade" }),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date").notNull(),
-  score: real("score").notNull(),
-  selected: boolean("selected").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const windowRanking = pgTable(
+  "window_ranking",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => group.id, { onDelete: "cascade" }),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    score: real("score").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("window_ranking_group_idx").on(table.groupId)]
+);
 
 // ── Phase 2: Purchase tables ────────────────────────────────────────────────
 
@@ -279,7 +285,10 @@ export const purchaseTimeslot = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (table) => [unique().on(table.memberId, table.groupId)]
+  (table) => [
+    unique().on(table.memberId, table.groupId),
+    index("purchase_timeslot_group_idx").on(table.groupId),
+  ]
 );
 
 export const purchasePlanEntry = pgTable(
@@ -320,7 +329,8 @@ export const ticketPurchase = pgTable(
     purchasedByMemberId: uuid("purchased_by_member_id")
       .notNull()
       .references(() => member.id, { onDelete: "cascade" }),
-    pricePerTicket: integer("price_per_ticket").notNull(),
+    // Nullable: price may be unknown at time of purchase recording
+    pricePerTicket: integer("price_per_ticket"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

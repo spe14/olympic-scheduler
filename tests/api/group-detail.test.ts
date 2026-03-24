@@ -63,7 +63,6 @@ vi.mock("@/lib/db/schema", () => ({
     startDate: "start_date",
     endDate: "end_date",
     score: "score",
-    selected: "selected",
   },
 }));
 
@@ -71,6 +70,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   and: vi.fn(),
   desc: vi.fn(),
+  notInArray: vi.fn(),
 }));
 
 const mockUser = { id: "user-1" };
@@ -311,5 +311,24 @@ describe("GET /api/groups/[groupId]", () => {
 
     expect(response.status).toBe(200);
     expect(body.affectedBuddyMembers).toEqual({});
+  });
+
+  it("passes through valid affectedBuddyMembers object", async () => {
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockLimit.mockResolvedValueOnce([
+      { id: "member-1", role: "owner", status: "joined" },
+    ]);
+    const affected = { "member-2": { reason: "buddy-changed" } };
+    directWhereResults.push([
+      { ...sampleGroup, affectedBuddyMembers: affected },
+    ]);
+    mockOrderBy.mockResolvedValueOnce([]);
+    mockOrderBy.mockResolvedValueOnce([]);
+
+    const response = await callGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.affectedBuddyMembers).toEqual(affected);
   });
 });

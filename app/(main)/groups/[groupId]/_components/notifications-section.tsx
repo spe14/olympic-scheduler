@@ -38,18 +38,23 @@ export default function NotificationsSection() {
   // Set of rejoined user IDs for filtering newly joined
   const rejoinedUserIds = new Set(departedRejoined.map((d) => d.userId));
 
-  // Members who joined after schedules were generated (no preferences yet)
-  // Exclude affected buddy members and rejoined departed members
+  // Members who joined after schedules were generated — persists until
+  // schedules are regenerated or the member leaves, regardless of whether
+  // they have set preferences yet.
+  // Exclude affected buddy members and rejoined departed members.
   const newlyJoinedMembers = group.scheduleGeneratedAt
     ? activeMembers.filter(
         (m) =>
-          m.status === "joined" &&
+          (m.status === "joined" || m.status === "preferences_set") &&
+          m.joinedAt &&
+          new Date(m.joinedAt) > new Date(group.scheduleGeneratedAt!) &&
           !affectedBuddyIds.has(m.id) &&
           !rejoinedUserIds.has(m.userId)
       )
     : [];
 
   // Members who updated preferences after schedules were generated
+  // (excludes post-generation joiners — those are covered by newlyJoinedMembers)
   const updatedMembers = isRegenerate
     ? activeMembers.filter(
         (m) =>
@@ -204,18 +209,37 @@ export default function NotificationsSection() {
     }
   }
 
-  // 4. Newly Joined (BLUE)
+  // 4. Newly Joined (BLUE) — persists until schedules are regenerated
   if (newlyJoinedMembers.length > 0) {
+    const allReady = newlyJoinedMembers.every(
+      (m) => m.status === "preferences_set"
+    );
+    const someReady = newlyJoinedMembers.some(
+      (m) => m.status === "preferences_set"
+    );
     const names = newlyJoinedMembers.map((m) => memberName(m));
     const hasYou = names.includes("You");
     const sorted = hasYou
       ? ["You", ...names.filter((n) => n !== "You")]
       : names;
-    const suffix = isOwner
-      ? "Wait for them to enter their preferences and then regenerate schedules."
-      : hasYou && sorted.length === 1
-        ? "Enter your preferences so the group owner can regenerate schedules."
+
+    let suffix: string;
+    if (allReady) {
+      // All new members have set preferences — ready to regenerate
+      suffix = isOwner
+        ? "Regenerate schedules to include them."
         : "Wait for the group owner to regenerate schedules.";
+    } else if (someReady) {
+      suffix = isOwner
+        ? "Wait for remaining members to enter their preferences and then regenerate schedules."
+        : "Wait for the group owner to regenerate schedules.";
+    } else {
+      suffix = isOwner
+        ? "Wait for them to enter their preferences and then regenerate schedules."
+        : hasYou && sorted.length === 1
+          ? "Enter your preferences so the group owner can regenerate schedules."
+          : "Wait for the group owner to regenerate schedules.";
+    }
 
     // Use most recent joinedAt
     const latestJoinedAt = newlyJoinedMembers.reduce(
@@ -288,7 +312,7 @@ export default function NotificationsSection() {
   if (hasPurchaseChanges) {
     const message = isOwner
       ? "Some sessions have had their purchase status and/or availability updated since the last schedule generation. You may want to regenerate schedules to reflect these changes."
-      : "Some sessions have had their purchase status and/or availability since the last schedule generation. These changes won't be reflected on your schedule until the owner regenerates schedules.";
+      : "Some sessions have had their purchase status and/or availability updated since the last schedule generation. These changes won't be reflected on your schedule until the owner regenerates schedules.";
     notifications.push({
       key: "purchase-changes",
       variant: "warning",
@@ -296,6 +320,9 @@ export default function NotificationsSection() {
       timestamp: new Date(group.purchaseDataChangedAt!),
     });
   }
+
+  // Sort oldest to newest
+  notifications.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   if (notifications.length === 0) return null;
 

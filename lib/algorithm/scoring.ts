@@ -1,5 +1,8 @@
 import type { CandidateSession, MemberData, ScoredCombo } from "./types";
 
+/** Score multiplier for sessions re-included after convergence pruning */
+export const PRUNED_SESSION_PENALTY = 0.1;
+
 export function getSportMultiplier(rank: number, totalSports: number): number {
   if (totalSports <= 1) return 2.0;
   return 2.0 - ((rank - 1) / (totalSports - 1)) * 1.0;
@@ -38,7 +41,8 @@ export function calculateSessionScore(
   const softBuddyCount = softBuddyInterestMap.get(session.sessionCode) ?? 0;
   const buddyBonus = getSoftBuddyBonus(softBuddyCount);
 
-  return sportMultiplier * sessionAdjustment * buddyBonus;
+  const base = sportMultiplier * sessionAdjustment * buddyBonus;
+  return session.pruned ? base * PRUNED_SESSION_PENALTY : base;
 }
 
 export function scoreCombo(

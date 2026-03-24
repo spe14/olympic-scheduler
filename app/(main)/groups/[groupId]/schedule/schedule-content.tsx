@@ -300,6 +300,9 @@ export default function ScheduleContent() {
             })}
           </p>
         )}
+        <p className="mt-1 text-xs text-slate-400">
+          All session times are displayed in Pacific Time.
+        </p>
       </div>
 
       {/* List view */}
@@ -393,7 +396,7 @@ export default function ScheduleContent() {
                             {ranks.map((r) => (
                               <span
                                 key={r}
-                                className="rounded px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                                className="flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold leading-none"
                                 style={{
                                   backgroundColor: RANK_TAG_COLORS[r].bg,
                                   color: RANK_TAG_COLORS[r].text,
@@ -670,7 +673,7 @@ export default function ScheduleContent() {
                             {ranks.map((r) => (
                               <span
                                 key={r}
-                                className="rounded px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                                className="flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold leading-none"
                                 style={{
                                   backgroundColor: RANK_TAG_COLORS[r].bg,
                                   color: RANK_TAG_COLORS[r].text,

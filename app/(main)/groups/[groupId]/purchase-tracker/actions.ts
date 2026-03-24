@@ -62,7 +62,6 @@ export type TrackerWindowRanking = {
   startDate: string;
   endDate: string;
   score: number;
-  selected: boolean;
 };
 
 export type OffScheduleSession = {
@@ -246,7 +245,6 @@ export async function getPurchaseTrackerData(
       startDate: windowRanking.startDate,
       endDate: windowRanking.endDate,
       score: windowRanking.score,
-      selected: windowRanking.selected,
     })
     .from(windowRanking)
     .where(eq(windowRanking.groupId, groupId))
@@ -556,7 +554,10 @@ export async function searchSessionCodes(
   const user = await getCurrentUser();
   if (!user) return [];
 
-  if (!query.trim()) return [];
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  // Escape SQL LIKE wildcards
+  const escaped = trimmed.replace(/[%_\\]/g, (ch) => `\\${ch}`);
   const rows = await db
     .select({
       sessionCode: session.sessionCode,
@@ -564,7 +565,7 @@ export async function searchSessionCodes(
       sessionType: session.sessionType,
     })
     .from(session)
-    .where(ilike(session.sessionCode, `${query.trim()}%`))
+    .where(ilike(session.sessionCode, `${escaped}%`))
     .orderBy(session.sessionCode)
     .limit(25);
   return rows;

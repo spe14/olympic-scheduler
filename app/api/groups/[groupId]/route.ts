@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { group, member, user, windowRanking } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, notInArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -58,7 +58,6 @@ export async function GET(
       startDate: windowRanking.startDate,
       endDate: windowRanking.endDate,
       score: windowRanking.score,
-      selected: windowRanking.selected,
     })
     .from(windowRanking)
     .where(eq(windowRanking.groupId, groupId))
@@ -80,7 +79,9 @@ export async function GET(
     })
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
-    .where(eq(member.groupId, groupId))
+    .where(
+      and(eq(member.groupId, groupId), notInArray(member.status, ["denied"]))
+    )
     .orderBy(member.createdAt);
 
   return NextResponse.json({

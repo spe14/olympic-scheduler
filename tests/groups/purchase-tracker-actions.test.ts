@@ -136,7 +136,6 @@ vi.mock("@/lib/db/schema", () => ({
     startDate: "start_date",
     endDate: "end_date",
     score: "score",
-    selected: "selected",
   },
   ticketPurchase: {
     id: "id",
@@ -303,7 +302,6 @@ describe("getPurchaseTrackerData", () => {
         startDate: "2028-07-14",
         endDate: "2028-07-16",
         score: 95,
-        selected: true,
       },
     ];
 
@@ -606,7 +604,6 @@ describe("getPurchaseTrackerData", () => {
       startDate: `2028-07-${12 + i}`,
       endDate: `2028-07-${14 + i}`,
       score: 100 - i * 10,
-      selected: i === 0,
     }));
 
     queryResults = [

@@ -1,8 +1,6 @@
-const FAIRNESS_WEIGHT = 0.5;
+import { OLYMPIC_START, OLYMPIC_DAYS_COUNT } from "../schedule-utils";
 
-// All 19 Olympic days: Jul 12 - Jul 30, 2028
-const OLYMPIC_START = "2028-07-12";
-const OLYMPIC_DAYS = 19;
+const FAIRNESS_WEIGHT = 0.5;
 
 function addDays(dateStr: string, n: number): string {
   const d = new Date(dateStr + "T12:00:00");
@@ -68,22 +66,60 @@ function scoreWindow(
     userScoreStdev * memberScores.length * FAIRNESS_WEIGHT;
   const windowScore = baseScore - fairnessPenalty;
 
-  // Compute resilience: average backup coverage across all members and days
+  // Compute resilience: average backup coverage across member-days with sessions
   let coverageSum = 0;
   let coverageCount = 0;
   for (const m of memberScores) {
     for (const day of days) {
-      coverageCount++;
       const primary = m.dailyScores.get(day) ?? 0;
-      const backups = m.dailyBackupScores?.get(day);
-      if (primary > 0 && backups) {
-        coverageSum += Math.min((backups.b1 + backups.b2) / (2 * primary), 1);
+      if (primary > 0) {
+        coverageCount++;
+        const backups = m.dailyBackupScores?.get(day);
+        if (backups) {
+          coverageSum += Math.min((backups.b1 + backups.b2) / (2 * primary), 1);
+        }
       }
     }
   }
   const resilience = coverageCount > 0 ? coverageSum / coverageCount : 0;
 
   return { score: windowScore, userScoreStdev, resilience };
+}
+
+/**
+ * Builds the memberScores array from a flat list of combos (DB rows or algo output).
+ */
+export function buildMemberScores(
+  combos: { memberId: string; day: string; rank: string; score: number }[]
+): WindowRankingInput["memberScores"] {
+  const primaryMap = new Map<string, Map<string, number>>();
+  const backupMap = new Map<string, Map<string, { b1: number; b2: number }>>();
+
+  for (const c of combos) {
+    if (c.rank === "primary") {
+      if (!primaryMap.has(c.memberId)) {
+        primaryMap.set(c.memberId, new Map());
+      }
+      primaryMap.get(c.memberId)!.set(c.day, c.score);
+    } else if (c.rank === "backup1" || c.rank === "backup2") {
+      if (!backupMap.has(c.memberId)) {
+        backupMap.set(c.memberId, new Map());
+      }
+      const existing = backupMap.get(c.memberId)!.get(c.day) ?? {
+        b1: 0,
+        b2: 0,
+      };
+      if (c.rank === "backup1") existing.b1 = c.score;
+      else existing.b2 = c.score;
+      backupMap.get(c.memberId)!.set(c.day, existing);
+    }
+  }
+
+  return [...primaryMap.entries()].map(([memberId, dailyScores]) => ({
+    memberId,
+    dailyScores,
+    dailyBackupScores: backupMap.get(memberId),
+  }));
 }
 
 export function computeWindowRankings(
@@ -103,13 +139,17 @@ export function computeWindowRankings(
   // Consecutive mode: slide N-day window across Olympic days
   if (!consecutiveDays || consecutiveDays < 1) return [];
 
-  const olympicEnd = addDays(OLYMPIC_START, OLYMPIC_DAYS - 1);
+  const olympicEnd = addDays(OLYMPIC_START, OLYMPIC_DAYS_COUNT - 1);
   const windows: (WindowRankingResult & {
     stdev: number;
     resilience: number;
   })[] = [];
 
-  for (let offset = 0; offset <= OLYMPIC_DAYS - consecutiveDays; offset++) {
+  for (
+    let offset = 0;
+    offset <= OLYMPIC_DAYS_COUNT - consecutiveDays;
+    offset++
+  ) {
     const winStart = addDays(OLYMPIC_START, offset);
     const winEnd = addDays(winStart, consecutiveDays - 1);
     if (winEnd > olympicEnd) break;

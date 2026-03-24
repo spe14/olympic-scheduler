@@ -160,7 +160,6 @@ const baseWindowRanking = {
   startDate: "2028-07-20",
   endDate: "2028-07-22",
   score: 95,
-  selected: true,
 };
 
 const baseMember = {
@@ -258,13 +257,11 @@ describe("getGroupDetail", () => {
         memberId: "m1",
         timeslotStart: new Date("2028-07-15T10:00:00Z"),
         timeslotEnd: new Date("2028-07-15T12:00:00Z"),
-        status: "upcoming",
       },
       {
         memberId: "m2",
         timeslotStart: new Date("2028-07-16T10:00:00Z"),
         timeslotEnd: new Date("2028-07-16T12:00:00Z"),
-        status: "completed",
       },
     ];
     const purchaseBuyerRows = [{ memberId: "m1" }];
@@ -288,11 +285,21 @@ describe("getGroupDetail", () => {
     expect(result!.myTimeslot).toEqual({
       timeslotStart: timeslotRows[0].timeslotStart,
       timeslotEnd: timeslotRows[0].timeslotEnd,
-      status: "upcoming",
     });
-    // memberTimeslots includes all members with timeslots
+    // memberTimeslots includes full timeslot data for all members
     expect(result!.memberTimeslots).toEqual(
-      expect.arrayContaining(["m1", "m2"])
+      expect.arrayContaining([
+        {
+          memberId: "m1",
+          timeslotStart: timeslotRows[0].timeslotStart,
+          timeslotEnd: timeslotRows[0].timeslotEnd,
+        },
+        {
+          memberId: "m2",
+          timeslotStart: timeslotRows[1].timeslotStart,
+          timeslotEnd: timeslotRows[1].timeslotEnd,
+        },
+      ])
     );
     expect(result!.membersPurchased).toEqual(["m1"]);
     // membersWithPurchaseData = union of buyers and assignees

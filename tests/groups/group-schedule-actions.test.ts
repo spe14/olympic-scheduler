@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  getGroupSchedule,
-  selectWindow,
-} from "@/app/(main)/groups/[groupId]/group-schedule/actions";
+import { getGroupSchedule } from "@/app/(main)/groups/[groupId]/group-schedule/actions";
 import { createPurchaseDataMock } from "@/tests/helpers";
 
 // Mock next/cache
@@ -12,25 +9,14 @@ vi.mock("next/cache", () => ({
 
 // Mock auth
 const mockGetMembership = vi.fn();
-const mockGetOwnerMembership = vi.fn();
 vi.mock("@/lib/auth", () => ({
   getMembership: (...args: unknown[]) => mockGetMembership(...args),
-  getOwnerMembership: (...args: unknown[]) => mockGetOwnerMembership(...args),
   requireMembership: async (groupId: string) => {
     const membership = await mockGetMembership(groupId);
     if (!membership)
       return {
         membership: null,
         error: { error: "You are not an active member of this group." },
-      };
-    return { membership, error: null };
-  },
-  requireOwnerMembership: async (groupId: string, action: string) => {
-    const membership = await mockGetOwnerMembership(groupId);
-    if (!membership)
-      return {
-        membership: null,
-        error: { error: `Only the group owner can ${action}.` },
       };
     return { membership, error: null };
   },
@@ -57,27 +43,9 @@ const mockFrom = vi.fn(() => ({
 }));
 const mockSelect = vi.fn(() => ({ from: mockFrom }));
 
-const mockUpdateWhere = vi.fn(() => Promise.resolve());
-const mockSet = vi.fn(() => ({ where: mockUpdateWhere }));
-const mockUpdate = vi.fn(() => ({ set: mockSet }));
-
-const mockDeleteWhere = vi.fn(() => Promise.resolve());
-const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
-
-const mockTransaction = vi.fn((cb: (tx: unknown) => Promise<void>) => {
-  const txUpdateWhere = vi.fn(() => Promise.resolve());
-  const tx = {
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: txUpdateWhere })) })),
-  };
-  return cb(tx);
-});
-
 vi.mock("@/lib/db", () => ({
   db: {
     select: (...args: unknown[]) => mockSelect(...args),
-    update: (...args: unknown[]) => mockUpdate(...args),
-    delete: (...args: unknown[]) => mockDelete(...args),
-    transaction: (...args: unknown[]) => mockTransaction(...(args as [never])),
   },
 }));
 
@@ -123,11 +91,6 @@ vi.mock("@/lib/db/schema", () => ({
     firstName: "first_name",
     lastName: "last_name",
     avatarColor: "avatar_color",
-  },
-  windowRanking: {
-    id: "id",
-    groupId: "group_id",
-    selected: "selected",
   },
 }));
 
@@ -329,50 +292,5 @@ describe("getGroupSchedule", () => {
     expect(result.data![0].firstName).toBe("Unknown");
     expect(result.data![0].lastName).toBe("");
     expect(result.data![0].avatarColor).toBe("blue");
-  });
-});
-
-describe("selectWindow", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockLimit.mockReset();
-    directWhereResults = [];
-    mockUpdateWhere.mockReset();
-    mockUpdateWhere.mockResolvedValue(undefined);
-  });
-
-  it("returns error when not the owner", async () => {
-    mockGetOwnerMembership.mockResolvedValue(null);
-
-    const result = await selectWindow("group-1", "win-1");
-
-    expect(result.error).toBe("Only the group owner can select a window.");
-    expect(result.success).toBeUndefined();
-  });
-
-  it("selects window successfully", async () => {
-    mockGetOwnerMembership.mockResolvedValue({
-      id: "owner-m-1",
-      role: "owner",
-    });
-
-    const result = await selectWindow("group-1", "win-1");
-
-    expect(result.success).toBe(true);
-    expect(result.error).toBeUndefined();
-    expect(mockTransaction).toHaveBeenCalledOnce();
-  });
-
-  it("returns error when transaction fails", async () => {
-    mockGetOwnerMembership.mockResolvedValue({
-      id: "owner-m-1",
-      role: "owner",
-    });
-    mockTransaction.mockRejectedValueOnce(new Error("DB failure"));
-
-    const result = await selectWindow("group-1", "win-1");
-
-    expect(result.error).toBe("Failed to select window. Please try again.");
-    expect(result.success).toBeUndefined();
   });
 });

@@ -10,7 +10,6 @@ import {
   sessionPreference,
   user,
 } from "@/lib/db/schema";
-import { purchaseTimeslot } from "@/lib/db/schema";
 import { eq, and, inArray, ne } from "drizzle-orm";
 import type { AvatarColor } from "@/lib/constants";
 import { groupBy } from "@/lib/utils";
@@ -20,7 +19,6 @@ import {
   type PurchasePlanEntryData,
   type PurchaseData,
   type ReportedPriceData,
-  type TimeslotData,
 } from "./purchase-actions";
 
 export type InterestedMember = BaseMemberInfo & {
@@ -66,7 +64,6 @@ export type ScheduleDay = {
 
 export async function getMySchedule(groupId: string): Promise<{
   data?: ScheduleDay[];
-  timeslot?: TimeslotData | null;
   error?: string;
 }> {
   const { membership, error: authError } = await requireMembership(groupId);
@@ -218,27 +215,6 @@ export async function getMySchedule(groupId: string): Promise<{
     sessionCodes
   );
 
-  // Fetch timeslot for current user
-  const [timeslotRow] = await db
-    .select()
-    .from(purchaseTimeslot)
-    .where(
-      and(
-        eq(purchaseTimeslot.memberId, membership.id),
-        eq(purchaseTimeslot.groupId, groupId)
-      )
-    )
-    .limit(1);
-
-  const timeslot: TimeslotData | null = timeslotRow
-    ? {
-        id: timeslotRow.id,
-        timeslotStart: timeslotRow.timeslotStart,
-        timeslotEnd: timeslotRow.timeslotEnd,
-        status: timeslotRow.status,
-      }
-    : null;
-
   // Group combos by day
   const dayMap = new Map<string, ScheduleCombo[]>();
   for (const c of combos) {
@@ -280,5 +256,5 @@ export async function getMySchedule(groupId: string): Promise<{
       };
     });
 
-  return { data, timeslot };
+  return { data };
 }

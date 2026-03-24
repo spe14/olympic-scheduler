@@ -127,6 +127,7 @@ describe("signUpSchema", () => {
     username: "janedoe",
     firstName: "Jane",
     lastName: "Doe",
+    avatarColor: "blue",
   };
 
   it("accepts valid input", () => {

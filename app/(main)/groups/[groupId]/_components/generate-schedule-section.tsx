@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useGroup } from "./group-context";
 import { generateSchedules } from "../actions";
@@ -13,6 +13,16 @@ export default function GenerateScheduleSection() {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Prevent accidental navigation away while generation is in progress
+  useEffect(() => {
+    if (!loading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [loading]);
 
   const isOwner = group.myRole === "owner";
   if (group.phase !== "preferences" && group.phase !== "schedule_review")
@@ -45,6 +55,8 @@ export default function GenerateScheduleSection() {
   ).length;
   const allReady =
     readyCount === activeMembers.length && activeMembers.length > 0;
+  const hasAffectedBuddies = affectedBuddyIds.size > 0;
+  const hasNoCombosNotUpdated = noCombosNotUpdatedIds.size > 0;
 
   // When schedules have already been generated, only enable if something
   // has changed that warrants regeneration.
@@ -58,6 +70,15 @@ export default function GenerateScheduleSection() {
         m.joinedAt && new Date(m.joinedAt) > new Date(group.scheduleGeneratedAt)
       )
   );
+  const hasNewMembers =
+    isRegenerate &&
+    activeMembers.some(
+      (m) =>
+        m.status === "preferences_set" &&
+        m.joinedAt &&
+        group.scheduleGeneratedAt &&
+        new Date(m.joinedAt) > new Date(group.scheduleGeneratedAt)
+    );
   const hasDepartedMembers = group.departedMembers.length > 0;
   const hasNoCombos = group.membersWithNoCombos.length > 0;
   const hasPurchaseChanges = !!(
@@ -68,6 +89,7 @@ export default function GenerateScheduleSection() {
   const needsRegeneration =
     !isRegenerate ||
     hasUpdatedPrefs ||
+    hasNewMembers ||
     hasDepartedMembers ||
     hasNoCombos ||
     hasPurchaseChanges;
@@ -75,14 +97,18 @@ export default function GenerateScheduleSection() {
   async function handleGenerate() {
     setLoading(true);
     setError("");
-    const result = await generateSchedules(group.id);
-    setLoading(false);
-
-    if (result.error) {
-      setError(result.error);
-    } else {
-      setShowModal(false);
-      router.refresh();
+    try {
+      const result = await generateSchedules(group.id);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setShowModal(false);
+        router.refresh();
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -143,7 +169,11 @@ export default function GenerateScheduleSection() {
             !isOwner
               ? "Only the owner can generate schedules."
               : !allReady
-                ? "All members must set their preferences first."
+                ? hasAffectedBuddies
+                  ? "All affected members must review their buddy preferences first."
+                  : hasNoCombosNotUpdated
+                    ? "Members without sessions need to update their preferences."
+                    : "All members must set their preferences first."
                 : !needsRegeneration
                   ? "Schedules are up to date."
                   : null
@@ -166,6 +196,7 @@ export default function GenerateScheduleSection() {
           isRegenerate={isRegenerate}
           onConfirm={handleGenerate}
           onClose={() => {
+            if (loading) return;
             setShowModal(false);
             setError("");
           }}

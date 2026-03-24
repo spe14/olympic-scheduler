@@ -194,9 +194,42 @@ vi.mock("@/lib/algorithm/runner", () => ({
 
 // Mock window ranking computation
 const mockComputeWindowRankings = vi.fn();
+const mockBuildMemberScores = vi.fn(
+  (
+    combos: { memberId: string; day: string; rank: string; score: number }[]
+  ) => {
+    const primaryMap = new Map<string, Map<string, number>>();
+    const backupMap = new Map<
+      string,
+      Map<string, { b1: number; b2: number }>
+    >();
+    for (const c of combos) {
+      if (c.rank === "primary") {
+        if (!primaryMap.has(c.memberId)) primaryMap.set(c.memberId, new Map());
+        primaryMap.get(c.memberId)!.set(c.day, c.score);
+      } else if (c.rank === "backup1" || c.rank === "backup2") {
+        if (!backupMap.has(c.memberId)) backupMap.set(c.memberId, new Map());
+        const existing = backupMap.get(c.memberId)!.get(c.day) ?? {
+          b1: 0,
+          b2: 0,
+        };
+        if (c.rank === "backup1") existing.b1 = c.score;
+        else existing.b2 = c.score;
+        backupMap.get(c.memberId)!.set(c.day, existing);
+      }
+    }
+    return [...primaryMap.entries()].map(([memberId, dailyScores]) => ({
+      memberId,
+      dailyScores,
+      dailyBackupScores: backupMap.get(memberId),
+    }));
+  }
+);
 vi.mock("@/lib/algorithm/window-ranking", () => ({
   computeWindowRankings: (...args: unknown[]) =>
     mockComputeWindowRankings(...args),
+  buildMemberScores: (...args: unknown[]) =>
+    mockBuildMemberScores(...(args as [never])),
 }));
 
 // Mock algorithm types (type-only, no runtime exports needed)
@@ -1161,6 +1194,80 @@ describe("leaveGroup", () => {
 
     expect(result.error).toBe("Failed to leave group. Please try again.");
   });
+
+  it("returns race condition error when member became owner during transaction", async () => {
+    mockActiveMember();
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const txQueryResults: unknown[][] = [
+      [], // affected buddies
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: null,
+        },
+      ], // group data
+      [
+        {
+          role: "owner",
+          userId: "user-1",
+          firstName: "Test",
+          lastName: "User",
+          joinedAt: null,
+        },
+      ], // departing user — now owner
+    ];
+    let queryIndex = 0;
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeThenableWhere = () => {
+          const res = () => txQueryResults[queryIndex++] ?? [];
+          return {
+            limit: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r(res());
+                },
+              })),
+            })),
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          };
+        };
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(makeThenableWhere),
+              innerJoin: vi.fn(() => ({
+                where: vi.fn(makeThenableWhere),
+              })),
+            })),
+          })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
+
+    const result = await leaveGroup("group-1");
+
+    expect(result.error).toBe(
+      "You became the group owner while leaving. Please refresh the page."
+    );
+  });
 });
 
 describe("removeMember", () => {
@@ -1460,6 +1567,88 @@ describe("removeMember", () => {
 
     expect(result.error).toBe("Failed to remove member. Please try again.");
   });
+
+  it("returns race condition error when target became owner during transaction", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]);
+    mockLimit.mockResolvedValueOnce([{ id: "group-1" }]);
+
+    const txQueryResults: unknown[][] = [
+      [], // affected buddies
+      [
+        {
+          departedMembers: [],
+          affectedBuddyMembers: {},
+          scheduleGeneratedAt: null,
+        },
+      ], // group data
+      [
+        {
+          role: "owner",
+          userId: "user-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          joinedAt: null,
+        },
+      ], // target — now owner
+    ];
+    let queryIndex = 0;
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const makeThenableWhere = () => {
+          const res = () => txQueryResults[queryIndex++] ?? [];
+          return {
+            limit: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+              for: vi.fn(() => ({
+                then(r: (v: unknown) => void) {
+                  r(res());
+                },
+              })),
+            })),
+            for: vi.fn(() => ({
+              then(r: (v: unknown) => void) {
+                r(res());
+              },
+            })),
+            then(r: (v: unknown) => void) {
+              r(res());
+            },
+          };
+        };
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(makeThenableWhere),
+              innerJoin: vi.fn(() => ({
+                where: vi.fn(makeThenableWhere),
+              })),
+            })),
+          })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
+
+    const result = await removeMember("group-1", "member-2");
+
+    expect(result.error).toBe(
+      "This member is now the group owner and cannot be removed."
+    );
+  });
 });
 
 describe("transferOwnership", () => {
@@ -1564,6 +1753,31 @@ describe("transferOwnership", () => {
       },
     ]);
 
+    // In-transaction: first select uses .for("update") (group lock),
+    // second select uses .limit(1) (target member re-verification).
+    mockTransaction.mockImplementationOnce(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(() => [{ id: "member-2", status: "joined" }]),
+                for: vi.fn(() => ({
+                  then(r: (v: unknown) => void) {
+                    r([]);
+                  },
+                })),
+              })),
+            })),
+          })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
+
     const result = await transferOwnership("group-1", "member-2");
 
     expect(result.success).toBe(true);
@@ -1581,6 +1795,31 @@ describe("transferOwnership", () => {
         groupId: "group-1",
       },
     ]);
+
+    mockTransaction.mockImplementationOnce(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(() => [
+                  { id: "member-2", status: "preferences_set" },
+                ]),
+                for: vi.fn(() => ({
+                  then(r: (v: unknown) => void) {
+                    r([]);
+                  },
+                })),
+              })),
+            })),
+          })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
 
     const result = await transferOwnership("group-1", "member-2");
 
@@ -1605,6 +1844,45 @@ describe("transferOwnership", () => {
     expect(result.error).toBe(
       "Failed to transfer ownership. Please try again."
     );
+  });
+
+  it("returns error when target member left during transaction", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      {
+        id: "member-2",
+        role: "member",
+        status: "joined",
+        groupId: "group-1",
+      },
+    ]);
+
+    mockTransaction.mockImplementationOnce(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(() => []), // target not found in tx
+                for: vi.fn(() => ({
+                  then(r: (v: unknown) => void) {
+                    r([]);
+                  },
+                })),
+              })),
+            })),
+          })),
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
+
+    const result = await transferOwnership("group-1", "member-2");
+
+    expect(result.error).toBe("Member not found.");
   });
 });
 
@@ -3240,6 +3518,8 @@ describe("generateSchedules", () => {
         const txQueryQueue: unknown[][] = [
           // lock query: group phase re-check
           [{ phase: "preferences" }],
+          // member count check
+          [{ count: 2 }],
           // dateConfig query inside tx
           [
             {
@@ -3357,6 +3637,8 @@ describe("generateSchedules", () => {
         const txQueryQueue: unknown[][] = [
           // lock query: group phase re-check
           [{ phase: "preferences" }],
+          // member count check
+          [{ count: 2 }],
         ];
         let qIdx = 0;
         const makeLimitResult = () => {
@@ -3571,6 +3853,8 @@ describe("generateSchedules", () => {
         const txQueryQueue: unknown[][] = [
           // lock query: group phase re-check
           [{ phase: "schedule_review" }],
+          // member count check
+          [{ count: 1 }],
           // dateConfig query inside tx
           [
             {
@@ -3702,6 +3986,8 @@ describe("generateSchedules", () => {
         const txQueryQueue: unknown[][] = [
           // lock query: group phase re-check
           [{ phase: "schedule_review" }],
+          // member count check
+          [{ count: 1 }],
           // dateConfig query inside tx
           [
             {
@@ -3762,6 +4048,206 @@ describe("generateSchedules", () => {
     );
     expect(groupUpdate).toBeDefined();
     expect(groupUpdate!.nonConvergenceMembers).toEqual(["m1"]);
+  });
+
+  it("saves results when timeout occurs during convergence refinement (all members have combos)", async () => {
+    mockOwner();
+    // 1. Group data
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers
+    directWhereResults.push([
+      {
+        id: "m1",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: ["Swimming"],
+      },
+    ]);
+
+    // 3. buddies
+    directWhereResults.push([]);
+    // 4. sessionPrefs
+    directWhereResults.push([
+      {
+        memberId: "m1",
+        sessionCode: "S001",
+        sport: "Swimming",
+        zone: "Z1",
+        sessionDate: "2028-07-12",
+        startTime: "09:00",
+        endTime: "12:00",
+        interest: "high",
+      },
+    ]);
+    // 5. travel
+    directFromResults.push([]);
+    // 6. soldOut
+    directWhereResults.push([]);
+    // 7. oob
+    directWhereResults.push([]);
+    // 8. purchaseAssignees
+    directWhereResults.push([]);
+
+    // Algorithm timed out during convergence refinement but all members have combos
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "primary",
+          score: 100,
+          sessionCodes: ["S001"],
+        },
+      ],
+      membersWithNoCombos: [],
+      convergence: {
+        iterations: 2,
+        converged: false,
+        timedOut: true,
+        violations: [
+          {
+            memberId: "m1",
+            sessionCode: "S001",
+            day: "2028-07-12",
+            type: "hardBuddies",
+            detail: "test",
+          },
+        ],
+      },
+    });
+
+    mockComputeWindowRankings.mockReturnValue([]);
+
+    // Track group update values
+    const setCalls: Record<string, unknown>[] = [];
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txQueryQueue: unknown[][] = [
+          [{ phase: "schedule_review" }],
+          [{ count: 1 }],
+          [
+            {
+              dateMode: "consecutive",
+              consecutiveDays: 3,
+              startDate: null,
+              endDate: null,
+            },
+          ],
+        ];
+        let qIdx = 0;
+        const makeLimitResult = () => {
+          const val = txQueryQueue[qIdx++] ?? [];
+          return {
+            for: vi.fn(() => val),
+            then(r: (v: unknown) => void) {
+              r(val);
+            },
+          };
+        };
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(makeLimitResult),
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
+              then(r: (v: unknown) => void) {
+                r(txQueryQueue[qIdx++] ?? []);
+              },
+            })),
+          })),
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          update: vi.fn(() => ({
+            set: vi.fn((vals: Record<string, unknown>) => {
+              setCalls.push(vals);
+              return { where: vi.fn(() => Promise.resolve()) };
+            }),
+          })),
+          insert: vi.fn(() => ({
+            values: vi.fn(() => ({
+              returning: vi.fn(() => [{ id: "combo-1" }]),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
+
+    const result = await generateSchedules("group-1");
+
+    // Should succeed — not return a timeout error
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+
+    // Should store nonConvergenceMembers (treated as non-convergence)
+    const groupUpdate = setCalls.find(
+      (call) => "nonConvergenceMembers" in call
+    );
+    expect(groupUpdate).toBeDefined();
+    expect(groupUpdate!.nonConvergenceMembers).toEqual(["m1"]);
+    // Phase should be schedule_review since all members have combos
+    expect(groupUpdate!.phase).toBe("schedule_review");
+  });
+
+  it("returns error when timeout occurs and some members have no combos", async () => {
+    mockOwner();
+    // 1. Group data
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+
+    // 2. activeMembers
+    directWhereResults.push([
+      { id: "m1", status: "preferences_set", minBuddies: 0, sportRankings: [] },
+      { id: "m2", status: "preferences_set", minBuddies: 0, sportRankings: [] },
+    ]);
+
+    // 3. buddies
+    directWhereResults.push([]);
+    // 4. sessionPrefs
+    directWhereResults.push([]);
+    // 5. travel
+    directFromResults.push([]);
+    // 6. soldOut
+    directWhereResults.push([]);
+    // 7. oob
+    directWhereResults.push([]);
+    // 8. purchaseAssignees
+    directWhereResults.push([]);
+
+    // Algorithm timed out during first pass — m2 was never processed
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [
+        {
+          memberId: "m1",
+          day: "2028-07-12",
+          rank: "primary",
+          score: 50,
+          sessionCodes: [],
+        },
+      ],
+      membersWithNoCombos: ["m2"],
+      convergence: {
+        iterations: 1,
+        converged: false,
+        timedOut: true,
+        violations: [],
+      },
+    });
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe(
+      "Schedule generation timed out. Try reducing the number of session preferences or buddy constraints and try again."
+    );
+    // Should NOT write to database
+    expect(mockTransaction).not.toHaveBeenCalled();
   });
 
   it("computes window rankings with backup1 and backup2 combo scores", async () => {
@@ -3845,6 +4331,8 @@ describe("generateSchedules", () => {
         const txQueryQueue: unknown[][] = [
           // lock query: group phase re-check
           [{ phase: "schedule_review" }],
+          // member count check
+          [{ count: 1 }],
           // dateConfig query inside tx
           [
             {
@@ -3905,5 +4393,124 @@ describe("generateSchedules", () => {
       b1: 80,
       b2: 60,
     });
+  });
+
+  it("returns error when group phase changed during generation", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+    directWhereResults.push([
+      {
+        id: "m1",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: [],
+      },
+    ]);
+    directWhereResults.push([]); // buddies
+    directWhereResults.push([]); // sessionPrefs
+    directFromResults.push([]); // travel
+    directWhereResults.push([]); // soldOut
+    directWhereResults.push([]); // oob
+    directWhereResults.push([]); // purchaseAssignees
+
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [],
+      membersWithNoCombos: [],
+      convergence: { iterations: 1, converged: true, violations: [] },
+    });
+
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(() => ({
+                  for: vi.fn(() => [{ phase: "purchasing" }]),
+                })),
+              })),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe("Group state changed during generation");
+  });
+
+  it("returns error when membership changed during generation", async () => {
+    mockOwner();
+    mockLimit.mockResolvedValueOnce([
+      { phase: "preferences", affectedBuddyMembers: {} },
+    ]);
+    directWhereResults.push([
+      {
+        id: "m1",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: [],
+      },
+      {
+        id: "m2",
+        status: "preferences_set",
+        minBuddies: 0,
+        sportRankings: [],
+      },
+    ]);
+    directWhereResults.push([]); // buddies
+    directWhereResults.push([]); // sessionPrefs
+    directFromResults.push([]); // travel
+    directWhereResults.push([]); // soldOut
+    directWhereResults.push([]); // oob
+    directWhereResults.push([]); // purchaseAssignees
+
+    mockRunScheduleGeneration.mockReturnValue({
+      combos: [],
+      membersWithNoCombos: [],
+      convergence: { iterations: 1, converged: true, violations: [] },
+    });
+
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) => {
+        const txQueryQueue: unknown[][] = [
+          [{ phase: "preferences" }], // phase OK
+          [{ count: 3 }], // member count changed (was 2)
+        ];
+        let qIdx = 0;
+        const makeLimitResult = () => {
+          const val = txQueryQueue[qIdx++] ?? [];
+          return {
+            for: vi.fn(() => val),
+            then(r: (v: unknown) => void) {
+              r(val);
+            },
+          };
+        };
+        const tx = {
+          select: vi.fn(() => ({
+            from: vi.fn(() => ({
+              where: vi.fn(() => ({
+                limit: vi.fn(makeLimitResult),
+                then(r: (v: unknown) => void) {
+                  r(txQueryQueue[qIdx++] ?? []);
+                },
+              })),
+            })),
+          })),
+        };
+        return cb(tx);
+      }
+    );
+
+    const result = await generateSchedules("group-1");
+
+    expect(result.error).toBe(
+      "Group membership changed during schedule generation. Please try again."
+    );
   });
 });

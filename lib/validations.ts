@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OLYMPIC_START, OLYMPIC_END } from "./schedule-utils";
 
 export const usernameSchema = z
   .string()
@@ -35,12 +36,23 @@ export const passwordSchema = z
   .min(8, "Password must be at least 8 characters long.")
   .max(72, "Password must be less than 72 characters long.");
 
+export const avatarColorSchema = z.enum([
+  "blue",
+  "yellow",
+  "pink",
+  "green",
+  "purple",
+  "orange",
+  "teal",
+]);
+
 export const signUpSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   username: usernameSchema,
   firstName: firstNameSchema,
   lastName: lastNameSchema,
+  avatarColor: avatarColorSchema,
 });
 
 export const loginSchema = z.object({
@@ -91,9 +103,6 @@ export const consecutiveDaysSchema = z.coerce
   .int("Must be a whole number.")
   .min(1, "Must be at least 1 day.")
   .max(19, "Cannot exceed 19 days.");
-
-const OLYMPIC_START = "2028-07-12";
-const OLYMPIC_END = "2028-07-30";
 
 export const dateRangeSchema = z
   .object({
