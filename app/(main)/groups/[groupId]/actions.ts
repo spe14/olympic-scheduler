@@ -214,7 +214,7 @@ export async function denyMember(
   return { success: true };
 }
 
-async function removeMemberTransaction(
+export async function removeMemberTransaction(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   groupId: string,
   departingMemberId: string

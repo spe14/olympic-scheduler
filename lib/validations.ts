@@ -44,6 +44,7 @@ export const avatarColorSchema = z.enum([
   "purple",
   "orange",
   "teal",
+  "red",
 ]);
 
 export const signUpSchema = z.object({

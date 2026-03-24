@@ -17,7 +17,8 @@ export type AvatarColor =
   | "green"
   | "purple"
   | "orange"
-  | "teal";
+  | "teal"
+  | "red";
 
 export const avatarColors: Record<
   AvatarColor,
@@ -64,6 +65,12 @@ export const avatarColors: Record<
     text: "#0d9488",
     ring: "#0d9488",
     label: "Teal",
+  },
+  red: {
+    bg: "rgba(239, 68, 68, 0.2)",
+    text: "#dc2626",
+    ring: "#dc2626",
+    label: "Red",
   },
 };
 

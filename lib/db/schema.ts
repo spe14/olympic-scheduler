@@ -75,6 +75,7 @@ export const avatarColorEnum = pgEnum("avatar_color_enum", [
   "purple",
   "orange",
   "teal",
+  "red",
 ]);
 
 export const dateModeEnum = pgEnum("date_mode_enum", [

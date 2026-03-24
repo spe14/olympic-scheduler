@@ -5,15 +5,18 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import PasswordInput from "@/components/password-input";
 import ErrorAlert from "@/components/error-alert";
-import { loginSchema } from "@/lib/validations";
+import { loginSchema, emailSchema } from "@/lib/validations";
 import { inputClass } from "@/lib/constants";
 
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, null);
   const [email, setEmail] = useState(state?.values?.email ?? "");
   const [password, setPassword] = useState("");
+  const [emailTouched, setEmailTouched] = useState(false);
 
   const isValid = loginSchema.safeParse({ email, password }).success;
+  const emailError =
+    emailTouched && email.length > 0 && !emailSchema.safeParse(email).success;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
@@ -60,9 +63,15 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onBlur={() => setEmailTouched(true)}
                 className={inputClass}
                 placeholder="jane@example.com"
               />
+              {emailError && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Please enter a valid email address.
+                </p>
+              )}
               {state?.fieldErrors?.email && (
                 <p className="mt-1 text-sm text-red-500">
                   {state.fieldErrors.email[0]}

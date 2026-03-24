@@ -9,11 +9,7 @@ import { inputClass } from "@/lib/constants";
 export default function ForgotPasswordPage() {
   const [state, formAction, pending] = useActionState(forgotPassword, null);
   const [email, setEmail] = useState(state?.values?.email ?? "");
-  const emailResult = emailSchema.safeParse(email);
-  const emailHint =
-    email.length > 0 && !emailResult.success
-      ? emailResult.error.issues[0].message
-      : null;
+  const emailError = email.length > 0 && !emailSchema.safeParse(email).success;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
@@ -79,8 +75,10 @@ export default function ForgotPasswordPage() {
                   {err}
                 </p>
               ))}
-              {emailHint && (
-                <p className="mt-1 text-sm text-slate-400">{emailHint}</p>
+              {emailError && (
+                <p className="mt-1 text-sm text-slate-400">
+                  Please enter a valid email address.
+                </p>
               )}
             </div>
 

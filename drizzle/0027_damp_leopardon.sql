@@ -1,0 +1,1 @@
+ALTER TYPE "public"."avatar_color_enum" ADD VALUE 'red';

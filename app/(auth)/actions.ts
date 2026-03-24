@@ -178,12 +178,25 @@ export async function login(
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
 
   if (error) {
+    return { error: "Invalid email or password.", values: safeLoginValues };
+  }
+
+  // Verify the user has a local DB record to prevent a redirect loop
+  // (Supabase auth may succeed even if the local user row was deleted)
+  const appUser = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.authId, data.user.id))
+    .limit(1);
+
+  if (appUser.length === 0) {
+    await supabase.auth.signOut();
     return { error: "Invalid email or password.", values: safeLoginValues };
   }
 

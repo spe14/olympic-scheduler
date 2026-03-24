@@ -1,14 +1,18 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { db } from "@/lib/db";
-import { user } from "@/lib/db/schema";
+import { user, member, group } from "@/lib/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { profileFieldSchemas, updatePasswordSchema } from "@/lib/validations";
 import { parseFieldErrors } from "@/lib/utils";
-import type { AvatarColor } from "@/lib/constants";
+import { avatarColors, type AvatarColor } from "@/lib/constants";
 import { MSG_NOT_LOGGED_IN, MSG_USERNAME_TAKEN } from "@/lib/messages";
+import { removeMemberTransaction } from "@/app/(main)/groups/[groupId]/actions";
 
 export type ProfileResult = {
   success?: boolean;
@@ -123,15 +127,7 @@ export async function updatePassword(
   return { success: true };
 }
 
-const validAvatarColors: AvatarColor[] = [
-  "blue",
-  "yellow",
-  "pink",
-  "green",
-  "purple",
-  "orange",
-  "teal",
-];
+const validAvatarColors = Object.keys(avatarColors) as AvatarColor[];
 
 export async function updateAvatarColor(
   color: AvatarColor
@@ -151,4 +147,65 @@ export async function updateAvatarColor(
     .where(eq(user.id, currentUser.id));
 
   return { success: true };
+}
+
+export type DeleteAccountResult = {
+  error?: string;
+};
+
+export async function deleteAccount(
+  password: string
+): Promise<DeleteAccountResult> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    return { error: MSG_NOT_LOGGED_IN };
+  }
+
+  // Verify password
+  const supabase = await createClient();
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email: currentUser.email,
+    password,
+  });
+
+  if (signInError) {
+    return { error: "Incorrect password." };
+  }
+
+  // Fetch all memberships for this user
+  const memberships = await db
+    .select({ id: member.id, groupId: member.groupId, role: member.role })
+    .from(member)
+    .where(eq(member.userId, currentUser.id));
+
+  // Block deletion if the user owns any groups
+  const ownedGroup = memberships.find((m) => m.role === "owner");
+  if (ownedGroup) {
+    return {
+      error:
+        "You must transfer ownership or delete all groups you own before deleting your account.",
+    };
+  }
+
+  // Leave each group properly (departure tracking, algorithm cleanup, buddy notifications)
+  for (const m of memberships) {
+    await db.transaction(async (tx) => {
+      await removeMemberTransaction(tx, m.groupId, m.id);
+    });
+  }
+
+  // Delete user row from local DB
+  await db.delete(user).where(eq(user.id, currentUser.id));
+
+  // Delete auth user from Supabase
+  const admin = createAdminClient();
+  await admin.auth.admin.deleteUser(currentUser.authId);
+
+  // Sign out and clear session cookies
+  await supabase.auth.signOut();
+  const cookieStore = await cookies();
+  cookieStore.delete("session_start_at");
+  cookieStore.delete("last_active_at");
+
+  redirect("/login");
 }

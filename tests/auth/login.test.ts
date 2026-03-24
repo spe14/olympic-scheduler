@@ -17,13 +17,19 @@ vi.mock("@/lib/supabase/server", () => ({
   })),
 }));
 
-// Mock DB (needed because actions.ts imports it at module level)
+// Mock DB – login now verifies the user has a local DB record after auth
+const mockDbLimit = vi.fn();
+const mockDbWhere = vi.fn(() => ({ limit: mockDbLimit }));
+const mockDbFrom = vi.fn(() => ({ where: mockDbWhere }));
+const mockDbSelect = vi.fn(() => ({ from: mockDbFrom }));
 vi.mock("@/lib/db", () => ({
-  db: {},
+  db: {
+    select: (...args: unknown[]) => mockDbSelect(...args),
+  },
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  user: {},
+  user: { id: "id", authId: "authId" },
 }));
 
 const validFields = {
@@ -91,7 +97,11 @@ describe("login", () => {
     });
 
     it("redirects on successful login", async () => {
-      mockSignInWithPassword.mockResolvedValue({ error: null });
+      mockSignInWithPassword.mockResolvedValue({
+        error: null,
+        data: { user: { id: "auth-123" } },
+      });
+      mockDbLimit.mockResolvedValue([{ id: 1 }]);
 
       const fd = makeFormData(validFields);
 

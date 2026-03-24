@@ -13,6 +13,13 @@ export default function PasswordSection() {
     null
   );
   const [currentPassword, setCurrentPassword] = useState("");
+  const [currentPasswordDirty, setCurrentPasswordDirty] = useState(false);
+  const [prevPasswordState, setPrevPasswordState] = useState(passwordState);
+
+  if (prevPasswordState !== passwordState) {
+    setPrevPasswordState(passwordState);
+    setCurrentPasswordDirty(false);
+  }
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -39,7 +46,7 @@ export default function PasswordSection() {
   }).success;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+    <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
       <h2 className="mb-5 text-lg font-semibold text-slate-900">
         Change Password
       </h2>
@@ -63,9 +70,16 @@ export default function PasswordSection() {
             id="currentPassword"
             name="currentPassword"
             value={currentPassword}
-            onChange={setCurrentPassword}
+            onChange={(v) => {
+              setCurrentPassword(v);
+              setCurrentPasswordDirty(true);
+            }}
             className={inputClass}
-            errors={passwordState?.fieldErrors?.currentPassword}
+            errors={
+              currentPasswordDirty
+                ? undefined
+                : passwordState?.fieldErrors?.currentPassword
+            }
           />
         </div>
 

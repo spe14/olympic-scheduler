@@ -182,7 +182,9 @@ export default function SignUpPage() {
                 </p>
               ))}
               {emailHint && (
-                <p className="mt-1 text-sm text-slate-400">{emailHint}</p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Please enter a valid email address.
+                </p>
               )}
             </div>
 
