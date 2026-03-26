@@ -1,14 +1,43 @@
 "use client";
 
-import { forgotPassword } from "@/app/(auth)/actions";
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { emailSchema } from "@/lib/validations";
 import { inputClass } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/client";
 
 export default function ForgotPasswordPage() {
-  const [state, formAction, pending] = useActionState(forgotPassword, null);
-  const [email, setEmail] = useState(state?.values?.email ?? "");
+  const [email, setEmail] = useState("");
+  const [pending, setPending] = useState(false);
+  const [state, setState] = useState<{
+    message?: string;
+    error?: string;
+    fieldErrors?: { email?: string[] };
+  } | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    const result = emailSchema.safeParse(email);
+    if (!result.success) {
+      setState({
+        fieldErrors: { email: result.error.issues.map((i) => i.message) },
+      });
+      return;
+    }
+
+    setPending(true);
+    const supabase = createClient();
+    await supabase.auth.resetPasswordForEmail(result.data, {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/api/auth/callback?next=/reset-password`,
+    });
+    setPending(false);
+
+    setState({
+      message:
+        "If an account exists with this email, you will receive a password reset link. Please check your spam folder if you don't see it.",
+    });
+  }
   const emailError = email.length > 0 && !emailSchema.safeParse(email).success;
 
   return (
@@ -104,7 +133,7 @@ export default function ForgotPasswordPage() {
             </div>
           )}
 
-          <form action={formAction} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email */}
             <div>
               <label
