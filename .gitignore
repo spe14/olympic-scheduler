@@ -53,3 +53,5 @@ build/
 /tests/algorithm/stress-test-output.txt
 /tests/algorithm/stress-test-variant-output.txt
 /scripts/raw
+# Sentry Config File
+.env.sentry-build-plugin

@@ -63,12 +63,35 @@ export default function PrivacyPolicyModal({
 
         <section>
           <h3 className="mb-2 text-sm font-semibold capitalize text-slate-900">
+            Error monitoring
+          </h3>
+          <p>
+            We use{" "}
+            <a
+              href="https://sentry.io/privacy/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#009de5] hover:underline"
+            >
+              Sentry
+            </a>{" "}
+            to detect and diagnose application errors. When an error occurs,
+            Sentry automatically collects technical context such as browser
+            type, operating system, the URL where the error happened, and the
+            error message. We do not send your name, email, or any other
+            personally identifiable information to Sentry. IP addresses are
+            discarded by Sentry before storage and are not retained.
+          </p>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold capitalize text-slate-900">
             Data hosting
           </h3>
           <p>
             Your data is stored and processed by Supabase, our database and
-            authentication provider. Supabase acts as a data processor on our
-            behalf under a Data Processing Agreement. See{" "}
+            authentication provider. Error monitoring data is processed by
+            Sentry. Both act as data processors on our behalf. See{" "}
             <a
               href="https://supabase.com/privacy"
               target="_blank"
@@ -76,6 +99,15 @@ export default function PrivacyPolicyModal({
               className="text-[#009de5] hover:underline"
             >
               Supabase&apos;s Privacy Policy
+            </a>{" "}
+            and{" "}
+            <a
+              href="https://sentry.io/privacy/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#009de5] hover:underline"
+            >
+              Sentry&apos;s Privacy Policy
             </a>{" "}
             for details on how they handle data.
           </p>

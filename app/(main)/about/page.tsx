@@ -18,13 +18,12 @@ export default function AboutPage() {
                 What does this platform do?
               </h2>
               <p className="text-sm leading-relaxed text-slate-600">
-                Collaboly helps groups plan their attendance for the LA 2028
-                Olympics. Every group member can set their sport preferences,
-                interest levels, and buddy constraints. Using these, the
-                algorithm generates personalized daily schedules optimized
-                across the whole group, with a primary plan and two backup
-                options. It also includes tools to coordinate ticket purchasing
-                and track who has bought what.
+                Collaboly is a collaborative planning tool to helps groups plan
+                their attendance for the LA 2028 Olympics. Using each group
+                member&apos;s interests and preferences, it generates
+                personalized schedules for every member as well as an optimal
+                group schedule. It also includes tools to coordinate and track
+                ticket prices and purchases.
               </p>
             </section>
 
