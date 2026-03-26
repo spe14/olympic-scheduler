@@ -351,6 +351,85 @@ describe("BuddiesStep", () => {
     });
   });
 
+  // ── onKeyDown prevents invalid keys ────────────────────────────
+
+  describe("minBuddies onKeyDown prevents invalid keys", () => {
+    it("prevents '-' key on minBuddies input", () => {
+      render(<BuddiesStep {...defaultProps} />);
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+
+      const event = new KeyboardEvent("keydown", {
+        key: "-",
+        bubbles: true,
+        cancelable: true,
+      });
+      const prevented = !input.dispatchEvent(event);
+      expect(prevented).toBe(true);
+    });
+
+    it("prevents 'e' key on minBuddies input", () => {
+      render(<BuddiesStep {...defaultProps} />);
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+
+      const event = new KeyboardEvent("keydown", {
+        key: "e",
+        bubbles: true,
+        cancelable: true,
+      });
+      const prevented = !input.dispatchEvent(event);
+      expect(prevented).toBe(true);
+    });
+
+    it("prevents 'E' key on minBuddies input", () => {
+      render(<BuddiesStep {...defaultProps} />);
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+
+      const event = new KeyboardEvent("keydown", {
+        key: "E",
+        bubbles: true,
+        cancelable: true,
+      });
+      const prevented = !input.dispatchEvent(event);
+      expect(prevented).toBe(true);
+    });
+
+    it("prevents '+' key on minBuddies input", () => {
+      render(<BuddiesStep {...defaultProps} />);
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+
+      const event = new KeyboardEvent("keydown", {
+        key: "+",
+        bubbles: true,
+        cancelable: true,
+      });
+      const prevented = !input.dispatchEvent(event);
+      expect(prevented).toBe(true);
+    });
+
+    it("allows numeric keys on minBuddies input", () => {
+      render(<BuddiesStep {...defaultProps} />);
+      const input = document.querySelector(
+        'input[type="number"]'
+      ) as HTMLInputElement;
+
+      const event = new KeyboardEvent("keydown", {
+        key: "5",
+        bubbles: true,
+        cancelable: true,
+      });
+      const prevented = !input.dispatchEvent(event);
+      expect(prevented).toBe(false);
+    });
+  });
+
   // ── Buddy preferences section ──────────────────────────────────
 
   describe("buddy preferences section", () => {

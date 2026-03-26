@@ -3,6 +3,7 @@ import {
   updateProfileField,
   updatePassword,
   updateAvatarColor,
+  deleteAccount,
 } from "@/app/(main)/profile/actions";
 
 // Mock getCurrentUser
@@ -14,27 +15,73 @@ vi.mock("@/lib/auth", () => ({
 // Mock Supabase client
 const mockSignInWithPassword = vi.fn();
 const mockUpdateUser = vi.fn();
+const mockSignOut = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(() => ({
     auth: {
       signInWithPassword: mockSignInWithPassword,
       updateUser: mockUpdateUser,
+      signOut: mockSignOut,
     },
   })),
 }));
 
+// Mock Supabase admin client
+const mockAdminDeleteUser = vi.fn();
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(() => ({
+    auth: { admin: { deleteUser: mockAdminDeleteUser } },
+  })),
+}));
+
+// Mock next/headers
+const mockCookieDelete = vi.fn();
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(() => Promise.resolve({ delete: mockCookieDelete })),
+}));
+
+// Mock next/navigation
+vi.mock("next/navigation", () => ({
+  redirect: vi.fn(() => {
+    throw new Error("NEXT_REDIRECT");
+  }),
+}));
+
+// Mock removeMemberTransaction
+const mockRemoveMemberTransaction = vi.fn();
+vi.mock("@/app/(main)/groups/[groupId]/actions", () => ({
+  removeMemberTransaction: (...args: unknown[]) =>
+    mockRemoveMemberTransaction(...args),
+}));
+
+// Mock next/cache (imported transitively by group actions)
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
+
 // Mock DB
 const mockLimit = vi.fn();
-const mockWhere = vi.fn(() => ({ limit: mockLimit }));
+let mockWhereDirectResult: unknown[] = [];
+const mockWhere = vi.fn(() => ({
+  limit: mockLimit,
+  then: (resolve: (v: unknown) => void) => resolve(mockWhereDirectResult),
+}));
 const mockFrom = vi.fn(() => ({ where: mockWhere }));
 const mockSelect = vi.fn(() => ({ from: mockFrom }));
 const mockSet = vi.fn(() => ({ where: vi.fn() }));
 const mockUpdate = vi.fn(() => ({ set: mockSet }));
+const mockDeleteWhere = vi.fn(() => Promise.resolve());
+const mockDbDelete = vi.fn(() => ({ where: mockDeleteWhere }));
+const mockTransaction = vi.fn(async (cb: (tx: unknown) => Promise<void>) => {
+  await cb({});
+});
 
 vi.mock("@/lib/db", () => ({
   db: {
     select: () => mockSelect(),
     update: () => mockUpdate(),
+    delete: () => mockDbDelete(),
+    transaction: (...args: unknown[]) => mockTransaction(...(args as [any])),
   },
 }));
 
@@ -46,6 +93,13 @@ vi.mock("@/lib/db/schema", () => ({
     lastName: "lastName",
     authId: "authId",
   },
+  member: {
+    id: "id",
+    groupId: "groupId",
+    role: "role",
+    userId: "userId",
+  },
+  group: { id: "id" },
 }));
 
 function makeFormData(fields: Record<string, string>): FormData {
@@ -375,5 +429,95 @@ describe("updateAvatarColor", () => {
     const result = await updateAvatarColor("" as any);
 
     expect(result.error).toBe("Invalid color.");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deleteAccount
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("deleteAccount", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetCurrentUser.mockResolvedValue(mockUser);
+    mockSignInWithPassword.mockResolvedValue({ error: null });
+    mockSignOut.mockResolvedValue({ error: null });
+    mockAdminDeleteUser.mockResolvedValue({ error: null });
+    mockWhereDirectResult = [];
+    mockRemoveMemberTransaction.mockResolvedValue(undefined);
+  });
+
+  it("returns error when not logged in", async () => {
+    mockGetCurrentUser.mockResolvedValue(null);
+    const result = await deleteAccount("password123");
+
+    expect(result.error).toBe("You must be logged in.");
+  });
+
+  it("returns error when password is incorrect", async () => {
+    mockSignInWithPassword.mockResolvedValue({
+      error: { message: "Invalid login credentials" },
+    });
+    const result = await deleteAccount("wrongpassword");
+
+    expect(result.error).toBe("Incorrect password.");
+  });
+
+  it("blocks deletion when user owns a group", async () => {
+    mockWhereDirectResult = [{ id: "m1", groupId: "g1", role: "owner" }];
+    const result = await deleteAccount("password123");
+
+    expect(result.error).toContain("transfer ownership or delete");
+  });
+
+  it("leaves all groups before deleting account", async () => {
+    mockWhereDirectResult = [
+      { id: "m1", groupId: "g1", role: "member" },
+      { id: "m2", groupId: "g2", role: "member" },
+    ];
+
+    await expect(deleteAccount("password123")).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mockTransaction).toHaveBeenCalledTimes(2);
+    expect(mockRemoveMemberTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("deletes user from local DB and Supabase", async () => {
+    mockWhereDirectResult = [];
+
+    await expect(deleteAccount("password123")).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mockDbDelete).toHaveBeenCalled();
+    expect(mockAdminDeleteUser).toHaveBeenCalledWith(mockUser.authId);
+  });
+
+  it("signs out and clears session cookies", async () => {
+    mockWhereDirectResult = [];
+
+    await expect(deleteAccount("password123")).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mockSignOut).toHaveBeenCalled();
+    expect(mockCookieDelete).toHaveBeenCalledWith("session_start_at");
+    expect(mockCookieDelete).toHaveBeenCalledWith("last_active_at");
+  });
+
+  it("redirects to /login after successful deletion", async () => {
+    mockWhereDirectResult = [];
+    const { redirect } = await import("next/navigation");
+
+    await expect(deleteAccount("password123")).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(redirect).toHaveBeenCalledWith("/login");
+  });
+
+  it("verifies password with correct email", async () => {
+    mockWhereDirectResult = [];
+
+    await expect(deleteAccount("mypassword")).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mockSignInWithPassword).toHaveBeenCalledWith({
+      email: mockUser.email,
+      password: "mypassword",
+    });
   });
 });

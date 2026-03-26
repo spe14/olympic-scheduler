@@ -7,10 +7,6 @@ export function buildTravelMatrix(entries: TravelEntry[]): Map<string, number> {
       `${entry.originZone}|${entry.destinationZone}`,
       entry.drivingMinutes
     );
-    matrix.set(
-      `${entry.destinationZone}|${entry.originZone}`,
-      entry.drivingMinutes
-    );
   }
   return matrix;
 }

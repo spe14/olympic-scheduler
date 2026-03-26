@@ -4,6 +4,7 @@ import {
   group,
   member,
   user,
+  session,
   windowRanking,
   purchaseTimeslot,
   ticketPurchase,
@@ -126,6 +127,29 @@ export const getGroupDetail = cache(async function getGroupDetail(
     ...purchaseAssigneeRows.map((r) => r.memberId),
   ]);
 
+  // Compute purchased session dates that fall outside the specific date range
+  let purchasedDatesOutsideRange: string[] = [];
+  if (
+    groupData.dateMode === "specific" &&
+    groupData.startDate &&
+    groupData.endDate
+  ) {
+    const purchasedSessionDates = await db
+      .selectDistinct({ sessionDate: session.sessionDate })
+      .from(ticketPurchaseAssignee)
+      .innerJoin(
+        ticketPurchase,
+        eq(ticketPurchaseAssignee.ticketPurchaseId, ticketPurchase.id)
+      )
+      .innerJoin(session, eq(ticketPurchase.sessionId, session.sessionCode))
+      .where(eq(ticketPurchase.groupId, groupId));
+
+    purchasedDatesOutsideRange = purchasedSessionDates
+      .map((r) => r.sessionDate)
+      .filter((d) => d < groupData.startDate! || d > groupData.endDate!)
+      .sort();
+  }
+
   return {
     ...groupData,
     myRole: myMembership.role,
@@ -148,6 +172,7 @@ export const getGroupDetail = cache(async function getGroupDetail(
     membersPurchased,
     membersWithPurchaseData: [...membersWithPurchaseData],
     windowRankings,
+    purchasedDatesOutsideRange,
     membersWithNoCombos: Array.isArray(groupData.membersWithNoCombos)
       ? (groupData.membersWithNoCombos as string[])
       : [],
@@ -167,6 +192,7 @@ export const getGroupDetail = cache(async function getGroupDetail(
                 name: string;
                 departedAt: string;
                 rejoinedAt?: string;
+                wasPartOfSchedule?: boolean;
               })
         )
       : [],

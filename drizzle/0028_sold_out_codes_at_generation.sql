@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "sold_out_codes_at_generation" jsonb DEFAULT '[]'::jsonb;

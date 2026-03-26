@@ -76,7 +76,9 @@ export default function GroupShell({
           new Date(m.joinedAt) > new Date(group.scheduleGeneratedAt!)
         )
     );
-  const hasDepartedMembers = group.departedMembers.length > 0;
+  const hasDepartedMembers = group.departedMembers.some(
+    (d) => !d.rejoinedAt && d.wasPartOfSchedule !== false
+  );
   const hasAffectedBuddyMembers =
     Object.keys(group.affectedBuddyMembers).length > 0;
   const hasNewlyJoinedMembers =
@@ -151,13 +153,16 @@ export default function GroupShell({
       label: "My Schedule",
       href: `${basePath}/schedule`,
       visible: true,
-      status: !inScheduleReview
+      status: !group.scheduleGeneratedAt
         ? { type: "warning", tooltip: "Schedules have not been generated yet." }
-        : !anyMemberHasNoCombos
-          ? { type: "complete" }
-          : getScheduleWarning()
-            ? { type: "warning", tooltip: getScheduleWarning() }
-            : { type: "none" },
+        : anyMemberHasNoCombos
+          ? { type: "warning", tooltip: getScheduleWarning() }
+          : schedulesNeedAttention
+            ? {
+                type: "warning",
+                tooltip: "Schedules may need to be regenerated.",
+              }
+            : { type: "complete" },
     },
     {
       key: "group-schedule",
@@ -178,23 +183,39 @@ export default function GroupShell({
                 tooltip:
                   "Schedules unavailable — some members didn't receive any sessions.",
               }
-            : inScheduleReview && group.windowRankings.length > 0
-              ? { type: "complete" }
-              : { type: "none" },
+            : schedulesNeedAttention
+              ? {
+                  type: "warning",
+                  tooltip: "Schedules may need to be regenerated.",
+                }
+              : inScheduleReview && group.windowRankings.length > 0
+                ? { type: "complete" }
+                : { type: "none" },
     },
     {
       key: "purchase-tracker",
       label: "Purchase Planner & Tracker",
       href: `${basePath}/purchase-tracker`,
       visible: true,
-      status: !inScheduleReview
+      status: !group.scheduleGeneratedAt
         ? { type: "warning", tooltip: "Schedules have not been generated yet." }
-        : group.myTimeslot
-          ? { type: "complete" }
-          : {
+        : anyMemberHasNoCombos
+          ? {
               type: "warning",
-              tooltip: "You haven't entered your purchase timeslot yet.",
-            },
+              tooltip:
+                "Schedules unavailable — some members didn't receive any sessions.",
+            }
+          : schedulesNeedAttention
+            ? {
+                type: "warning",
+                tooltip: "Schedules may need to be regenerated.",
+              }
+            : group.myTimeslot
+              ? { type: "complete" }
+              : {
+                  type: "warning",
+                  tooltip: "You haven't entered your purchase timeslot yet.",
+                },
     },
   ];
 
@@ -209,7 +230,7 @@ export default function GroupShell({
         <GroupSyncProvider onSync={handleSync}>
           <div className="px-6 py-8">
             <GuardedLink
-              href="/"
+              href="/groups"
               className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700"
             >
               <svg
@@ -361,6 +382,7 @@ function GuardedLink({
         if (pathname === href) {
           e.preventDefault();
           router.refresh();
+          window.dispatchEvent(new CustomEvent("tab-refetch"));
         }
       }}
     >

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { db } from "./index";
 import { session, travelTime, zoneEnum } from "./schema";
+import { inArray, notInArray } from "drizzle-orm";
 import fs from "fs";
 import Papa from "papaparse";
 
@@ -85,12 +86,42 @@ const travelTimeRows = drivingTimeRows.map((drivingRow) => {
 });
 
 async function seed() {
-  // Seed sessions
-  await db.delete(session);
-  await db.insert(session).values(sessionRows);
-  console.log(`Seeded ${sessionRows.length} sessions`);
+  // Upsert sessions: insert new ones, update changed ones, preserve user data
+  const csvSessionCodes = sessionRows.map((r) => r.sessionCode);
 
-  // Seed travel times
+  for (const row of sessionRows) {
+    await db
+      .insert(session)
+      .values(row)
+      .onConflictDoUpdate({
+        target: session.sessionCode,
+        set: {
+          sport: row.sport,
+          venue: row.venue,
+          zone: row.zone,
+          sessionDate: row.sessionDate,
+          sessionType: row.sessionType,
+          sessionDescription: row.sessionDescription,
+          startTime: row.startTime,
+          endTime: row.endTime,
+        },
+      });
+  }
+
+  // Delete sessions that no longer exist in the CSV (cascade handles preferences/combos)
+  const deleted = await db
+    .delete(session)
+    .where(notInArray(session.sessionCode, csvSessionCodes))
+    .returning({ sessionCode: session.sessionCode });
+
+  console.log(`Upserted ${sessionRows.length} sessions`);
+  if (deleted.length > 0) {
+    console.log(
+      `Removed ${deleted.length} obsolete sessions: ${deleted.map((d) => d.sessionCode).join(", ")}`
+    );
+  }
+
+  // Seed travel times (no user data depends on these, safe to replace)
   await db.delete(travelTime);
   await db.insert(travelTime).values(travelTimeRows);
   console.log(`Seeded ${travelTimeRows.length} travel times`);

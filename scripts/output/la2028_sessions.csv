@@ -20,17 +20,17 @@ sport,venue,zone,session_code,session_date,session_type,session_description,star
 3x3 Basketball,Valley Complex 3,Valley Zone,BK319,2028-07-22,Semifinal,Men's Semifinal (2 Games); Women's Semifinal (2 Games),17:00:00,19:00:00
 3x3 Basketball,Valley Complex 3,Valley Zone,BK320,2028-07-22,Final,Men's Bronze Medal Game; Women's Bronze Medal Game; Men's Gold Medal Game; Women's Gold Medal Game,21:00:00,23:30:00
 Archery,Carson Stadium,Carson Zone,ARC03,2028-07-21,Final,Compound Mixed Team 1/8 Elimination Round; Compound Mixed Team Quarterfinal; Compound Mixed Team Semifinal; Compound Mixed Team Bronze Medal Match; Compound Mixed Team Gold Medal Match,19:30:00,23:15:00
-Archery,Carson Stadium,Carson Zone,ARC04,2028-07-22,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Women's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,09:30:00,12:35:00
-Archery,Carson Stadium,Carson Zone,ARC05,2028-07-22,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Women's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,20:00:00,22:40:00
+Archery,Carson Stadium,Carson Zone,ARC04,2028-07-22,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Women's Individual 1/32 Elimination Round,09:30:00,12:35:00
+Archery,Carson Stadium,Carson Zone,ARC05,2028-07-22,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Women's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,20:00:00,22:35:00
 Archery,Carson Stadium,Carson Zone,ARC06,2028-07-23,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Women's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,09:30:00,12:35:00
-Archery,Carson Stadium,Carson Zone,ARC07,2028-07-23,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Women's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,20:00:00,22:40:00
-Archery,Carson Stadium,Carson Zone,ARC08,2028-07-24,Preliminary,Recurve Women's Individual 1/32 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,09:30:00,12:35:00
+Archery,Carson Stadium,Carson Zone,ARC07,2028-07-23,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Women's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,20:00:00,22:35:00
+Archery,Carson Stadium,Carson Zone,ARC08,2028-07-24,Preliminary,Recurve Women's Individual 1/32 Elimination Round; Recurve Women's Individual 1/16 Elimination Round,10:30:00,12:40:00
 Archery,Carson Stadium,Carson Zone,ARC09,2028-07-24,Final,Recurve Men's Team Quarterfinal; Recurve Men's Team Semifinal; Recurve Men's Team Bronze Medal Match; Recurve Men's Team Gold Medal Match,19:30:00,23:10:00
-Archery,Carson Stadium,Carson Zone,ARC10,2028-07-25,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round,09:30:00,12:35:00
+Archery,Carson Stadium,Carson Zone,ARC10,2028-07-25,Preliminary,Recurve Men's Individual 1/32 Elimination Round; Recurve Men's Individual 1/16 Elimination Round,10:30:00,12:40:00
 Archery,Carson Stadium,Carson Zone,ARC11,2028-07-25,Final,Recurve Women's Team Quarterfinal; Recurve Women's Team Semifinal; Recurve Women's Team Bronze Medal Match; Recurve Women's Team Gold Medal Match,19:30:00,23:10:00
-Archery,Carson Stadium,Carson Zone,ARC12,2028-07-26,Preliminary,Recurve Mixed team 1/8 Elimination Round,09:30:00,12:05:00
+Archery,Carson Stadium,Carson Zone,ARC12,2028-07-26,Preliminary,Recurve Mixed team 1/8 Elimination Round,10:30:00,13:05:00
 Archery,Carson Stadium,Carson Zone,ARC13,2028-07-26,Final,Recurve Mixed Team Quarterfinal; Recurve Mixed Team Semifinal; Recurve Mixed Team Bronze Medal Match; Recurve Mixed Team Gold Medal Match,20:00:00,23:10:00
-Archery,Carson Stadium,Carson Zone,ARC14,2028-07-27,Preliminary,Recurve Men's Individual 1/8 Elimination Round,09:30:00,11:15:00
+Archery,Carson Stadium,Carson Zone,ARC14,2028-07-27,Preliminary,Recurve Men's Individual 1/8 Elimination Round,10:30:00,12:15:00
 Archery,Carson Stadium,Carson Zone,ARC15,2028-07-27,Final,Recurve Men's Individual Quarterfinal; Recurve Men's Individual Semifinal; Recurve Men's Individual Bronze Medal Match; Recurve Men's Individual Gold Medal Match,20:30:00,22:50:00
 Archery,Carson Stadium,Carson Zone,ARC16,2028-07-28,Preliminary,Recurve Women's Individual 1/8 Elimination Round,09:30:00,11:15:00
 Archery,Carson Stadium,Carson Zone,ARC17,2028-07-28,Final,Recurve Women's Individual Quarterfinal; Recurve Women's Individual Semifinal; Recurve Women's Individual Bronze Medal Match; Recurve Women's Individual Gold Medal Match,20:30:00,22:50:00
@@ -48,7 +48,7 @@ Artistic Gymnastics,DTLA Arena,DTLA Zone,GAR11,2028-07-20,Final,Women's All-Arou
 Artistic Gymnastics,DTLA Arena,DTLA Zone,GAR12,2028-07-22,Final,Men's/Women's Apparatus Finals,11:30:00,14:15:00
 Artistic Gymnastics,DTLA Arena,DTLA Zone,GAR13,2028-07-23,Final,Men's/Women's Apparatus Finals,11:00:00,13:45:00
 Artistic Gymnastics,DTLA Arena,DTLA Zone,GAR14,2028-07-24,Final,Men's/Women's Apparatus Finals,11:00:00,14:30:00
-Artistic Gymnastics,DTLA Arena,DTLA Zone,GAR15,2028-07-25,Final,Mixed Team Final (Format and Duration Pending FIG Executive Committee Approval),16:00:00,18:30:00
+Artistic Gymnastics,DTLA Arena,DTLA Zone,GAR15,2028-07-25,Final,Mixed Team Final; (Format and Duration Pending FIG Executive Committee Approval),16:00:00,18:30:00
 Artistic Swimming,Long Beach Aquatics Center,Long Beach Zone,SWA01,2028-07-25,Preliminary,Women's Duet Technical,11:00:00,13:00:00
 Artistic Swimming,Long Beach Aquatics Center,Long Beach Zone,SWA02,2028-07-26,Final,Women's Duet Free,11:00:00,13:15:00
 Artistic Swimming,Long Beach Aquatics Center,Long Beach Zone,SWA03,2028-07-27,Preliminary,Open Team Technical,11:00:00,12:30:00
@@ -193,6 +193,10 @@ Beach Volleyball,Alamitos Beach Stadium,Long Beach Zone,VBV36,2028-07-27,Semifin
 Beach Volleyball,Alamitos Beach Stadium,Long Beach Zone,VBV37,2028-07-27,Semifinal,Men's Semifinal; Women's Semifinal,20:00:00,22:00:00
 Beach Volleyball,Alamitos Beach Stadium,Long Beach Zone,VBV38,2028-07-28,Final,Women's Bronze Medal Match; Women's Gold Medal Match,15:30:00,18:30:00
 Beach Volleyball,Alamitos Beach Stadium,Long Beach Zone,VBV39,2028-07-29,Final,Men's Bronze Medal Match; Men's Gold Medal match,19:00:00,22:00:00
+BMX Freestyle,Valley Complex 1,Valley Zone,BMF01,2028-07-28,Preliminary,Men's Park Qualification; Women's Park Qualification,10:30:00,13:30:00
+BMX Freestyle,Valley Complex 1,Valley Zone,BMF02,2028-07-29,Final,Men's Park Final; Women's Park Final,10:30:00,13:50:00
+BMX Racing,Valley Complex 4,Valley Zone,BMX01,2028-07-15,Quarterfinal,Men's Quarterfinal; Women's Quarterfinal; Men's Last Chance; Women's Last Chance,10:30:00,12:50:00
+BMX Racing,Valley Complex 4,Valley Zone,BMX02,2028-07-16,Final,Men's Semifinal; Women's Semifinal; Men's Final; Women's Final,10:30:00,13:00:00
 Boxing,Peacock Theater,DTLA Zone,BOX01,2028-07-15,Preliminary,Women's 54kg Round of 32; Women's 60kg Round of 32; Women's 65kg Round of 32; Men's 55kg Round of 32; Men's 65kg Round of 32; Men's +90kg Round of 16,12:00:00,14:30:00
 Boxing,Peacock Theater,DTLA Zone,BOX02,2028-07-15,Preliminary,Women's 54kg Round of 32; Women's 60kg Round of 32; Women's 65kg Round of 32; Men's 55kg Round of 32; Men's 65kg Round of 32; Men's +90kg Round of 16,19:00:00,21:30:00
 Boxing,Peacock Theater,DTLA Zone,BOX03,2028-07-16,Preliminary,Women's 51kg Round of 32; Women's 70kg Round of 16; Men's 60kg Round of 32; Men's 70kg Round of 32; Men's 90kg Round of 16,12:00:00,15:00:00
@@ -222,6 +226,16 @@ Canoe Sprint,Marine Stadium,Long Beach Zone,CSP02,2028-07-26,Final,Men's Kayak D
 Canoe Sprint,Marine Stadium,Long Beach Zone,CSP03,2028-07-27,Quarterfinal,Men's Kayak Four 500m Heats; Women's Kayak Four 500m Heats; Women's Canoe Double 500m Heats; Men's Canoe Double 500m Heats; Men's Kayak Single 1000m Heats; Women's Kayak Single 500m Heats; Men's Kayak Four 500m Quarterfinal; Men's Canoe Double 500m Quarterfinal; Women's Canoe Double 500m Quarterfinal; Women's Kayak Four 500m Quarterfinal; Men's Kayak Single 1000m Quarterfinal; Women's Kayak Single 500m Quarterfinal,09:00:00,13:30:00
 Canoe Sprint,Marine Stadium,Long Beach Zone,CSP04,2028-07-28,Final,Women's Kayak Single 500m Semifinal; Women's Canoe Double 500m Semifinal; Men's Kayak Single 1000m Semifinal; Women's Kayak Single 500m Final C; Women's Kayak Single 500m Final B; Women's Canoe Double 500m Final B; Women's Kayak Single 500m Final A; Women's Canoe Double 500m Final A; Men's Kayak Single 1000m Final B; Men's Kayak Single 1000m Final A,09:00:00,12:40:00
 Canoe Sprint,Marine Stadium,Long Beach Zone,CSP05,2028-07-29,Final,Women's Canoe Single 200m Semifinal; Men's Canoe Double 500m Semifinal; Women's Kayak Four 500m Semifinal; Men's Kayak Four 500m Semifinal; Women's Canoe Single 200m Final B; Men's Canoe Double 500m Final B; Women's Canoe Single 200m Final A; Men's Canoe Double 500m Final A; Women's Kayak Four 500m Final A; Men's Kayak Four 500m Final A,09:00:00,12:55:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB01,2028-07-24,Semifinal,Men's Boulder Semifinal,09:30:00,11:40:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB02,2028-07-24,Preliminary,Men's Speed Qualification; Women's Speed Qualification,13:45:00,15:25:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB03,2028-07-25,Semifinal,Women's Boulder Semifinal,09:15:00,11:25:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB04,2028-07-25,Semifinal,Men's Lead Semifinal,18:45:00,20:00:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB05,2028-07-26,Final,Men's Speed Quarterfinal; Women's Speed Quarterfinal; Men's Speed Semifinal; Women's Speed Semifinal; Men's Speed Final; Women's Speed Final,09:00:00,10:30:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB06,2028-07-26,Semifinal,Women's Lead Semifinal,18:45:00,20:00:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB07,2028-07-27,Final,Men's Boulder Final,09:00:00,10:55:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB08,2028-07-28,Final,Women's Boulder Final,09:00:00,10:55:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB09,2028-07-28,Final,Men's Lead Final,13:45:00,15:00:00
+Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB10,2028-07-29,Final,Women's Lead Final,09:30:00,10:45:00
 Cricket,Fairgrounds Cricket Stadium,Pomona Zone,CKT01,2028-07-12,Preliminary,Women's Group Stage First Round,09:00:00,12:30:00
 Cricket,Fairgrounds Cricket Stadium,Pomona Zone,CKT02,2028-07-12,Preliminary,Women's Group Stage First Round,18:00:00,21:30:00
 Cricket,Fairgrounds Cricket Stadium,Pomona Zone,CKT03,2028-07-13,Preliminary,Women's Group Stage First Round,09:00:00,12:30:00
@@ -250,12 +264,6 @@ Cricket,Fairgrounds Cricket Stadium,Pomona Zone,CKT25,2028-07-27,Preliminary,Men
 Cricket,Fairgrounds Cricket Stadium,Pomona Zone,CKT26,2028-07-27,Preliminary,Men's Group Stage Second Round,18:00:00,21:30:00
 Cricket,Fairgrounds Cricket Stadium,Pomona Zone,CKT27,2028-07-28,Bronze,Men's Bronze Medal Match,09:00:00,12:30:00
 Cricket,Fairgrounds Cricket Stadium,Pomona Zone,CKT28,2028-07-29,Final,Men's Gold Medal Match,09:00:00,13:00:00
-BMX Freestyle,Valley Complex 1,Valley Zone,BMF01,2028-07-28,Preliminary,Men's Park Qualification; Women's Park Qualification,10:30:00,13:30:00
-BMX Freestyle,Valley Complex 1,Valley Zone,BMF02,2028-07-29,Final,Men's Park Final; Women's Park Final,10:30:00,13:50:00
-BMX Racing,Valley Complex 4,Valley Zone,BMX01,2028-07-15,Quarterfinal,Men's Quarterfinal; Women's Quarterfinal; Men's Last Chance; Women's Last Chance,10:30:00,12:50:00
-BMX Racing,Valley Complex 4,Valley Zone,BMX02,2028-07-16,Final,Men's Semifinal; Women's Semifinal; Men's Final; Women's Final,10:30:00,13:00:00
-Mountain Bike,Industry Hills MTB Course,City of Industry Zone,MTB01,2028-07-17,Final,Men's Cross-Country,11:00:00,13:30:00
-Mountain Bike,Industry Hills MTB Course,City of Industry Zone,MTB02,2028-07-18,Final,Women's Cross-Country,11:00:00,13:30:00
 Cycling Road (Road Race),Venice Beach Boardwalk - Start,Venice Zone,CRD02,2028-07-22,Final,Women's Road Race,11:30:00,16:15:00
 Cycling Road (Road Race),Venice Beach Boardwalk - Start,Venice Zone,CRD03,2028-07-23,Final,Men's Road Race,09:00:00,16:15:00
 Cycling Track,Carson Velodrome,Carson Zone,CTR01,2028-07-25,Preliminary,Men's Team Sprint Qualifying; Women's Team Sprint Qualifying,09:00:00,10:00:00
@@ -286,7 +294,7 @@ Diving,Rose Bowl Aquatics Center,Pasadena Zone,DIV16,2028-07-28,Final,Men's Sync
 Equestrian,Santa Anita Park,Arcadia Zone,EQU01,2028-07-15,Preliminary,"Eventing Dressage Team & Individual - Day 1, Session 1",09:00:00,11:30:00
 Equestrian,Santa Anita Park,Arcadia Zone,EQU02,2028-07-15,Preliminary,"Eventing Dressage Team & Individual - Day 1, Session 2",16:30:00,19:00:00
 Equestrian,Santa Anita Park,Arcadia Zone,EQU03,2028-07-16,Preliminary,"Eventing Dressage Team & Individual - Day 2, Session 1",09:00:00,11:30:00
-Equestrian,Santa Anita Park,Arcadia Zone,EQU04,2028-07-17,Preliminary,Eventing Cross Country Team and Individual,08:00:00,11:30:00
+Equestrian,Santa Anita Park,Arcadia Zone,EQU04,2028-07-17,Preliminary,Eventing Cross Country Team & Individual,08:00:00,11:30:00
 Equestrian,Santa Anita Park,Arcadia Zone,EQU05,2028-07-18,Final,Eventing Jumping Team Final; Eventing Jumping Individual Final,16:30:00,22:00:00
 Equestrian,Santa Anita Park,Arcadia Zone,EQU06,2028-07-20,Preliminary,"Dressage Grand Prix Team & Individual Qualifier - Day 1, Session 1",09:00:00,11:45:00
 Equestrian,Santa Anita Park,Arcadia Zone,EQU07,2028-07-20,Preliminary,"Dressage Grand Prix Team & Individual Qualifier - Day 1, Session 2",16:15:00,19:00:00
@@ -331,12 +339,8 @@ Flag Football,Exposition Park Stadium,Exposition Park Zone,FFB11,2028-07-20,Semi
 Flag Football,Exposition Park Stadium,Exposition Park Zone,FFB12,2028-07-21,Semifinal,Women's Semifinal (2 Games),13:30:00,15:40:00
 Flag Football,Exposition Park Stadium,Exposition Park Zone,FFB13,2028-07-21,Final,Men's Bronze Medal Game; Men's Gold Medal Game,17:30:00,20:40:00
 Flag Football,Exposition Park Stadium,Exposition Park Zone,FFB14,2028-07-22,Final,Women's Bronze Medal Game; Women's Gold Medal Game,12:30:00,15:40:00
-Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL51,2028-07-24,Semifinal,Men's Semifinal,13:00:00,16:00:00
 Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL52,2028-07-24,Semifinal,Men's Semifinal,20:30:00,23:30:00
-Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL53,2028-07-25,Semifinal,Women's Semifinal,17:30:00,20:30:00
 Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL54,2028-07-25,Semifinal,Women's Semifinal,20:30:00,23:30:00
-Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL55,2028-07-27,Bronze,Men's Bronze Medal Match,18:00:00,21:00:00
-Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL56,2028-07-28,Bronze,Women's Bronze Medal Match,13:00:00,16:00:00
 Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL57,2028-07-28,Final,Men's Gold Medal Match,18:00:00,21:00:00
 Football (Soccer),Rose Bowl Stadium,Pasadena Zone,FBL58,2028-07-29,Final,Women's Gold Medal Match,12:30:00,15:30:00
 Golf,Riviera Country Club,Riviera Zone,GLF01,2028-07-19,Preliminary,Men's Individual Stroke Play Round 1,09:00:00,18:00:00
@@ -461,6 +465,8 @@ Modern Pentathlon,Valley Complex 2,Valley Zone,MPN01,2028-07-15,Semifinal,Women'
 Modern Pentathlon,Valley Complex 2,Valley Zone,MPN02,2028-07-16,Semifinal,Men's Individual Semifinal,09:00:00,13:30:00
 Modern Pentathlon,Valley Complex 2,Valley Zone,MPN03,2028-07-17,Final,Women's Individual Final,09:00:00,11:00:00
 Modern Pentathlon,Valley Complex 2,Valley Zone,MPN04,2028-07-18,Final,Men's Individual Final,09:00:00,11:00:00
+Mountain Bike,Industry Hills MTB Course,City of Industry Zone,MTB01,2028-07-17,Final,Men's Cross-Country,11:00:00,13:30:00
+Mountain Bike,Industry Hills MTB Course,City of Industry Zone,MTB02,2028-07-18,Final,Women's Cross-Country,11:00:00,13:30:00
 Open Water Swimming,Belmont Shore,Long Beach Zone,OWS01,2028-07-17,Final,Women's 10km,13:30:00,16:30:00
 Open Water Swimming,Belmont Shore,Long Beach Zone,OWS02,2028-07-18,Final,Men's 10km,13:30:00,16:30:00
 Rhythmic Gymnastics,Galen Center,Exposition Park Zone,GRY01,2028-07-27,Preliminary,Individual All-Around Qualification - 1 of 2,12:30:00,15:45:00
@@ -505,18 +511,16 @@ Sailing (Windsurfing & Kite),Belmont Shore,Long Beach Zone,SAL05,2028-07-20,Fina
 "Sailing (Dinghy, Skiff & Multihull)",Port of Los Angeles,Port of Los Angeles Zone,SAL11,2028-07-28,Final,Men's Skiff Finals; Women's Skiff Finals,14:00:00,17:00:00
 Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO01,2028-07-15,Final,Women's 10m Air Rifle Qualification; Men's 10m Air Rifle Qualification; Women's 10m Air Rifle Final; Men's 10m Air Rifle Final,13:45:00,21:00:00
 Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO02,2028-07-16,Final,Men's 10m Air Pistol Qualification; Women's 10m Air Pistol Qualification; Men's 10m Air Pistol Final; Women's 10m Air Pistol Final,13:45:00,21:00:00
-Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO03,2028-07-17,Final,Mixed Team 10m Air Rifle Qualification; Mixed Team 10m Air Pistol Qualification; Mixed Team 10m Air Rifle Final; Mixed Team 10m Air Pistol Final,09:40:00,15:30:00
-Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO04,2028-07-17,Preliminary,Men's Skeet Qualification - Day 1; Women's Skeet Qualification - Day 1,09:45:00,14:45:00
-Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO05,2028-07-18,Final,Women's Skeet Qualification - Day 2; Men's Skeet Qualification - Day 2; Women's Skeet Final; Men's Skeet Final,09:45:00,17:15:00
-Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO06,2028-07-19,Final,Men's 50m Rifle 3 Positions Qualification; Men's 50m Rifle 3 Positions Final,09:30:00,13:30:00
-Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO07,2028-07-20,Final,Women's 50m Rifle 3 Positions Qualification; Women's 50m Rifle 3 Positions Final,09:30:00,13:30:00
-Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO08,2028-07-21,Preliminary,Women's Trap Qualification - Day 1; Men's Trap Qualification - Day 1,09:45:00,14:45:00
-Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO09,2028-07-22,Preliminary,Women's 25m Pistol Qualification Precision Stage,09:30:00,12:00:00
-Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO10,2028-07-22,Final,Women's Trap Qualification - Day 2; Men's Trap Qualification - Day 2; Women's Trap Final; Men's Trap Final,09:45:00,17:15:00
-Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO11,2028-07-23,Final,Women's 25m Pistol Qualification Rapid Fire Stage; Women's 25m Pistol Final,09:30:00,14:00:00
-Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO12,2028-07-24,Final,Mixed Team Trap Qualification; Mixed Team Trap Final,09:45:00,16:45:00
-Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO13,2028-07-24,Preliminary,Men's 25m Rapid Fire Pistol Stage 1,14:30:00,19:00:00
-Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO14,2028-07-25,Final,Men's 25m Rapid Fire Pistol Stage 2; Men's 25m Rapid Fire Pistol Final,14:30:00,21:15:00
+Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO04,2028-07-17,Final,Mixed Team 10m Air Rifle Qualification; Mixed Team 10m Air Pistol Qualification; Mixed Team 10m Air Rifle Final; Mixed Team 10m Air Pistol Final,15:00:00,21:00:00
+Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO06,2028-07-19,Final,Men's 50m Rifle 3 Positions Qualification; Men's 50m Rifle 3 Positions Final,09:30:00,14:00:00
+Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO07,2028-07-20,Final,Women's 50m Rifle 3 Positions Qualification; Women's 50m Rifle 3 Positions Final,09:30:00,14:00:00
+Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO09,2028-07-22,Preliminary,Men's 25m Rapid Fire Pistol Stage 1; Women's 25m Pistol Qualification Precision Stage,09:30:00,17:30:00
+Shooting (Rifle & Pistol),Long Beach Target Shooting Hall,Long Beach Zone,SHO11,2028-07-23,Final,Men's 25m Rapid Fire Pistol Stage 2; Women's 25m Pistol Qualification Rapid Fire Stage; Men's 25m Rapid Fire Pistol Final; Women's 25m Pistol Final,09:30:00,21:00:00
+Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO03,2028-07-17,Preliminary,Men's Skeet Qualification - Day 1; Women's Skeet Qualification - Day 1,09:30:00,14:30:00
+Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO05,2028-07-18,Final,Women's Skeet Qualification - Day 2; Men's Skeet Qualification - Day 2; Women's Skeet Final; Men's Skeet Final,09:30:00,17:15:00
+Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO08,2028-07-21,Preliminary,Women's Trap Qualification - Day 1; Men's Trap Qualification - Day 1,09:30:00,14:30:00
+Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO10,2028-07-22,Final,Women's Trap Qualification - Day 2; Men's Trap Qualification - Day 2; Women's Trap Final; Men's Trap Final,09:30:00,17:15:00
+Shooting (Shotgun),Whittier Narrows Clay Shooting Center,Whittier Narrows Zone,SHO12,2028-07-24,Final,Mixed Team Trap Qualification; Mixed Team Trap Final,09:30:00,16:45:00
 Skateboarding (Street),Valley Complex 1,Valley Zone,SKB01,2028-07-18,Preliminary,Women's Street Preliminary,17:00:00,20:10:00
 Skateboarding (Street),Valley Complex 1,Valley Zone,SKB02,2028-07-19,Preliminary,Men's Street Preliminary,10:30:00,13:40:00
 Skateboarding (Street),Valley Complex 1,Valley Zone,SKB03,2028-07-19,Final,Women's Street Final,20:30:00,22:00:00
@@ -525,16 +529,6 @@ Skateboarding (Park),Valley Complex 2,Valley Zone,SKB05,2028-07-25,Preliminary,M
 Skateboarding (Park),Valley Complex 2,Valley Zone,SKB06,2028-07-25,Preliminary,Women's Park Preliminary,20:00:00,23:00:00
 Skateboarding (Park),Valley Complex 2,Valley Zone,SKB07,2028-07-26,Final,Men's Park Final,20:00:00,21:15:00
 Skateboarding (Park),Valley Complex 2,Valley Zone,SKB08,2028-07-27,Final,Women's Park Final,20:00:00,21:15:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB01,2028-07-24,Semifinal,Men's Boulder Semifinal,09:30:00,11:40:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB02,2028-07-24,Preliminary,Men's Speed Qualification; Women's Speed Qualification,13:45:00,15:25:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB03,2028-07-25,Semifinal,Women's Boulder Semifinal,09:15:00,11:25:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB04,2028-07-25,Semifinal,Men's Lead Semifinal,18:45:00,20:00:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB05,2028-07-26,Final,Men's Speed Quarterfinal; Women's Speed Quarterfinal; Men's Speed Semifinal; Women's Speed Semifinal; Men's Speed Final; Women's Speed Final,09:00:00,10:30:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB06,2028-07-26,Semifinal,Women's Lead Semifinal,18:45:00,20:00:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB07,2028-07-27,Final,Men's Boulder Final,09:00:00,10:55:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB08,2028-07-28,Final,Women's Boulder Final,09:00:00,10:55:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB09,2028-07-28,Final,Men's Lead Final,13:45:00,15:00:00
-Sport Climbing,Long Beach Climbing Theater,Long Beach Zone,CLB10,2028-07-29,Final,Women's Lead Final,09:30:00,10:45:00
 Squash,Comcast Squash Center at Universal Studios,Universal City Zone,SQU01,2028-07-15,Preliminary,Men's and Women's Round of 16 (4 Matches),19:30:00,23:15:00
 Squash,Comcast Squash Center at Universal Studios,Universal City Zone,SQU02,2028-07-16,Preliminary,Men's and Women's Round of 16 (4 Matches),19:30:00,23:15:00
 Squash,Comcast Squash Center at Universal Studios,Universal City Zone,SQU03,2028-07-17,Preliminary,Men's and Women's Round of 16 (4 Matches),19:30:00,23:15:00
@@ -652,10 +646,10 @@ Tennis,Carson Courts 3-11,Carson Zone,TEN34,2028-07-25,Quarterfinal,Men's Single
 Tennis,Carson Center Court,Carson Zone,TEN35,2028-07-25,Semifinal,Men's Singles Quarterfinal; Women's Singles Semifinal,18:30:00,23:30:00
 Tennis,Carson Center Court,Carson Zone,TEN36,2028-07-26,Semifinal,Men's Singles Semifinal and/or Women's Doubles Semifinal,11:00:00,16:30:00
 Tennis,Carson Center Court,Carson Zone,TEN37,2028-07-26,Semifinal,Men's Singles Semifinal and/or Women's Doubles Semifinal,18:30:00,23:30:00
-Tennis,Carson Center Court,Carson Zone,TEN38,2028-07-27,Final,Women's Singles Bronze Medal Match and/or; Women's Singles Gold Medal Match and/or; Men's Doubles Bronze Medal Match and/or; Men's Doubles Gold Medal Match,11:00:00,16:30:00
-Tennis,Carson Center Court,Carson Zone,TEN39,2028-07-27,Final,Women's Singles Bronze Medal Match and/or; Women's Singles Gold Medal Match and/or; Men's Doubles Bronze Medal Match and/or; Men's Doubles Gold Medal Match,18:30:00,00:00:00
-Tennis,Carson Center Court,Carson Zone,TEN40,2028-07-28,Final,Men's Singles Bronze Medal Match and/or; Men's Singles Gold Medal Match and/or; Women's Doubles Bronze Medal Match and/or; Women's Doubles Gold Medal Match,11:00:00,16:30:00
-Tennis,Carson Center Court,Carson Zone,TEN41,2028-07-28,Final,Men's Singles Bronze Medal Match and/or; Men's Singles Gold Medal Match and/or; Women's Doubles Bronze Medal Match and/or; Women's Doubles Gold Medal Match,18:30:00,00:00:00
+Tennis,Carson Center Court,Carson Zone,TEN38,2028-07-27,Final,Women's Singles Bronze Medal Match; Women's Singles Gold Medal Match,11:00:00,16:30:00
+Tennis,Carson Center Court,Carson Zone,TEN39,2028-07-27,Final,Men's Doubles Bronze Medal Match; Men's Doubles Gold Medal Match,18:30:00,00:00:00
+Tennis,Carson Center Court,Carson Zone,TEN40,2028-07-28,Final,Men's Singles Bronze Medal Match; Men's Singles Gold Medal Match,11:00:00,16:30:00
+Tennis,Carson Center Court,Carson Zone,TEN41,2028-07-28,Final,Women's Doubles Bronze Medal Match; Women's Doubles Gold Medal Match,18:30:00,00:00:00
 Trampoline Gymnastics,DTLA Arena,DTLA Zone,GTR01,2028-07-21,Final,Men's Qualification; Men's Final,12:30:00,15:15:00
 Trampoline Gymnastics,DTLA Arena,DTLA Zone,GTR02,2028-07-21,Final,Women's Qualification; Women's Final,20:00:00,22:45:00
 Triathlon,Venice Beach,Venice Zone,TRI01,2028-07-15,Final,Women's Individual,07:30:00,10:10:00

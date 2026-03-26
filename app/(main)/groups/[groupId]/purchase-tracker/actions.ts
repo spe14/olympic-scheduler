@@ -8,6 +8,7 @@ import {
   session,
   member,
   user,
+  group,
   purchaseTimeslot,
   windowRanking,
   ticketPurchase,
@@ -74,6 +75,7 @@ export type OffScheduleSession = {
   sessionDate: string;
   startTime: string;
   endTime: string;
+  isSoldOut: boolean;
   purchases: PurchaseData[];
   reportedPrices: ReportedPriceData[];
 };
@@ -105,13 +107,101 @@ export type PurchaseTrackerData = {
   hasTimeslot: boolean;
 };
 
+// ── Off-schedule session helper ─────────────────────────────────────────────
+
+async function getOffScheduleSessions(
+  groupId: string,
+  memberId: string,
+  onScheduleSessionCodes: string[],
+  excludedCodes: Set<string>
+): Promise<OffScheduleSession[]> {
+  const [purchasedSessionCodes, reportedSessionCodes, soldOutReportedCodes] =
+    await Promise.all([
+      db
+        .select({ sessionId: ticketPurchase.sessionId })
+        .from(ticketPurchase)
+        .where(
+          and(
+            eq(ticketPurchase.groupId, groupId),
+            eq(ticketPurchase.purchasedByMemberId, memberId)
+          )
+        ),
+      db
+        .select({ sessionId: reportedPrice.sessionId })
+        .from(reportedPrice)
+        .where(
+          and(
+            eq(reportedPrice.groupId, groupId),
+            eq(reportedPrice.reportedByMemberId, memberId)
+          )
+        ),
+      db
+        .select({ sessionId: soldOutSession.sessionId })
+        .from(soldOutSession)
+        .where(
+          and(
+            eq(soldOutSession.groupId, groupId),
+            eq(soldOutSession.reportedByMemberId, memberId)
+          )
+        ),
+    ]);
+
+  const allTouchedCodes = new Set([
+    ...purchasedSessionCodes.map((r) => r.sessionId),
+    ...reportedSessionCodes.map((r) => r.sessionId),
+    ...soldOutReportedCodes.map((r) => r.sessionId),
+  ]);
+  // Remove sessions in the current user's combos
+  for (const code of onScheduleSessionCodes) {
+    allTouchedCodes.delete(code);
+  }
+  // Remove sessions already in the excluded list
+  for (const code of excludedCodes) {
+    allTouchedCodes.delete(code);
+  }
+  const offScheduleCodes = [...allTouchedCodes];
+
+  if (offScheduleCodes.length === 0) return [];
+
+  const offScheduleRows = await db
+    .select({
+      sessionCode: session.sessionCode,
+      sport: session.sport,
+      sessionType: session.sessionType,
+      sessionDescription: session.sessionDescription,
+      venue: session.venue,
+      zone: session.zone,
+      sessionDate: session.sessionDate,
+      startTime: session.startTime,
+      endTime: session.endTime,
+    })
+    .from(session)
+    .where(inArray(session.sessionCode, offScheduleCodes));
+
+  const offSchedulePurchaseData = await getPurchaseDataForSessions(
+    groupId,
+    memberId,
+    offScheduleCodes
+  );
+
+  return offScheduleRows
+    .map((row) => ({
+      ...row,
+      isSoldOut: offSchedulePurchaseData.soldOutSessions.has(row.sessionCode),
+      purchases: offSchedulePurchaseData.purchases.get(row.sessionCode) ?? [],
+      reportedPrices:
+        offSchedulePurchaseData.reportedPrices.get(row.sessionCode) ?? [],
+    }))
+    .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate));
+}
+
 // ── Data fetching ───────────────────────────────────────────────────────────
 
 export async function getPurchaseTrackerData(
   groupId: string
 ): Promise<{ data?: PurchaseTrackerData; error?: string }> {
   const { membership, error: authError } = await requireMembership(groupId);
-  if (authError) return authError;
+  if (authError) return { error: authError.error };
 
   // Check if user has a timeslot
   const [timeslotRow] = await db
@@ -140,12 +230,37 @@ export async function getPurchaseTrackerData(
     .orderBy(combo.day, combo.rank);
 
   if (combos.length === 0) {
+    // No combos yet (schedules not generated), but still fetch off-schedule
+    // sessions so users can track purchases made before using the app.
+    const [activeMembers, offScheduleSessions] = await Promise.all([
+      db
+        .select({
+          memberId: member.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          avatarColor: user.avatarColor,
+        })
+        .from(member)
+        .innerJoin(user, eq(member.userId, user.id))
+        .where(
+          and(
+            eq(member.groupId, groupId),
+            notInArray(member.status, ["pending_approval", "denied"])
+          )
+        ),
+      getOffScheduleSessions(groupId, membership.id, [], new Set()),
+    ]);
     return {
       data: {
         days: [],
-        members: [],
+        members: activeMembers.map((m) => ({
+          memberId: m.memberId,
+          firstName: m.firstName,
+          lastName: m.lastName,
+          avatarColor: m.avatarColor as AvatarColor,
+        })),
         windowRankings: [],
-        offScheduleSessions: [],
+        offScheduleSessions,
         excludedSessions: [],
         hasTimeslot,
       },
@@ -307,90 +422,6 @@ export async function getPurchaseTrackerData(
     .map(([day, data]) => ({ day, ...data }))
     .sort((a, b) => b.primaryScore - a.primaryScore);
 
-  // Find off-schedule sessions: sessions with purchases or reported prices
-  // by the current member that are NOT in any of the current user's combos.
-  // Also exclude sessions that appear in any group member's combo — those
-  // are still "on-schedule" and their purchase data is shown in the main
-  // tracker section (e.g. a session purchased then marked sold out, which
-  // drops it from combos on regeneration but it's still visible on the
-  // tracker via another member's combo).
-  const purchasedSessionCodes = await db
-    .select({ sessionId: ticketPurchase.sessionId })
-    .from(ticketPurchase)
-    .where(
-      and(
-        eq(ticketPurchase.groupId, groupId),
-        eq(ticketPurchase.purchasedByMemberId, membership.id)
-      )
-    );
-  const reportedSessionCodes = await db
-    .select({ sessionId: reportedPrice.sessionId })
-    .from(reportedPrice)
-    .where(
-      and(
-        eq(reportedPrice.groupId, groupId),
-        eq(reportedPrice.reportedByMemberId, membership.id)
-      )
-    );
-  const allTouchedCodes = new Set([
-    ...purchasedSessionCodes.map((r) => r.sessionId),
-    ...reportedSessionCodes.map((r) => r.sessionId),
-  ]);
-  // Remove sessions in the current user's combos
-  for (const code of sessionCodes) {
-    allTouchedCodes.delete(code);
-  }
-  // Also remove sessions that appear in ANY group member's combo
-  if (allTouchedCodes.size > 0) {
-    const groupComboSessionRows = await db
-      .select({ sessionId: comboSession.sessionId })
-      .from(comboSession)
-      .innerJoin(combo, eq(comboSession.comboId, combo.id))
-      .where(
-        and(
-          eq(combo.groupId, groupId),
-          inArray(comboSession.sessionId, [...allTouchedCodes])
-        )
-      );
-    for (const row of groupComboSessionRows) {
-      allTouchedCodes.delete(row.sessionId);
-    }
-  }
-  const offScheduleCodes = [...allTouchedCodes];
-
-  let offScheduleSessions: OffScheduleSession[] = [];
-  if (offScheduleCodes.length > 0) {
-    const offScheduleRows = await db
-      .select({
-        sessionCode: session.sessionCode,
-        sport: session.sport,
-        sessionType: session.sessionType,
-        sessionDescription: session.sessionDescription,
-        venue: session.venue,
-        zone: session.zone,
-        sessionDate: session.sessionDate,
-        startTime: session.startTime,
-        endTime: session.endTime,
-      })
-      .from(session)
-      .where(inArray(session.sessionCode, offScheduleCodes));
-
-    const offSchedulePurchaseData = await getPurchaseDataForSessions(
-      groupId,
-      membership.id,
-      offScheduleCodes
-    );
-
-    offScheduleSessions = offScheduleRows
-      .map((row) => ({
-        ...row,
-        purchases: offSchedulePurchaseData.purchases.get(row.sessionCode) ?? [],
-        reportedPrices:
-          offSchedulePurchaseData.reportedPrices.get(row.sessionCode) ?? [],
-      }))
-      .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate));
-  }
-
   // Excluded sessions: use the stored list from last generation, then check
   // current sold-out/OOB status (which may have changed since generation)
   const [memberRow] = await db
@@ -423,7 +454,10 @@ export async function getPurchaseTrackerData(
     .where(eq(soldOutSession.groupId, groupId));
 
   const oobRows = await db
-    .select({ sessionCode: outOfBudgetSession.sessionId })
+    .select({
+      sessionCode: outOfBudgetSession.sessionId,
+      createdAt: outOfBudgetSession.createdAt,
+    })
     .from(outOfBudgetSession)
     .where(
       and(
@@ -432,15 +466,40 @@ export async function getPurchaseTrackerData(
       )
     );
 
+  // Fetch group-level generation data for determining "at generation" status
+  const [groupRow] = await db
+    .select({
+      scheduleGeneratedAt: group.scheduleGeneratedAt,
+      soldOutCodesAtGeneration: group.soldOutCodesAtGeneration,
+    })
+    .from(group)
+    .where(eq(group.id, groupId))
+    .limit(1);
+  const scheduleGeneratedAt = groupRow?.scheduleGeneratedAt;
+  const soldOutAtGen = new Set(
+    (groupRow?.soldOutCodesAtGeneration as string[] | null) ?? []
+  );
+
   const onScheduleCodes = new Set(sessionCodes);
   const soldOutSet = new Set(soldOutRows.map((r) => r.sessionCode));
   const oobSet = new Set(oobRows.map((r) => r.sessionCode));
 
-  // Combine stored excluded codes + any new off-schedule sold-out/OOB marks
+  // Build createdAt map for OOB marks (used for per-member timestamp comparison)
+  const oobCreatedAt = new Map(
+    oobRows.map((r) => [r.sessionCode, r.createdAt])
+  );
+
+  // Excluded sessions = what was actually excluded from the last generation.
+  // Sources:
+  //   1. storedExcludedCodes — per-member snapshot of sessions excluded at generation
+  //   2. soldOutAtGen — group-wide sold-out codes recorded at generation time
+  // We do NOT add sessions from the current soldOutSet/oobSet that haven't been
+  // through a generation cycle yet. Those sessions haven't been "excluded" from
+  // any generation — the amber notification on the overview page handles alerting
+  // users that purchase data changed and regeneration may be needed.
   const excludedCodes = new Set([
     ...storedExcludedCodes,
-    ...[...soldOutSet].filter((c) => !onScheduleCodes.has(c)),
-    ...[...oobSet].filter((c) => !onScheduleCodes.has(c)),
+    ...[...soldOutAtGen].filter((c) => !onScheduleCodes.has(c)),
   ]);
 
   let excludedSessions: ExcludedSession[] = [];
@@ -470,13 +529,27 @@ export async function getPurchaseTrackerData(
       excludedSessionRows.map((r) => [r.sessionCode, r])
     );
 
+    const storedCodeSet = new Set(storedExcludedCodes);
     for (const [code, s] of sessionMap) {
+      const inSnapshot = storedCodeSet.has(code);
+      // For sessions in the member's stored snapshot, use the snapshot flags.
+      // For sessions NOT in the snapshot (e.g. sold-out sessions the member
+      // never had in their preferences), use the group-level
+      // soldOutCodesAtGeneration to determine "at generation" status. For OOB
+      // (per-member), use createdAt vs scheduleGeneratedAt as fallback.
+      const oobBeforeGen =
+        scheduleGeneratedAt && oobCreatedAt.has(code)
+          ? oobCreatedAt.get(code)! <= scheduleGeneratedAt
+          : false;
+
       excludedSessions.push({
         ...s,
         isSoldOut: soldOutSet.has(code),
         isOutOfBudget: oobSet.has(code),
-        wasSoldOut: storedSoldOutSet.has(code),
-        wasOutOfBudget: storedOobSet.has(code),
+        wasSoldOut: inSnapshot
+          ? storedSoldOutSet.has(code)
+          : soldOutAtGen.has(code),
+        wasOutOfBudget: inSnapshot ? storedOobSet.has(code) : oobBeforeGen,
         purchases: excludedPurchaseData.purchases.get(code) ?? [],
         reportedPrices: excludedPurchaseData.reportedPrices.get(code) ?? [],
       });
@@ -484,6 +557,13 @@ export async function getPurchaseTrackerData(
 
     excludedSessions.sort((a, b) => a.sessionCode.localeCompare(b.sessionCode));
   }
+
+  const offScheduleSessions = await getOffScheduleSessions(
+    groupId,
+    membership.id,
+    sessionCodes,
+    excludedCodes
+  );
 
   return {
     data: {
@@ -504,23 +584,12 @@ export async function getPurchaseTrackerData(
 
 // ── Session lookup for off-schedule purchases ───────────────────────────────
 
-export type LookedUpSession = {
-  sessionCode: string;
-  sport: string;
-  sessionType: string;
-  sessionDescription: string | null;
-  venue: string;
-  zone: string;
-  sessionDate: string;
-  startTime: string;
-  endTime: string;
-};
-
 export async function lookupSession(
-  sessionCode: string
-): Promise<{ data?: LookedUpSession; error?: string }> {
-  const user = await getCurrentUser();
-  if (!user) return { error: "Not authenticated." };
+  sessionCode: string,
+  groupId: string
+): Promise<{ data?: OffScheduleSession; error?: string }> {
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return { error: authError.error };
 
   const [row] = await db
     .select({
@@ -539,7 +608,21 @@ export async function lookupSession(
     .limit(1);
 
   if (!row) return { error: "Session not found." };
-  return { data: row };
+
+  const purchaseData = await getPurchaseDataForSessions(
+    groupId,
+    membership.id,
+    [sessionCode]
+  );
+
+  return {
+    data: {
+      ...row,
+      isSoldOut: purchaseData.soldOutSessions.has(sessionCode),
+      purchases: purchaseData.purchases.get(sessionCode) ?? [],
+      reportedPrices: purchaseData.reportedPrices.get(sessionCode) ?? [],
+    },
+  };
 }
 
 export type SessionSuggestion = {

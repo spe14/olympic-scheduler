@@ -197,6 +197,27 @@
       "when": 1774387681898,
       "tag": "0027_damp_leopardon",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1774400374317,
+      "tag": "0028_sold_out_codes_at_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1774499708518,
+      "tag": "0029_price_columns_to_real",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1774500590730,
+      "tag": "0030_price_ceiling_to_real",
+      "breakpoints": true
     }
   ]
 }

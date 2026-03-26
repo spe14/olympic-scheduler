@@ -1,11 +1,13 @@
 # LA 2028 Olympics Group Scheduler — API Design
 
+> **Note:** This document was written during initial design when the app planned to use Next.js API routes. The actual implementation uses **Next.js Server Actions** (`"use server"` functions in `actions.ts` files) for all mutations and most data fetching. The only remaining API routes are `/api/auth/callback` (OAuth) and a lightweight `/api/groups` GET endpoint. The request/response contracts and validation logic documented below remain accurate in spirit — the server actions implement equivalent functionality with the same guards and side effects.
+
 ## Overview
 
-This document defines the API routes for the LA 2028 Olympics Group Scheduler (Phase 1). Routes are organized by feature area corresponding to the app's screens and workflows.
+This document defines the API contracts for the LA 2028 Olympics Group Scheduler (Phase 1). Originally designed as REST API routes, these are implemented as Next.js Server Actions organized by feature area.
 
-**Framework:** Next.js API Routes
-**Auth:** Supabase Auth (handles signup/login directly; API routes assume authenticated user via session token)
+**Framework:** Next.js Server Actions (originally designed as API Routes)
+**Auth:** Supabase Auth (handles signup/login directly; server actions assume authenticated user via session token)
 
 ---
 
@@ -643,7 +645,7 @@ Window rankings are computed automatically during schedule generation (`POST /ap
 **Behavior:**
 
 - Rankings are recomputed whenever combos exist and date config changes
-- Auto-selects the top-scoring window (`selected = true`)
+- The top-scoring window is the default selection (selection is tracked client-side, not in the database)
 
 ### `GET /api/groups/:groupId/windows`
 
@@ -660,15 +662,13 @@ Returns existing window rankings. Used when returning to the page after rankings
       "id": "window-uuid",
       "start_date": "2028-07-18",
       "end_date": "2028-07-22",
-      "score": 48.5,
-      "selected": true
+      "score": 48.5
     },
     {
       "id": "window-uuid",
       "start_date": "2028-07-19",
       "end_date": "2028-07-23",
-      "score": 45.2,
-      "selected": false
+      "score": 45.2
     }
   ]
 }
@@ -680,20 +680,91 @@ Returns existing window rankings. Used when returning to the page after rankings
 - Rank is not stored — it's the display order.
 - `windows` array is empty if rankings haven't been computed yet.
 
-### `PUT /api/groups/:groupId/windows/:windowId/select`
+### Window Selection
 
-Switch the selected window. **Owner only.**
+Window selection is handled entirely client-side. The frontend defaults to the top-scoring window and allows users to switch between windows without any server-side state change. There is no `selected` column in the database.
+
+---
+
+## Profile Management
+
+> **Note:** These are implemented as Next.js Server Actions in `app/(main)/profile/actions.ts`.
+
+### Update Profile Field
+
+Update a single profile field (username, firstName, or lastName).
+
+**Validation:** Field-specific Zod schemas. Username uniqueness check.
+
+### Update Password
+
+Change the user's password.
+
+**Validation:** Current password must be correct. New password and confirm must match. Standard password rules (8-72 chars).
+
+### Update Avatar Color
+
+Change the user's avatar color.
+
+**Validation:** Must be one of the 8 defined avatar colors.
+
+### Delete Account
+
+Permanently delete the user's account.
+
+**Validation:** User must re-enter their password to confirm. User must not be the owner of any group (must transfer ownership or delete groups first).
 
 **Side effects:**
 
-- Sets `selected = false` on the previously selected window
-- Sets `selected = true` on the new window
+- Deletes Supabase auth user
+- Cascading delete removes all member records, preferences, buddy constraints, purchases, and other user data
 
-**Validation:**
+---
 
-- Current user must be the group owner
-- Window must belong to the group
-- Group phase must be `'schedule_review'`
+## Phase 2: Purchase Tracking
+
+> **Note:** These are implemented as Next.js Server Actions in `app/(main)/groups/[groupId]/schedule/purchase-actions.ts` and `app/(main)/groups/[groupId]/purchase-tracker/actions.ts`.
+
+### Purchase Timeslots
+
+Members declare when they plan to buy tickets by saving a timeslot window (start/end timestamps, status).
+
+- `saveTimeslot(groupId, data)` — Create or update a member's purchase timeslot
+- `getTimeslot(groupId)` — Fetch the current user's timeslot
+
+**Unique constraint:** One timeslot per member per group.
+
+### Recording Purchases
+
+Members record ticket purchases with assignees (who the tickets are for).
+
+- `recordPurchase(groupId, data)` — Record a ticket purchase with session, price, and assignee members
+- Duplicate purchase prevention: server-side check filters existing assignees
+
+**Side effects:** Updates `group.purchase_data_changed_at` to trigger regeneration notifications.
+
+### Sold-Out & Out-of-Budget Tracking
+
+- `reportSoldOut(groupId, sessionCode)` — Mark a session as sold out for the group
+- `reportOutOfBudget(groupId, sessionCode)` — Mark a session as out of budget for the current member
+- Undo variants to unmark sessions
+
+**Side effects:** Sold-out and OOB sessions are excluded from candidate sessions on algorithm re-generation (unless the member has already purchased tickets for that session). Updates `purchase_data_changed_at`.
+
+### Price Reporting
+
+- `reportPrice(groupId, data)` — Report observed ticket prices (min, max, optional comments)
+
+### Purchase Tracker Data
+
+- `getPurchaseTrackerData(groupId)` — Fetch dashboard data for the purchase tracker view
+- `getOffSchedulePurchases(groupId)` — Fetch purchases for sessions not in the current schedule
+
+### Member Removal by Owner
+
+- `removeMember(groupId, memberId)` — Owner removes a member from the group
+
+**Side effects:** Same cascading effects as member leaving (see `state-transitions.md`), including purchase data cleanup.
 
 ---
 
@@ -727,6 +798,18 @@ Switch the selected window. **Owner only.**
 | GET                          | `/api/groups/:groupId/schedule`                 | Group calendar (all members)                                      | schedule_review+            | No         |
 | GET                          | `/api/groups/:groupId/windows`                  | Get existing rankings                                             | schedule_review+            | No         |
 | PUT                          | `/api/groups/:groupId/windows/:windowId/select` | Switch selected window                                            | schedule_review             | **Yes**    |
+| **Profile**                  |                                                 |                                                                   |                             |            |
+| PUT                          | Profile field update (server action)            | Update username, firstName, or lastName                           | —                           | No         |
+| PUT                          | Password update (server action)                 | Change password                                                   | —                           | No         |
+| PUT                          | Avatar color update (server action)             | Change avatar color                                               | —                           | No         |
+| DELETE                       | Account deletion (server action)                | Delete account (requires password confirmation)                   | —                           | No         |
+| **Purchase Tracking**        |                                                 |                                                                   |                             |            |
+| PUT                          | Save timeslot (server action)                   | Create/update purchase timeslot                                   | schedule_review             | No         |
+| POST                         | Record purchase (server action)                 | Record a ticket purchase with assignees                           | schedule_review             | No         |
+| POST                         | Report sold out (server action)                 | Mark session as sold out for group                                | schedule_review             | No         |
+| POST                         | Report out of budget (server action)            | Mark session as out of budget for member                          | schedule_review             | No         |
+| POST                         | Report price (server action)                    | Report observed ticket prices                                     | schedule_review             | No         |
+| DELETE                       | Remove member (server action)                   | Owner removes a member from the group                             | Any                         | **Yes**    |
 
 ---
 

@@ -30,7 +30,7 @@ export default async function GroupLayout({
             The group you&apos;re looking for no longer exists.
           </p>
           <Link
-            href="/"
+            href="/groups"
             className="mt-6 inline-flex items-center gap-1.5 rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0080be]"
           >
             Back to Groups

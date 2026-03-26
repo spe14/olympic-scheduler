@@ -9,6 +9,7 @@ import {
   formatSessionTime,
   formatSessionDate,
   formatActionTimestamp,
+  formatPrice,
 } from "@/lib/utils";
 import {
   RANK_LABELS,
@@ -167,9 +168,9 @@ export default function SessionDetailModal({
                     <span className="text-sm font-medium text-slate-800">
                       {a.firstName} {a.lastName}
                     </span>
-                    {(a.pricePaid != null || p.pricePerTicket > 0) && (
+                    {a.pricePaid != null && (
                       <span className="text-xs text-emerald-600">
-                        ${a.pricePaid ?? p.pricePerTicket} / ticket
+                        {formatPrice(a.pricePaid)} / ticket
                       </span>
                     )}
                   </div>
@@ -226,11 +227,11 @@ export default function SessionDetailModal({
               <div key={i} className="text-xs text-slate-500">
                 <p>
                   {rp.minPrice != null && rp.maxPrice != null
-                    ? `$${rp.minPrice} – $${rp.maxPrice}`
+                    ? `${formatPrice(rp.minPrice)} – ${formatPrice(rp.maxPrice)}`
                     : rp.minPrice != null
-                      ? `From $${rp.minPrice}`
+                      ? `From ${formatPrice(rp.minPrice)}`
                       : rp.maxPrice != null
-                        ? `Up to $${rp.maxPrice}`
+                        ? `Up to ${formatPrice(rp.maxPrice)}`
                         : "Comment"}{" "}
                   reported by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
                   {formatActionTimestamp(rp.createdAt)}

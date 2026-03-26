@@ -109,22 +109,24 @@ Pre-loaded zone-to-zone driving and transit times. Raw minutes stored; gap compu
 
 ### `group`
 
-| Column                     | Type               | Constraints                       | Description                                                                             |
-| -------------------------- | ------------------ | --------------------------------- | --------------------------------------------------------------------------------------- |
-| `id`                       | `uuid`             | **PK**, DEFAULT gen_random_uuid() | Unique group ID                                                                         |
-| `name`                     | `text`             | NOT NULL                          | Group display name                                                                      |
-| `phase`                    | `group_phase_enum` | NOT NULL, DEFAULT 'preferences'   | Current phase of the group workflow                                                     |
-| `invite_code`              | `text`             | UNIQUE, NOT NULL                  | Human-readable invite code (e.g., "OLYMP-X7K2")                                         |
-| `date_mode`                | `date_mode_enum`   |                                   | 'consecutive' or 'specific' (NULL if deferred during group creation)                    |
-| `consecutive_days`         | `integer`          |                                   | Number of consecutive days (if date_mode = 'consecutive')                               |
-| `start_date`               | `date`             |                                   | Start date (if date_mode = 'specific')                                                  |
-| `end_date`                 | `date`             |                                   | End date (if date_mode = 'specific')                                                    |
-| `schedule_generated_at`    | `timestamp`        |                                   | When the algorithm last ran (NULL if never generated)                                   |
-| `departed_members`         | `jsonb`            | DEFAULT '[]'                      | Array of `{ name, departedAt, rejoinedAt? }` tracking members who left after generation |
-| `affected_buddy_members`   | `jsonb`            | DEFAULT '{}'                      | Map of `memberId → string[]` tracking members affected by buddy departures              |
-| `members_with_no_combos`   | `jsonb`            | DEFAULT '[]'                      | Array of member IDs that received no combos in the last generation                      |
-| `purchase_data_changed_at` | `timestamp`        |                                   | When purchase data last changed (for regeneration notification). Reset on generation.   |
-| `created_at`               | `timestamp`        | DEFAULT now()                     | Group creation time                                                                     |
+| Column                         | Type               | Constraints                       | Description                                                                                                              |
+| ------------------------------ | ------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `id`                           | `uuid`             | **PK**, DEFAULT gen_random_uuid() | Unique group ID                                                                                                          |
+| `name`                         | `text`             | NOT NULL                          | Group display name                                                                                                       |
+| `phase`                        | `group_phase_enum` | NOT NULL, DEFAULT 'preferences'   | Current phase of the group workflow                                                                                      |
+| `invite_code`                  | `text`             | UNIQUE, NOT NULL                  | Human-readable invite code (e.g., "OLYMP-X7K2")                                                                          |
+| `date_mode`                    | `date_mode_enum`   |                                   | 'consecutive' or 'specific' (NULL if deferred during group creation)                                                     |
+| `consecutive_days`             | `integer`          |                                   | Number of consecutive days (if date_mode = 'consecutive')                                                                |
+| `start_date`                   | `date`             |                                   | Start date (if date_mode = 'specific')                                                                                   |
+| `end_date`                     | `date`             |                                   | End date (if date_mode = 'specific')                                                                                     |
+| `schedule_generated_at`        | `timestamp`        |                                   | When the algorithm last ran (NULL if never generated)                                                                    |
+| `departed_members`             | `jsonb`            | DEFAULT '[]'                      | Array of `{ userId, name, departedAt, rejoinedAt?, wasPartOfSchedule? }` tracking members who left after generation      |
+| `affected_buddy_members`       | `jsonb`            | DEFAULT '{}'                      | Map of `memberId → string[]` tracking members affected by buddy departures                                               |
+| `members_with_no_combos`       | `jsonb`            | DEFAULT '[]'                      | Array of member IDs that received no combos in the last generation                                                       |
+| `non_convergence_members`      | `jsonb`            | DEFAULT '[]'                      | Array of member IDs affected by non-convergence (empty if converged). Used for amber warning display.                    |
+| `sold_out_codes_at_generation` | `jsonb`            | DEFAULT '[]'                      | Snapshot of sold-out session codes at the time of last generation. Used to detect new sold-out sessions post-generation. |
+| `purchase_data_changed_at`     | `timestamp`        |                                   | When purchase data last changed (for regeneration notification). Reset on generation.                                    |
+| `created_at`                   | `timestamp`        | DEFAULT now()                     | Group creation time                                                                                                      |
 
 **Notes:**
 
@@ -225,14 +227,13 @@ Scored N-day windows for the group. Regenerated when N-days changes or the algor
 | `start_date` | `date`      | NOT NULL                          | Window start date                                          |
 | `end_date`   | `date`      | NOT NULL                          | Window end date                                            |
 | `score`      | `real`      | NOT NULL                          | Group window score (total satisfaction - fairness penalty) |
-| `selected`   | `boolean`   | NOT NULL, DEFAULT false           | Whether this window is currently selected                  |
 | `created_at` | `timestamp` | DEFAULT now()                     | When ranking was computed                                  |
 
 **Notes:**
 
-- When window rankings are generated, the top-scoring window is automatically marked as `selected = true`.
-- Users can change the selected window without re-running the algorithm.
-- Only one window per group should have `selected = true` at a time.
+- Window selection is tracked client-side / by the frontend — there is no `selected` column on this table.
+- Windows are returned sorted by score descending; the top-scoring window is the default selection.
+- Users can switch the selected window without re-running the algorithm.
 
 ---
 
@@ -266,7 +267,7 @@ A planned purchase for a specific session + assignee member, with an optional pr
 | `member_id`          | `uuid`      | FK → `member.id`, NOT NULL            | The member who created the plan entry          |
 | `session_id`         | `text`      | FK → `session.session_code`, NOT NULL | The session                                    |
 | `assignee_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | The member the ticket is planned for           |
-| `price_ceiling`      | `integer`   |                                       | Maximum price willing to pay (NULL = no limit) |
+| `price_ceiling`      | `real`      |                                       | Maximum price willing to pay (NULL = no limit) |
 | `created_at`         | `timestamp` | DEFAULT now()                         | When the entry was created                     |
 | `updated_at`         | `timestamp` | DEFAULT now()                         | Last update time                               |
 
@@ -282,7 +283,7 @@ A recorded ticket purchase.
 | `group_id`               | `uuid`      | FK → `group.id`, NOT NULL             | The group                        |
 | `session_id`             | `text`      | FK → `session.session_code`, NOT NULL | The session                      |
 | `purchased_by_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | The member who bought the ticket |
-| `price_per_ticket`       | `integer`   | NOT NULL                              | Price paid per ticket            |
+| `price_per_ticket`       | `real`      |                                       | Price paid per ticket (nullable) |
 | `created_at`             | `timestamp` | DEFAULT now()                         | When the purchase was recorded   |
 | `updated_at`             | `timestamp` | DEFAULT now()                         | Last update time                 |
 
@@ -290,11 +291,11 @@ A recorded ticket purchase.
 
 Who the purchased tickets are for. One row per member assigned a ticket.
 
-| Column               | Type      | Constraints                       | Description                  |
-| -------------------- | --------- | --------------------------------- | ---------------------------- |
-| `ticket_purchase_id` | `uuid`    | **PK**, FK → `ticket_purchase.id` | The purchase                 |
-| `member_id`          | `uuid`    | **PK**, FK → `member.id`          | The member the ticket is for |
-| `price_paid`         | `integer` |                                   | Per-member price (nullable)  |
+| Column               | Type   | Constraints                       | Description                  |
+| -------------------- | ------ | --------------------------------- | ---------------------------- |
+| `ticket_purchase_id` | `uuid` | **PK**, FK → `ticket_purchase.id` | The purchase                 |
+| `member_id`          | `uuid` | **PK**, FK → `member.id`          | The member the ticket is for |
+| `price_paid`         | `real` |                                   | Per-member price (nullable)  |
 
 **Primary Key:** Composite (`ticket_purchase_id`, `member_id`)
 
@@ -302,13 +303,13 @@ Who the purchased tickets are for. One row per member assigned a ticket.
 
 Group-scoped tracking of sold-out sessions.
 
-| Column                  | Type        | Constraints                           | Description                 |
-| ----------------------- | ----------- | ------------------------------------- | --------------------------- |
-| `id`                    | `uuid`      | **PK**, DEFAULT gen_random_uuid()     | Unique ID                   |
-| `group_id`              | `uuid`      | FK → `group.id`, NOT NULL             | The group                   |
-| `session_id`            | `text`      | FK → `session.session_code`, NOT NULL | The session                 |
-| `reported_by_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | Who reported it as sold out |
-| `created_at`            | `timestamp` | DEFAULT now()                         | When it was reported        |
+| Column                  | Type        | Constraints                           | Description                                                                   |
+| ----------------------- | ----------- | ------------------------------------- | ----------------------------------------------------------------------------- |
+| `id`                    | `uuid`      | **PK**, DEFAULT gen_random_uuid()     | Unique ID                                                                     |
+| `group_id`              | `uuid`      | FK → `group.id`, NOT NULL             | The group                                                                     |
+| `session_id`            | `text`      | FK → `session.session_code`, NOT NULL | The session                                                                   |
+| `reported_by_member_id` | `uuid`      | FK → `member.id`, ON DELETE SET NULL  | Who reported it as sold out (nullable — set to NULL if reporter leaves group) |
+| `created_at`            | `timestamp` | DEFAULT now()                         | When it was reported                                                          |
 
 **Unique Constraint:** (`group_id`, `session_id`)
 
@@ -336,8 +337,8 @@ Price reports for sessions. Members can report multiple prices over time (no uni
 | `group_id`              | `uuid`      | FK → `group.id`, NOT NULL             | The group                                 |
 | `session_id`            | `text`      | FK → `session.session_code`, NOT NULL | The session                               |
 | `reported_by_member_id` | `uuid`      | FK → `member.id`, NOT NULL            | Who reported the price                    |
-| `min_price`             | `integer`   |                                       | Minimum price seen (nullable)             |
-| `max_price`             | `integer`   |                                       | Maximum price seen (nullable)             |
+| `min_price`             | `real`      |                                       | Minimum price seen (nullable)             |
+| `max_price`             | `real`      |                                       | Maximum price seen (nullable)             |
 | `comments`              | `text`      |                                       | Optional comments (200 char limit in app) |
 | `created_at`            | `timestamp` | DEFAULT now()                         | When the price was reported               |
 
@@ -432,7 +433,7 @@ Triggered when the owner generates schedules.
 | Member statuses                            | `member` — all members remain at `'preferences_set'` (no status change)                                                                                                                               |
 | Store excluded session snapshots           | `member.excluded_session_codes` — updated per member with sold-out/OOB sessions excluded from this generation                                                                                         |
 | Update group                               | `group` — `phase` → `'schedule_review'`, `schedule_generated_at` → now(), `purchase_data_changed_at` → null, `departed_members` → [], `affected_buddy_members` → {}, `members_with_no_combos` updated |
-| Compute window rankings                    | `window_ranking` — generate and insert ranked windows; auto-select top window (if date config is set)                                                                                                 |
+| Compute window rankings                    | `window_ranking` — generate and insert ranked windows (if date config is set)                                                                                                                         |
 
 ### When N-Days or Date Range Changes
 
@@ -442,18 +443,12 @@ Can happen at any point. Date config can be set during group creation or later. 
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Update group settings                        | `group` — update `date_mode`, `consecutive_days`, `start_date`, `end_date`                                                              |
 | Regenerate window rankings (if combos exist) | Delete and regenerate `window_ranking` rows for the group. Only possible after algorithm has run (combos must exist to compute scores). |
-| Auto-select top window                       | `window_ranking` — set `selected = true` on the highest-scoring window                                                                  |
-
-### When a User Switches the Selected Window
-
-| Action           | Tables Affected                                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------------------------------- |
-| Update selection | `window_ranking` — set `selected = false` on the previously selected window, `selected = true` on the new one |
 
 ### Computed-at-Display-Time Fields (No Storage Needed)
 
 These values are derived from stored data and computed when rendering the UI, not stored in the database:
 
+- **Selected window** — the frontend tracks which window the user has selected; the top-scoring window is the default
 - **Window rank** — derived from `window_ranking.score` ordering
 - **Buddy status display** — computed from `buddy_constraint` + `combo_session` overlap between members
 - **Rest days** — absence of a `combo` row for a member on a given day implies rest day
@@ -476,6 +471,6 @@ These values are derived from stored data and computed when rendering the UI, no
 | Travel data              | Raw minutes, not computed gaps                                            | Allows gap rule adjustments without re-seeding DB                                                                                                    |
 | Combo sessions           | Join table, not JSON                                                      | Need to query "which combos contain session X?"                                                                                                      |
 | Simplified state machine | `preferences` → `schedule_review`                                         | No confirmation step or `completed` phase. Members implicitly accept schedules; window rankings computed at generation, not after all confirmations. |
-| Window selection         | `selected` boolean on window_ranking                                      | Simple, users can switch without re-running algorithm                                                                                                |
+| Window selection         | Client-side; windows sorted by score                                      | Simple, users can switch without re-running algorithm                                                                                                |
 | Algorithm re-run         | Delete + regenerate all outputs                                           | Clean slate approach, no versioning complexity                                                                                                       |
 | Session exclusion        | Handled at generation time via sold-out/out-of-budget filtering           | No `excluded` column on session_preference. Exclusion snapshot stored in `member.excluded_session_codes` JSONB for display purposes.                 |

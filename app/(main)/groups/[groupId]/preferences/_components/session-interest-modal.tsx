@@ -45,7 +45,7 @@ export default function SessionInterestModal({
   }
 
   return (
-    <Modal title="Session Interest" onClose={onClose}>
+    <Modal title="Session Interest" onClose={onClose} size="lg">
       {/* Session info */}
       <div
         className="mb-5 space-y-0.5 rounded-lg p-3.5"
@@ -115,7 +115,7 @@ export default function SessionInterestModal({
               ?
             </button>
             {showInterestInfo && (
-              <div className="absolute bottom-full left-1/2 z-10 mb-2 w-72 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+              <div className="absolute bottom-full left-1/2 z-10 mb-2 w-60 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
                 <p className="mb-1.5 text-xs leading-relaxed text-slate-500">
                   How interested are you in attending this session?
                 </p>

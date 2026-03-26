@@ -711,6 +711,58 @@ describe("saveBuddies", () => {
     expect(result.error).toBe("Failed to save preferences. Please try again.");
   });
 
+  it("handles null affectedBuddyMembers gracefully (no update needed)", async () => {
+    mockActiveMember();
+    txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
+
+    const txSetMock = vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) }));
+    const txUpdateMock = vi.fn(() => ({ set: txSetMock }));
+    mockTransaction.mockImplementation(
+      (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          update: txUpdateMock,
+          delete: vi.fn(() => ({ where: vi.fn(() => Promise.resolve()) })),
+          insert: vi.fn(() => ({ values: vi.fn(() => Promise.resolve()) })),
+          select: vi.fn(() => ({
+            from: vi.fn(() => {
+              const result = txSelectResults.shift() ?? [
+                { affectedBuddyMembers: null },
+              ];
+              return {
+                where: vi.fn(() => ({
+                  limit: vi.fn(() => result),
+                  for: vi.fn(() => ({
+                    then(r: (v: unknown) => void) {
+                      r(result);
+                    },
+                  })),
+                  then(r: (v: unknown) => void) {
+                    r(result);
+                  },
+                })),
+                then(r: (v: unknown) => void) {
+                  r(result);
+                },
+              };
+            }),
+          })),
+        })
+    );
+
+    const result = await saveBuddies("group-1", {
+      minBuddies: 0,
+      buddies: [],
+    });
+
+    expect(result.success).toBe(true);
+    // Only one update call (for member preferences), no second for group affectedBuddyMembers
+    // because affected is {} (from ?? {}) and member-1 is not in it
+    expect(txSetMock).toHaveBeenCalledTimes(1);
+    expect(txSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({ minBuddies: 0 })
+    );
+  });
+
   it("clears member affectedBuddyMembers entry on save", async () => {
     mockActiveMember();
     txSelectResults.push([{ id: "member-1" }, { id: "member-2" }]);
@@ -1161,6 +1213,17 @@ describe("saveSessionPreferences", () => {
   it("returns error when sport rankings are empty", async () => {
     mockActiveMember({ preferenceStep: "sport_rankings" });
     txSelectResults.push([{ sportRankings: [] }]);
+
+    const result = await saveSessionPreferences("group-1", {
+      preferences: [{ sessionId: "s1", interest: "high" }],
+    });
+
+    expect(result.error).toBe("You must complete sport rankings first.");
+  });
+
+  it("returns error when sportRankings is null (not an array)", async () => {
+    mockActiveMember({ preferenceStep: "sport_rankings" });
+    txSelectResults.push([{ sportRankings: null }]);
 
     const result = await saveSessionPreferences("group-1", {
       preferences: [{ sessionId: "s1", interest: "high" }],

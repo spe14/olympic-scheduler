@@ -133,6 +133,14 @@ export function formatActionTimestamp(date: Date | string): string {
   });
 }
 
+/**
+ * Formats a numeric price as currency.
+ * Whole dollars show as "$88", cents show as "$88.50".
+ */
+export function formatPrice(amount: number): string {
+  return amount % 1 === 0 ? `$${amount}` : `$${amount.toFixed(2)}`;
+}
+
 // ── Shared collection helpers ───────────────────────────────────────────────
 
 /**

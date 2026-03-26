@@ -79,7 +79,9 @@ export default function GenerateScheduleSection() {
         group.scheduleGeneratedAt &&
         new Date(m.joinedAt) > new Date(group.scheduleGeneratedAt)
     );
-  const hasDepartedMembers = group.departedMembers.length > 0;
+  const hasDepartedMembers = group.departedMembers.some(
+    (d) => !d.rejoinedAt && d.wasPartOfSchedule !== false
+  );
   const hasNoCombos = group.membersWithNoCombos.length > 0;
   const hasPurchaseChanges = !!(
     group.purchaseDataChangedAt &&

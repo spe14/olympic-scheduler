@@ -10,6 +10,8 @@ import ConfirmMemberRemovalModal, {
   OwnerLeaveModal,
 } from "./confirm-member-removal-modal";
 import Tooltip from "@/components/tooltip";
+import TimeslotForm from "../schedule/_components/timeslot-form";
+import { useScrollLock } from "@/lib/use-scroll-lock";
 
 export default function GroupHeader({
   group,
@@ -32,6 +34,7 @@ export default function GroupHeader({
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaveLoading, setLeaveLoading] = useState(false);
   const [leaveError, setLeaveError] = useState("");
+  const [showTimeslot, setShowTimeslot] = useState(false);
 
   const activeCount = group.members.filter(
     (m) => m.status !== "pending_approval"
@@ -220,47 +223,77 @@ export default function GroupHeader({
           </svg>
           {dateDisplay}
         </Tooltip>
-        {group.myTimeslot && (
-          <>
-            <Sep />
-            <span className="flex items-center gap-1.5">
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              My Timeslot:{" "}
-              {new Date(group.myTimeslot.timeslotStart).toLocaleString(
-                undefined,
-                {
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                }
-              )}{" "}
-              &ndash;{" "}
-              {new Date(group.myTimeslot.timeslotEnd).toLocaleString(
-                undefined,
-                {
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                }
-              )}
-            </span>
-          </>
+        <Sep />
+        {group.myTimeslot ? (
+          <span className="flex items-center gap-1.5">
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            My Timeslot:{" "}
+            {new Date(group.myTimeslot.timeslotStart).toLocaleString("en-US", {
+              timeZone: "America/Los_Angeles",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}{" "}
+            PT &ndash;{" "}
+            {new Date(group.myTimeslot.timeslotEnd).toLocaleString("en-US", {
+              timeZone: "America/Los_Angeles",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}{" "}
+            PT
+            <button
+              onClick={() => setShowTimeslot(true)}
+              className="ml-0.5 rounded-md p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              title="Edit timeslot"
+            >
+              <PencilIcon size={14} />
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => setShowTimeslot(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-[#009de5]/10 px-2.5 py-1 text-sm font-medium text-[#009de5] transition-colors hover:bg-[#009de5]/20"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            Enter Purchase Timeslot
+          </button>
         )}
       </div>
+
+      {showTimeslot && (
+        <TimeslotModal
+          groupId={group.id}
+          myTimeslot={group.myTimeslot}
+          onClose={() => setShowTimeslot(false)}
+        />
+      )}
 
       {showLeaveModal &&
         (isOwner ? (
@@ -287,10 +320,12 @@ function Sep() {
   return <span className="text-slate-300">|</span>;
 }
 
-function PencilIcon() {
+function PencilIcon({ size }: { size?: number }) {
   return (
     <svg
-      className="h-5 w-5"
+      className={size ? undefined : "h-5 w-5"}
+      width={size}
+      height={size}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -325,6 +360,79 @@ function SettingsIcon() {
         d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
       />
     </svg>
+  );
+}
+
+function TimeslotModal({
+  groupId,
+  myTimeslot,
+  onClose,
+}: {
+  groupId: string;
+  myTimeslot: GroupDetail["myTimeslot"];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  useScrollLock();
+
+  const timeslotForForm = myTimeslot
+    ? {
+        id: "",
+        timeslotStart: new Date(myTimeslot.timeslotStart),
+        timeslotEnd: new Date(myTimeslot.timeslotEnd),
+      }
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-xl bg-white p-8 shadow-xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            {myTimeslot ? "Edit Purchase Timeslot" : "Enter Purchase Timeslot"}
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <TimeslotForm
+          groupId={groupId}
+          timeslot={timeslotForForm}
+          onSaved={() => {
+            onClose();
+            router.refresh();
+          }}
+        />
+      </div>
+    </div>
   );
 }
 

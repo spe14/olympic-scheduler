@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { setGlobalGuard } from "@/lib/navigation-guard-store";
+import { useScrollLock } from "@/lib/use-scroll-lock";
 
 type DirtyChecker = (() => string[]) | null;
 
@@ -35,6 +36,7 @@ export function NavigationGuardProvider({
   const pendingOnDiscard = useRef<(() => void) | null>(null);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [dirtyStepNames, setDirtyStepNames] = useState<string[]>([]);
+  useScrollLock(!!pendingHref);
 
   const setDirtyChecker = useCallback((checker: DirtyChecker) => {
     dirtyChecker.current = checker;

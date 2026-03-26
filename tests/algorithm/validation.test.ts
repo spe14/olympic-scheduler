@@ -177,4 +177,106 @@ describe("validatePostGeneration", () => {
     // SWM01 violation should be skipped (locked), GYM01 has Bob → no violation
     expect(violations.filter((v) => v.sessionCode === "SWM01")).toHaveLength(0);
   });
+
+  it("skips both minBuddies and hardBuddies checks on locked sessions while flagging unlocked ones", () => {
+    // Alice has a locked session (SWM01) that would violate both minBuddies and
+    // hardBuddies, plus an unlocked session (TRK01) that also violates both.
+    // Only the unlocked session should produce violations — the locked session's
+    // continue statement (line 50) must skip all constraint checks.
+    const members = [
+      makeMember("Alice", {
+        minBuddies: 1,
+        hardBuddies: ["Bob"],
+        lockedSessionCodes: ["SWM01"],
+      }),
+      makeMember("Bob"),
+    ];
+
+    const combos: DayComboResult[] = [
+      // Alice's primary has locked SWM01 and unlocked TRK01.
+      // Neither session has Bob attending, and Alice is the only attendee.
+      makeCombo("Alice", "2028-07-22", "primary", ["SWM01", "TRK01"]),
+      // Bob is on a completely different session
+      makeCombo("Bob", "2028-07-22", "primary", ["GYM01"]),
+    ];
+
+    const violations = validatePostGeneration(combos, members);
+
+    // SWM01 is locked → continue skips all checks → 0 violations for SWM01
+    expect(violations.filter((v) => v.sessionCode === "SWM01")).toHaveLength(0);
+
+    // TRK01 is NOT locked → should produce both minBuddies and hardBuddies violations
+    const trkViolations = violations.filter((v) => v.sessionCode === "TRK01");
+    expect(trkViolations).toHaveLength(2);
+    expect(trkViolations.map((v) => v.type).sort()).toEqual([
+      "hardBuddies",
+      "minBuddies",
+    ]);
+  });
+
+  it("skips validation entirely for member with no primary combos (e.g. in membersWithNoCombos)", () => {
+    // Alice has hardBuddies and minBuddies constraints but zero combos
+    // (she would be in membersWithNoCombos in the runner).
+    // Validation should produce zero violations because there are no
+    // primary combos to check.
+    const members: MemberData[] = [
+      makeMember("Alice", {
+        hardBuddies: ["Bob"],
+        minBuddies: 1,
+      }),
+      makeMember("Bob"),
+    ];
+
+    // Alice has NO combos at all (empty sessions → no combos generated)
+    // Bob has a primary combo
+    const combos: DayComboResult[] = [
+      makeCombo("Bob", "2028-07-22", "primary", ["SWM01"]),
+    ];
+
+    const violations = validatePostGeneration(combos, members);
+
+    // No violations because Alice has no primary combos to validate
+    expect(violations).toHaveLength(0);
+    // Specifically, no violations for Alice
+    expect(violations.filter((v) => v.memberId === "Alice")).toHaveLength(0);
+  });
+
+  it("does not validate backup combos, only primary combos", () => {
+    // Alice has minBuddies=1 and a session SWM01 only in her backup1.
+    // Bob does NOT have SWM01. But since SWM01 is in a backup (not primary),
+    // validation should not flag it.
+    const members: MemberData[] = [
+      makeMember("Alice", { minBuddies: 1 }),
+      makeMember("Bob"),
+    ];
+
+    const combos: DayComboResult[] = [
+      makeCombo("Alice", "2028-07-22", "primary", ["GYM01"]),
+      makeCombo("Alice", "2028-07-22", "backup1", ["SWM01"]),
+      makeCombo("Bob", "2028-07-22", "primary", ["GYM01"]),
+    ];
+
+    const violations = validatePostGeneration(combos, members);
+
+    // GYM01 in primary: Bob also has GYM01 → 1 other ≥ 1 → passes minBuddies
+    // SWM01 in backup1: not checked (only primaries are validated)
+    expect(violations).toHaveLength(0);
+  });
+
+  it("member not in members array is silently skipped", () => {
+    // A combo references a memberId that doesn't exist in the members array.
+    // The memberMap lookup returns undefined, so the combo is skipped.
+    const members: MemberData[] = [makeMember("Alice")];
+
+    const combos: DayComboResult[] = [
+      makeCombo("Alice", "2028-07-22", "primary", ["SWM01"]),
+      makeCombo("Ghost", "2028-07-22", "primary", ["SWM01"]),
+    ];
+
+    const violations = validatePostGeneration(combos, members);
+
+    // Alice: no constraints → no violations
+    // Ghost: memberMap.get("Ghost") = undefined → skipped (line 45 `if (!memberData) continue`)
+    expect(violations).toHaveLength(0);
+  });
 });

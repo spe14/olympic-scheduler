@@ -34,8 +34,20 @@ const LA_TRAVEL_ENTRIES: TravelEntry[] = [
     transitMinutes: 35,
   },
   {
+    originZone: "Downtown LA Zone",
+    destinationZone: "SoFi Stadium Zone",
+    drivingMinutes: 20,
+    transitMinutes: 35,
+  },
+  {
     originZone: "SoFi Stadium Zone",
     destinationZone: "Long Beach Zone",
+    drivingMinutes: 25,
+    transitMinutes: 50,
+  },
+  {
+    originZone: "Long Beach Zone",
+    destinationZone: "SoFi Stadium Zone",
     drivingMinutes: 25,
     transitMinutes: 50,
   },
@@ -46,8 +58,20 @@ const LA_TRAVEL_ENTRIES: TravelEntry[] = [
     transitMinutes: 60,
   },
   {
+    originZone: "Rose Bowl Zone",
+    destinationZone: "SoFi Stadium Zone",
+    drivingMinutes: 35,
+    transitMinutes: 60,
+  },
+  {
     originZone: "Downtown LA Zone",
     destinationZone: "Long Beach Zone",
+    drivingMinutes: 28,
+    transitMinutes: 45,
+  },
+  {
+    originZone: "Long Beach Zone",
+    destinationZone: "Downtown LA Zone",
     drivingMinutes: 28,
     transitMinutes: 45,
   },
@@ -58,8 +82,20 @@ const LA_TRAVEL_ENTRIES: TravelEntry[] = [
     transitMinutes: 25,
   },
   {
+    originZone: "Rose Bowl Zone",
+    destinationZone: "Downtown LA Zone",
+    drivingMinutes: 12,
+    transitMinutes: 25,
+  },
+  {
     originZone: "Long Beach Zone",
     destinationZone: "Rose Bowl Zone",
+    drivingMinutes: 42,
+    transitMinutes: 70,
+  },
+  {
+    originZone: "Rose Bowl Zone",
+    destinationZone: "Long Beach Zone",
     drivingMinutes: 42,
     transitMinutes: 70,
   },
@@ -70,8 +106,20 @@ const LA_TRAVEL_ENTRIES: TravelEntry[] = [
     transitMinutes: null,
   },
   {
+    originZone: "Trestles Beach Zone",
+    destinationZone: "SoFi Stadium Zone",
+    drivingMinutes: 75,
+    transitMinutes: null,
+  },
+  {
     originZone: "Downtown LA Zone",
     destinationZone: "Trestles Beach Zone",
+    drivingMinutes: 80,
+    transitMinutes: null,
+  },
+  {
+    originZone: "Trestles Beach Zone",
+    destinationZone: "Downtown LA Zone",
     drivingMinutes: 80,
     transitMinutes: null,
   },
@@ -82,7 +130,7 @@ const LA_TRAVEL_ENTRIES: TravelEntry[] = [
 // ---------------------------------------------------------------------------
 
 describe("buildTravelMatrix", () => {
-  it("creates bidirectional keys for each entry", () => {
+  it("creates a key for origin→destination only", () => {
     const entries: TravelEntry[] = [
       {
         originZone: "SoFi Stadium Zone",
@@ -95,8 +143,8 @@ describe("buildTravelMatrix", () => {
     const matrix = buildTravelMatrix(entries);
 
     expect(matrix.get("SoFi Stadium Zone|Downtown LA Zone")).toBe(20);
-    expect(matrix.get("Downtown LA Zone|SoFi Stadium Zone")).toBe(20);
-    expect(matrix.size).toBe(2);
+    expect(matrix.get("Downtown LA Zone|SoFi Stadium Zone")).toBeUndefined();
+    expect(matrix.size).toBe(1);
   });
 
   it("returns empty map for no entries", () => {
@@ -104,16 +152,38 @@ describe("buildTravelMatrix", () => {
     expect(matrix.size).toBe(0);
   });
 
-  it("handles multiple entries", () => {
+  it("handles multiple entries with both directions", () => {
     const matrix = buildTravelMatrix(LA_TRAVEL_ENTRIES);
 
-    // Each entry produces 2 keys
-    expect(matrix.size).toBe(LA_TRAVEL_ENTRIES.length * 2);
+    // Each entry produces 1 key
+    expect(matrix.size).toBe(LA_TRAVEL_ENTRIES.length);
 
     // Verify a few specific lookups
     expect(matrix.get("Long Beach Zone|Rose Bowl Zone")).toBe(42);
     expect(matrix.get("Rose Bowl Zone|Long Beach Zone")).toBe(42);
     expect(matrix.get("Downtown LA Zone|Rose Bowl Zone")).toBe(12);
+  });
+
+  it("preserves asymmetric driving times between directions", () => {
+    const entries: TravelEntry[] = [
+      {
+        originZone: "Zone A",
+        destinationZone: "Zone B",
+        drivingMinutes: 25,
+        transitMinutes: null,
+      },
+      {
+        originZone: "Zone B",
+        destinationZone: "Zone A",
+        drivingMinutes: 40,
+        transitMinutes: null,
+      },
+    ];
+
+    const matrix = buildTravelMatrix(entries);
+
+    expect(matrix.get("Zone A|Zone B")).toBe(25);
+    expect(matrix.get("Zone B|Zone A")).toBe(40);
   });
 });
 

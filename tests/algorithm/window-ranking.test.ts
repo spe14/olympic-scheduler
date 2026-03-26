@@ -369,6 +369,216 @@ describe("computeWindowRankings", () => {
     });
     expect(result).toEqual([]);
   });
+
+  it("returns empty array for consecutiveDays = 0", () => {
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([["2028-07-15", 10]]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 0,
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty for specific mode with startDate > endDate", () => {
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([["2028-07-15", 10]]),
+        },
+      ],
+      dateMode: "specific",
+      startDate: "2028-07-20",
+      endDate: "2028-07-15",
+    });
+    // daysInRange with start > end produces [], so scoreWindow gets empty days
+    expect(result).toHaveLength(1);
+    expect(result[0].score).toBe(0);
+  });
+
+  it("ignores backup scores for days with no primary score (resilience edge case)", () => {
+    // Member has backup scores on Jul 15 but no primary score for that day.
+    // The resilience calculation should skip this day (primary > 0 check fails).
+    // Two windows: Jul 14 (has primary+backup) and Jul 15 (only backup).
+    // The Jul 14 window should have better resilience because its coverage is counted.
+    const input: WindowRankingInput = {
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([["2028-07-14", 10]]),
+          dailyBackupScores: new Map([
+            ["2028-07-14", { b1: 8, b2: 6 }],
+            ["2028-07-15", { b1: 5, b2: 3 }], // orphaned backup — no primary
+          ]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 1,
+    };
+
+    const result = computeWindowRankings(input);
+
+    // Jul 14 window: baseScore=10, resilience = min((8+6)/(2*10), 1) = 0.7
+    const jul14 = result.find((r) => r.startDate === "2028-07-14");
+    expect(jul14).toBeDefined();
+    expect(jul14!.score).toBe(10);
+
+    // Jul 15 window: baseScore=0 (no primary), resilience irrelevant (no coverage)
+    const jul15 = result.find((r) => r.startDate === "2028-07-15");
+    expect(jul15).toBeDefined();
+    expect(jul15!.score).toBe(0);
+  });
+
+  it("stdev with single member produces zero fairness penalty", () => {
+    // Single member → stdev of a single value = 0 → no penalty
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([["2028-07-15", 42]]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 1,
+    });
+    const best = result.find((r) => r.startDate === "2028-07-15");
+    expect(best).toBeDefined();
+    // baseScore=42, stdev([42])=0, penalty=0, windowScore=42
+    expect(best!.score).toBe(42);
+  });
+
+  it("stdev produces zero penalty when all member window-scores are zero", () => {
+    // Multiple members with no scores on any day — stdev([0, 0]) = 0
+    // This exercises the stdev path with an all-zero values array,
+    // ensuring no fairness penalty is applied.
+    const result = computeWindowRankings({
+      memberScores: [
+        { memberId: "m1", dailyScores: new Map() },
+        { memberId: "m2", dailyScores: new Map() },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 3,
+    });
+    expect(result.length).toBe(17);
+    // All windows score 0 (base=0, stdev=0, penalty=0)
+    for (const w of result) {
+      expect(w.score).toBe(0);
+    }
+  });
+
+  it("window ending exactly at Olympic end is included (consecutiveDays=19)", () => {
+    // With 19 consecutive days and 19 Olympic days, only one window is possible.
+    // The window end equals olympicEnd, so the winEnd > olympicEnd break
+    // on line 157 does NOT fire — verifying the boundary condition.
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([
+            ["2028-07-12", 5],
+            ["2028-07-30", 5],
+          ]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 19,
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].startDate).toBe("2028-07-12");
+    expect(result[0].endDate).toBe("2028-07-30");
+    expect(result[0].score).toBe(10);
+  });
+
+  it("18-day window produces exactly 2 windows at Olympic boundary", () => {
+    // With 18 consecutive days and 19 Olympic days, exactly 2 windows:
+    // offset=0 (Jul 12-29) and offset=1 (Jul 13-30).
+    // Both end at or before olympicEnd (Jul 30), so the break never fires.
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([["2028-07-30", 100]]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 18,
+    });
+    expect(result).toHaveLength(2);
+    // The window containing Jul 30 (offset=1) should rank first
+    expect(result[0].startDate).toBe("2028-07-13");
+    expect(result[0].endDate).toBe("2028-07-30");
+    expect(result[0].score).toBe(100);
+  });
+
+  // ── requiredDays filtering ──────────────────────────────────────
+
+  it("filters windows to only those containing all required days", () => {
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([
+            ["2028-07-12", 10],
+            ["2028-07-13", 10],
+            ["2028-07-14", 10],
+            ["2028-07-15", 10],
+            ["2028-07-16", 10],
+          ]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 3,
+      requiredDays: ["2028-07-13", "2028-07-14"],
+    });
+    // Only windows that contain both Jul 13 and Jul 14 should be returned
+    for (const w of result) {
+      expect(w.startDate <= "2028-07-13").toBe(true);
+      expect(w.endDate >= "2028-07-14").toBe(true);
+    }
+    expect(result.length).toBeGreaterThan(0);
+    // Windows starting at Jul 15 or later cannot contain Jul 13
+    expect(result.find((r) => r.startDate > "2028-07-14")).toBeUndefined();
+  });
+
+  it("returns empty when no window can cover all required days", () => {
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([
+            ["2028-07-12", 10],
+            ["2028-07-30", 10],
+          ]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 3,
+      // Days too far apart for any 3-day window to cover both
+      requiredDays: ["2028-07-12", "2028-07-30"],
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("ignores requiredDays when undefined", () => {
+    const result = computeWindowRankings({
+      memberScores: [
+        {
+          memberId: "m1",
+          dailyScores: new Map([["2028-07-12", 10]]),
+        },
+      ],
+      dateMode: "consecutive",
+      consecutiveDays: 3,
+      requiredDays: undefined,
+    });
+    // Should return all 17 possible 3-day windows
+    expect(result.length).toBe(17);
+  });
 });
 
 describe("buildMemberScores", () => {
@@ -428,5 +638,46 @@ describe("buildMemberScores", () => {
     // backup1 was never set, so b1 defaults to 0
     expect(backups!.b1).toBe(0);
     expect(backups!.b2).toBe(40);
+  });
+
+  it("assigns backup2 score on a day that had no prior backup entry", () => {
+    // When backup2 arrives for a member-day that has no existing backupMap entry,
+    // a new {b1: 0, b2: 0} object is created and then b2 is set (line 106+115).
+    const combos = [
+      { memberId: "m1", day: "2028-07-14", rank: "primary", score: 50 },
+      // backup2 on a different day than any backup1
+      { memberId: "m1", day: "2028-07-15", rank: "primary", score: 60 },
+      { memberId: "m1", day: "2028-07-15", rank: "backup2", score: 25 },
+    ];
+
+    const result = buildMemberScores(combos);
+    const m1 = result.find((m) => m.memberId === "m1")!;
+
+    // Day 14: no backups at all
+    expect(m1.dailyBackupScores?.get("2028-07-14")).toBeUndefined();
+
+    // Day 15: only backup2 exists, b1 should default to 0
+    const day15Backups = m1.dailyBackupScores?.get("2028-07-15");
+    expect(day15Backups).toBeDefined();
+    expect(day15Backups!.b1).toBe(0);
+    expect(day15Backups!.b2).toBe(25);
+  });
+
+  it("handles multiple members with backup2 but no backup1 on different days", () => {
+    const combos = [
+      { memberId: "m1", day: "2028-07-12", rank: "primary", score: 100 },
+      { memberId: "m1", day: "2028-07-12", rank: "backup2", score: 30 },
+      { memberId: "m2", day: "2028-07-13", rank: "primary", score: 80 },
+      { memberId: "m2", day: "2028-07-13", rank: "backup1", score: 60 },
+      { memberId: "m2", day: "2028-07-13", rank: "backup2", score: 40 },
+    ];
+
+    const result = buildMemberScores(combos);
+
+    const m1 = result.find((m) => m.memberId === "m1")!;
+    expect(m1.dailyBackupScores?.get("2028-07-12")).toEqual({ b1: 0, b2: 30 });
+
+    const m2 = result.find((m) => m.memberId === "m2")!;
+    expect(m2.dailyBackupScores?.get("2028-07-13")).toEqual({ b1: 60, b2: 40 });
   });
 });

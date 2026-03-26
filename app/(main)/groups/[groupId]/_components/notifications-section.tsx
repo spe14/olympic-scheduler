@@ -100,24 +100,44 @@ export default function NotificationsSection() {
     });
   }
 
-  // 2. Departed Members (RED if not rejoined, BLUE if rejoined)
-  if (departedNotRejoined.length > 0) {
-    const names = departedNotRejoined.map((d) => d.name);
+  // 2a. Departed Members that were part of schedule (RED — schedules need regeneration)
+  const departedInSchedule = departedNotRejoined.filter(
+    (d) => d.wasPartOfSchedule !== false
+  );
+  if (departedInSchedule.length > 0) {
+    const names = departedInSchedule.map((d) => d.name);
     const suffix = isOwner
       ? "You will need to regenerate schedules."
       : "Wait for the group owner to regenerate schedules.";
-    // Use the most recent departedAt
-    const latestDepartedAt = departedNotRejoined.reduce((latest, d) =>
+    const latestDepartedAt = departedInSchedule.reduce((latest, d) =>
       new Date(d.departedAt) > new Date(latest.departedAt) ? d : latest
     );
     notifications.push({
-      key: "departed",
+      key: "departed-schedule",
       variant: "error",
       content: `${formatNameList(names)} recently left the group. ${suffix}`,
       timestamp: new Date(latestDepartedAt.departedAt),
     });
   }
 
+  // 2b. Departed Members that were NOT part of schedule (INFO — no regeneration needed)
+  const departedNotInSchedule = departedNotRejoined.filter(
+    (d) => d.wasPartOfSchedule === false
+  );
+  if (departedNotInSchedule.length > 0) {
+    const names = departedNotInSchedule.map((d) => d.name);
+    const latestDepartedAt = departedNotInSchedule.reduce((latest, d) =>
+      new Date(d.departedAt) > new Date(latest.departedAt) ? d : latest
+    );
+    notifications.push({
+      key: "departed-no-schedule",
+      variant: "info",
+      content: `${formatNameList(names)} recently left the group.`,
+      timestamp: new Date(latestDepartedAt.departedAt),
+    });
+  }
+
+  // 2c. Rejoined Members (INFO — separate from departures)
   for (const entry of departedRejoined) {
     notifications.push({
       key: `rejoined-${entry.name}`,
@@ -284,7 +304,7 @@ export default function NotificationsSection() {
     notifications.push({
       key: "updated-preferences",
       variant: "info",
-      content: `${formatNameList(sorted)} ${verb} updated ${possessive} preferences. These updates won't be reflected on your schedule until the owner regenerates schedules.`,
+      content: `${formatNameList(sorted)} ${verb} updated ${possessive} preferences. These updates won't be reflected on member schedules until ${isOwner ? "you regenerate schedules" : "the owner regenerates schedules"}.`,
       timestamp: latestStatusChanged ?? new Date(),
     });
   }
@@ -312,7 +332,7 @@ export default function NotificationsSection() {
   if (hasPurchaseChanges) {
     const message = isOwner
       ? "Some sessions have had their purchase status and/or availability updated since the last schedule generation. You may want to regenerate schedules to reflect these changes."
-      : "Some sessions have had their purchase status and/or availability updated since the last schedule generation. These changes won't be reflected on your schedule until the owner regenerates schedules.";
+      : "Some sessions have had their purchase status and/or availability updated since the last schedule generation. These changes won't be reflected on member schedules until the owner regenerates schedules.";
     notifications.push({
       key: "purchase-changes",
       variant: "warning",

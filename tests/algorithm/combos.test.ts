@@ -67,14 +67,32 @@ const LA_TRAVEL_ENTRIES: TravelEntry[] = [
     transitMinutes: 35,
   },
   {
+    originZone: "Downtown LA Zone",
+    destinationZone: "SoFi Stadium Zone",
+    drivingMinutes: 20,
+    transitMinutes: 35,
+  },
+  {
     originZone: "SoFi Stadium Zone",
     destinationZone: "Long Beach Zone",
     drivingMinutes: 25,
     transitMinutes: 50,
   },
   {
+    originZone: "Long Beach Zone",
+    destinationZone: "SoFi Stadium Zone",
+    drivingMinutes: 25,
+    transitMinutes: 50,
+  },
+  {
     originZone: "Downtown LA Zone",
     destinationZone: "Rose Bowl Zone",
+    drivingMinutes: 12,
+    transitMinutes: 25,
+  },
+  {
+    originZone: "Rose Bowl Zone",
+    destinationZone: "Downtown LA Zone",
     drivingMinutes: 12,
     transitMinutes: 25,
   },
@@ -257,6 +275,75 @@ describe("generateDayCombos", () => {
     // AAA01 sorts before BBB01 lexicographically
     expect(singles[0].sessions[0].sessionCode).toBe("AAA01");
     expect(singles[1].sessions[0].sessionCode).toBe("BBB01");
+  });
+
+  it("tie-breaks by session code when score, sessionCount, AND sportMultiplierSum are equal", () => {
+    // Two pairs of sessions where the pairs have identical score, sessionCount,
+    // and sportMultiplierSum but different session codes.
+    // Pair 1: ZZZ01 + ZZZ02, Pair 2: AAA01 + AAA02
+    // Both pairs: same sport (rank 1 → multiplier 2.0), same interest (high → 1.0)
+    // score = 2.0 + 2.0 = 4.0 each, sessionCount = 2 each, sportMultiplierSum = 4.0 each
+    // Tie-break: sorted first session code — "AAA01" < "ZZZ01"
+    const sA1 = makeSession("ZZZ01", {
+      sport: "Swimming",
+      interest: "high",
+      startTime: "08:00",
+      endTime: "09:00",
+    });
+    const sA2 = makeSession("ZZZ02", {
+      sport: "Swimming",
+      interest: "high",
+      startTime: "10:30",
+      endTime: "11:30",
+    });
+    const sB1 = makeSession("AAA01", {
+      sport: "Swimming",
+      interest: "high",
+      startTime: "13:00",
+      endTime: "14:00",
+    });
+    const sB2 = makeSession("AAA02", {
+      sport: "Swimming",
+      interest: "high",
+      startTime: "15:30",
+      endTime: "16:30",
+    });
+
+    const singleSportMember = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+    });
+
+    const combos = generateDayCombos(
+      [sA1, sA2, sB1, sB2],
+      emptyTravelMatrix,
+      singleSportMember,
+      emptySoftBuddyMap,
+      2 // maxPerDay = 2 to keep pair combos manageable
+    );
+
+    // Filter to 2-session combos with same score and same sportMultiplierSum
+    const pairs = combos.filter((c) => c.sessionCount === 2);
+    // Find the two pairs of interest
+    const zzzPair = pairs.find((c) =>
+      c.sessions.every((s) => s.sessionCode.startsWith("ZZZ"))
+    );
+    const aaaPair = pairs.find((c) =>
+      c.sessions.every((s) => s.sessionCode.startsWith("AAA"))
+    );
+
+    expect(zzzPair).toBeDefined();
+    expect(aaaPair).toBeDefined();
+    // Both should have identical score, sessionCount, and sportMultiplierSum
+    expect(aaaPair!.score).toBeCloseTo(zzzPair!.score);
+    expect(aaaPair!.sessionCount).toBe(zzzPair!.sessionCount);
+    expect(aaaPair!.sportMultiplierSum).toBeCloseTo(
+      zzzPair!.sportMultiplierSum
+    );
+
+    // AAA pair should come before ZZZ pair (lexicographic tie-break on first session code)
+    const aaaIdx = pairs.indexOf(aaaPair!);
+    const zzzIdx = pairs.indexOf(zzzPair!);
+    expect(aaaIdx).toBeLessThan(zzzIdx);
   });
 
   // --- Locked sessions ---
@@ -1269,5 +1356,26 @@ describe("assignRankedCombosWithForcedPrimary", () => {
     expect(result).toHaveLength(2);
     expect(result[1].rank).toBe("backup1");
     expect(result[1].sessionCodes).toEqual(["S2"]);
+  });
+
+  it("returns only forced primary when enhancedSortedCombos is empty", () => {
+    const primary = {
+      memberId: "A",
+      day: "2028-07-12",
+      rank: "primary" as const,
+      score: 5,
+      sessionCodes: ["S1"],
+    };
+
+    const result = assignRankedCombosWithForcedPrimary(
+      primary,
+      [],
+      "A",
+      "2028-07-12"
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(primary);
+    expect(result[0].rank).toBe("primary");
   });
 });

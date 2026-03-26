@@ -642,6 +642,8 @@ Full functionality available once `phase = "schedule_review"`.
 | Record Purchase (with assignees) | Per-assignee                  | Session LOCKED for each assignee — bypasses all constraints         |
 | Delete Purchase                  | Per-assignee                  | Assignees lose locked status (unless other purchases exist)         |
 | Report Price                     | Group-wide (informational)    | None                                                                |
+| Edit Reported Price              | Own reports only              | None                                                                |
+| Delete Reported Price            | Own reports only              | None                                                                |
 | Save Purchase Plan Entry         | Per-purchaser (informational) | None                                                                |
 
 ### Server-Side Purchase Guards

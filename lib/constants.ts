@@ -8,7 +8,7 @@ export const MAX_GROUPS_PER_USER = 10;
 
 // Session timeout constants (in seconds)
 export const MAX_SESSION_DURATION = 7 * 24 * 60 * 60; // 7 days
-export const INACTIVITY_TIMEOUT = 30 * 60; // 30 minutes
+export const INACTIVITY_TIMEOUT = 60 * 60; // 60 minutes
 
 export type AvatarColor =
   | "blue"

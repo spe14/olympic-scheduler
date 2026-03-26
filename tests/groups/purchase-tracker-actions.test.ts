@@ -151,9 +151,20 @@ vi.mock("@/lib/db/schema", () => ({
   soldOutSession: {
     groupId: "group_id",
     sessionId: "session_id",
+    reportedByMemberId: "reported_by_member_id",
   },
   outOfBudgetSession: {
     groupId: "group_id",
+    memberId: "member_id",
+    sessionId: "session_id",
+    createdAt: "created_at",
+  },
+  group: {
+    id: "id",
+    scheduleGeneratedAt: "schedule_generated_at",
+    soldOutCodesAtGeneration: "sold_out_codes_at_generation",
+  },
+  sessionInterest: {
     memberId: "member_id",
     sessionId: "session_id",
   },
@@ -208,6 +219,26 @@ function makeComboSession(comboId: string, code: string) {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("getPurchaseTrackerData", () => {
+  // Current query order in getPurchaseTrackerData (main path, combos > 0):
+  //  1. timeslotRow (purchaseTimeslot)
+  //  2. combos (combo, orderBy)
+  //  3. allComboSessions (comboSession.innerJoin)
+  //  4. interestedRows (comboSession.innerJoin chain)
+  //  5. (getPurchaseDataForSessions — mocked, 1st call: on-schedule)
+  //  6. activeMembers (member.innerJoin)
+  //  7. windows (windowRanking, orderBy)
+  //  8. memberRow (member — excluded section)
+  //  9. soldOutRows (soldOutSession — excluded section)
+  // 10. oobRows (outOfBudgetSession — excluded section)
+  // 11. groupRow (group — excluded section)
+  // 12. (conditional) excludedSessionRows (session)
+  // 13. (conditional) (getPurchaseDataForSessions — mocked: excluded)
+  // 14. purchasedSessionCodes (ticketPurchase — off-schedule, via Promise.all)
+  // 15. reportedSessionCodes (reportedPrice — off-schedule, via Promise.all)
+  // 16. soldOutReportedCodes (soldOutSession — off-schedule, via Promise.all)
+  // 17. (conditional) offScheduleRows (session)
+  // 18. (conditional) (getPurchaseDataForSessions — mocked: off-schedule)
+
   beforeEach(() => {
     vi.clearAllMocks();
     queryResults = [];
@@ -223,11 +254,25 @@ describe("getPurchaseTrackerData", () => {
     expect(mockSelect).not.toHaveBeenCalled();
   });
 
+  // No-combos early return path query order:
+  //  1. timeslotRow (purchaseTimeslot)
+  //  2. combos (combo) — empty → enters early return
+  //  3. activeMembers (member.innerJoin)  ─┐ Promise.all
+  //  4. purchasedSessionCodes (ticketPurchase) ─┐              ─┤
+  //  5. reportedSessionCodes (reportedPrice)    ├ Promise.all  ─┤
+  //  6. soldOutReportedCodes (soldOutSession)   ┘              ─┘
+  //  7. (conditional) offScheduleRows (session)
+  //  8. (conditional) (getPurchaseDataForSessions — off-schedule)
+
   it("returns empty data with hasTimeslot=false when no combos and no timeslot", async () => {
     mockGetMembership.mockResolvedValue(membership);
     queryResults = [
-      [], // timeslotRow — none
-      [], // combos — empty → early return
+      [], // 1. timeslotRow — none
+      [], // 2. combos — empty → early return
+      [], // 3. activeMembers
+      [], // 4. purchasedSessionCodes
+      [], // 5. reportedSessionCodes
+      [], // 6. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -246,14 +291,78 @@ describe("getPurchaseTrackerData", () => {
   it("returns hasTimeslot=true when user has a timeslot but no combos", async () => {
     mockGetMembership.mockResolvedValue(membership);
     queryResults = [
-      [{ id: "ts-1" }], // timeslotRow — exists
-      [], // combos — empty → early return
+      [{ id: "ts-1" }], // 1. timeslotRow — exists
+      [], // 2. combos — empty → early return
+      [], // 3. activeMembers
+      [], // 4. purchasedSessionCodes
+      [], // 5. reportedSessionCodes
+      [], // 6. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
 
     expect(result.data!.hasTimeslot).toBe(true);
     expect(result.data!.days).toEqual([]);
+  });
+
+  it("returns members and off-schedule sessions even with no combos", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    const offSchedulePurchaseData = emptyPurchaseData();
+    offSchedulePurchaseData.purchases.set("PRE-001", [
+      {
+        purchaseId: "p-pre",
+        buyerMemberId: "member-1",
+        buyerFirstName: "Alice",
+        buyerLastName: "Smith",
+        pricePerTicket: 75,
+        assignees: [],
+        createdAt: new Date(),
+      },
+    ]);
+    mockGetPurchaseDataForSessions.mockResolvedValueOnce(
+      offSchedulePurchaseData
+    );
+
+    queryResults = [
+      [], // 1. timeslotRow
+      [], // 2. combos — empty → early return
+      [
+        {
+          memberId: "member-1",
+          firstName: "Alice",
+          lastName: "Smith",
+          avatarColor: "blue",
+        },
+        {
+          memberId: "member-2",
+          firstName: "Bob",
+          lastName: "Jones",
+          avatarColor: "green",
+        },
+      ], // 3. activeMembers
+      [{ sessionId: "PRE-001" }], // 4. purchasedSessionCodes
+      [], // 5. reportedSessionCodes
+      [], // 6. soldOutReportedCodes
+      [makeSession("PRE-001", { sessionDate: "2028-07-20" })], // 7. offScheduleRows
+      // getPurchaseDataForSessions called (off-schedule)
+    ];
+
+    const result = await getPurchaseTrackerData("group-1");
+
+    expect(result.data!.days).toEqual([]);
+    expect(result.data!.windowRankings).toEqual([]);
+    expect(result.data!.excludedSessions).toEqual([]);
+
+    // Members are populated even without schedules
+    expect(result.data!.members).toHaveLength(2);
+    expect(result.data!.members[0].firstName).toBe("Alice");
+    expect(result.data!.members[1].firstName).toBe("Bob");
+
+    // Off-schedule sessions from prior purchases are returned
+    expect(result.data!.offScheduleSessions).toHaveLength(1);
+    expect(result.data!.offScheduleSessions[0].sessionCode).toBe("PRE-001");
+    expect(result.data!.offScheduleSessions[0].purchases).toHaveLength(1);
   });
 
   it("returns full tracker data with days grouped by combo rank", async () => {
@@ -307,20 +416,21 @@ describe("getPurchaseTrackerData", () => {
 
     queryResults = [
       [{ id: "ts-1" }], // 1. timeslotRow
-      combos, // 2. combos (orderBy)
-      comboSessions, // 3. allComboSessions (innerJoin → where)
-      interestedRows, // 4. interestedRows (innerJoin chain → where)
-      // getPurchaseDataForSessions is mocked
-      activeMembers, // 5. activeMembers (innerJoin → where)
-      windows, // 6. windows (orderBy)
-      [], // 7. purchasedSessionCodes
-      [], // 8. reportedSessionCodes
-      // allTouchedCodes empty → skip groupComboSessionRows
-      // offScheduleCodes empty → skip offScheduleRows
-      [{ excludedSessionCodes: null }], // 9. memberRow (limit)
-      [], // 10. soldOutRows
-      [], // 11. oobRows
+      combos, // 2. combos
+      comboSessions, // 3. allComboSessions
+      interestedRows, // 4. interestedRows
+      // getPurchaseDataForSessions mocked (on-schedule)
+      activeMembers, // 6. activeMembers
+      windows, // 7. windows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
       // excludedCodes empty → skip excludedSessionRows
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
+      // allTouchedCodes empty → skip offScheduleRows
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -360,8 +470,8 @@ describe("getPurchaseTrackerData", () => {
 
     queryResults = [
       [], // timeslotRow
-      [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }], // combos
-      [makeComboSession("c-1", "SES-001")], // comboSessions
+      [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
+      [makeComboSession("c-1", "SES-001")],
       [
         // interestedRows — duplicated member
         {
@@ -379,13 +489,15 @@ describe("getPurchaseTrackerData", () => {
           avatarColor: "blue",
         },
       ],
-      [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }], // activeMembers
+      [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [], // windows
-      [], // purchasedSessionCodes
-      [], // reportedSessionCodes
-      [{ excludedSessionCodes: null }], // memberRow
-      [], // soldOutRows
-      [], // oobRows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -411,26 +523,28 @@ describe("getPurchaseTrackerData", () => {
       },
     ]);
 
-    // First call returns empty (for on-schedule), second returns off-schedule data
+    // 1st: on-schedule, 2nd: off-schedule (no excluded sessions in this test)
     mockGetPurchaseDataForSessions
       .mockResolvedValueOnce(emptyPurchaseData())
       .mockResolvedValueOnce(offSchedulePurchaseData);
 
     queryResults = [
-      [], // timeslotRow
+      [], // 1. timeslotRow
       [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
-      [makeComboSession("c-1", "SES-001")], // comboSessions
+      [makeComboSession("c-1", "SES-001")],
       [], // interestedRows
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [], // windows
-      [{ sessionId: "OFF-001" }], // purchasedSessionCodes — not in combos
-      [], // reportedSessionCodes
-      [], // groupComboSessionRows — not in any combo
-      [makeSession("OFF-001", { sessionDate: "2028-07-20" })], // offScheduleRows
-      // getPurchaseDataForSessions called again (second mock value)
-      [{ excludedSessionCodes: null }], // memberRow
-      [], // soldOutRows
-      [], // oobRows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      // excludedCodes empty → skip excludedSessionRows
+      [{ sessionId: "OFF-001" }], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
+      [makeSession("OFF-001", { sessionDate: "2028-07-20" })], // 17. offScheduleRows
+      // getPurchaseDataForSessions called (2nd mock value: off-schedule)
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -439,64 +553,67 @@ describe("getPurchaseTrackerData", () => {
     expect(result.data!.offScheduleSessions[0].purchases).toHaveLength(1);
   });
 
-  it("excludes off-schedule sessions that appear in another member's combo", async () => {
+  it("keeps off-schedule sessions even if in another member's combo", async () => {
     mockGetMembership.mockResolvedValue(membership);
 
+    mockGetPurchaseDataForSessions
+      .mockResolvedValueOnce(emptyPurchaseData())
+      .mockResolvedValueOnce(emptyPurchaseData());
+
     queryResults = [
-      [], // timeslotRow
+      [], // 1. timeslotRow
       [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
-      [makeComboSession("c-1", "SES-001")], // comboSessions
+      [makeComboSession("c-1", "SES-001")],
       [], // interestedRows
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [], // windows
-      [{ sessionId: "OVERLAP-001" }], // purchasedSessionCodes
-      [], // reportedSessionCodes
-      [{ sessionId: "OVERLAP-001" }], // groupComboSessionRows — IS in another combo
-      // allTouchedCodes now empty after removal → no offScheduleRows query
-      [{ excludedSessionCodes: null }], // memberRow
-      [], // soldOutRows
-      [], // oobRows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [{ sessionId: "OVERLAP-001" }], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
+      [makeSession("OVERLAP-001", { sessionDate: "2028-07-20" })], // 17. offScheduleRows
     ];
 
     const result = await getPurchaseTrackerData("group-1");
-    expect(result.data!.offScheduleSessions).toHaveLength(0);
+    expect(result.data!.offScheduleSessions).toHaveLength(1);
+    expect(result.data!.offScheduleSessions[0].sessionCode).toBe("OVERLAP-001");
   });
 
   it("handles excluded sessions with stored snapshot (new format)", async () => {
     mockGetMembership.mockResolvedValue(membership);
 
     const excludedPurchaseData = emptyPurchaseData();
+    // 1st: on-schedule, 2nd: excluded (no off-schedule in this test)
     mockGetPurchaseDataForSessions
-      .mockResolvedValueOnce(emptyPurchaseData()) // for on-schedule
-      .mockResolvedValueOnce(excludedPurchaseData); // for excluded
+      .mockResolvedValueOnce(emptyPurchaseData())
+      .mockResolvedValueOnce(excludedPurchaseData);
 
     queryResults = [
-      [], // timeslotRow
+      [], // 1. timeslotRow
       [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
-      [makeComboSession("c-1", "SES-001")], // comboSessions
+      [makeComboSession("c-1", "SES-001")],
       [], // interestedRows
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [], // windows
-      [], // purchasedSessionCodes
-      [], // reportedSessionCodes
-      // allTouchedCodes empty → no groupComboSessionRows
       [
         {
           excludedSessionCodes: [
-            // memberRow (new format)
             { code: "EXC-001", soldOut: true, outOfBudget: false },
             { code: "EXC-002", soldOut: false, outOfBudget: true },
           ],
         },
-      ],
-      [{ sessionCode: "EXC-001" }], // soldOutRows (still sold out)
-      [], // oobRows (EXC-002 no longer OOB)
-      [
-        // excludedSessionRows
-        makeSession("EXC-001"),
-        makeSession("EXC-002"),
-      ],
-      // getPurchaseDataForSessions called (second mock value)
+      ], // 8. memberRow (new format)
+      [{ sessionCode: "EXC-001" }], // 9. soldOutRows (still sold out)
+      [], // 10. oobRows (EXC-002 no longer OOB)
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [makeSession("EXC-001"), makeSession("EXC-002")], // 12. excludedSessionRows
+      // getPurchaseDataForSessions called (2nd mock: excluded)
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -522,18 +639,21 @@ describe("getPurchaseTrackerData", () => {
       .mockResolvedValueOnce(emptyPurchaseData());
 
     queryResults = [
-      [], // timeslotRow
+      [], // 1. timeslotRow
       [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
       [makeComboSession("c-1", "SES-001")],
       [], // interestedRows
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [], // windows
-      [], // purchasedSessionCodes
-      [], // reportedSessionCodes
-      [{ excludedSessionCodes: ["LEGACY-001"] }], // memberRow (old string[] format)
-      [], // soldOutRows
-      [], // oobRows
-      [makeSession("LEGACY-001")], // excludedSessionRows
+      [{ excludedSessionCodes: ["LEGACY-001"] }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [makeSession("LEGACY-001")], // 12. excludedSessionRows
+      // getPurchaseDataForSessions called (2nd mock: excluded)
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -545,7 +665,7 @@ describe("getPurchaseTrackerData", () => {
     expect(excluded[0].wasOutOfBudget).toBe(false);
   });
 
-  it("includes new sold-out sessions not in combos as excluded", async () => {
+  it("includes sold-out-at-generation sessions not in combos as excluded", async () => {
     mockGetMembership.mockResolvedValue(membership);
 
     mockGetPurchaseDataForSessions
@@ -553,25 +673,33 @@ describe("getPurchaseTrackerData", () => {
       .mockResolvedValueOnce(emptyPurchaseData());
 
     queryResults = [
-      [], // timeslotRow
+      [], // 1. timeslotRow
       [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
       [makeComboSession("c-1", "SES-001")],
       [], // interestedRows
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [], // windows
-      [], // purchasedSessionCodes
-      [], // reportedSessionCodes
-      [{ excludedSessionCodes: null }], // memberRow — no stored excluded
-      [{ sessionCode: "NEW-SOLD" }], // soldOutRows — newly sold out
-      [], // oobRows
-      [makeSession("NEW-SOLD")], // excludedSessionRows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [{ sessionCode: "NEW-SOLD" }], // 9. soldOutRows — currently sold out
+      [], // 10. oobRows
+      [
+        {
+          scheduleGeneratedAt: null,
+          soldOutCodesAtGeneration: ["NEW-SOLD"],
+        },
+      ], // 11. groupRow — NEW-SOLD was sold out at generation
+      [makeSession("NEW-SOLD")], // 12. excludedSessionRows
+      // getPurchaseDataForSessions called (2nd mock: excluded)
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
     expect(result.data!.excludedSessions).toHaveLength(1);
     expect(result.data!.excludedSessions[0].sessionCode).toBe("NEW-SOLD");
     expect(result.data!.excludedSessions[0].isSoldOut).toBe(true);
-    expect(result.data!.excludedSessions[0].wasSoldOut).toBe(false); // not in stored snapshot
+    expect(result.data!.excludedSessions[0].wasSoldOut).toBe(true);
   });
 
   it("does not count on-schedule sessions as excluded even if sold out", async () => {
@@ -584,12 +712,14 @@ describe("getPurchaseTrackerData", () => {
       [],
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [],
-      [],
-      [],
-      [{ excludedSessionCodes: null }],
-      [{ sessionCode: "SES-001" }], // SES-001 is sold out BUT is in combos
-      [],
-      // SES-001 is on-schedule, so it shouldn't appear as excluded
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [{ sessionCode: "SES-001" }], // 9. soldOutRows — SES-001 sold out
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      // SES-001 is on-schedule → excluded from soldOutAtGen filter → no excludedSessionRows
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -613,11 +743,13 @@ describe("getPurchaseTrackerData", () => {
       [],
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       windows,
-      [],
-      [],
-      [{ excludedSessionCodes: null }],
-      [],
-      [],
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -637,11 +769,13 @@ describe("getPurchaseTrackerData", () => {
       [],
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [],
-      [],
-      [],
-      [{ excludedSessionCodes: null }],
-      [],
-      [],
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -664,11 +798,13 @@ describe("getPurchaseTrackerData", () => {
       [],
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [],
-      [],
-      [],
-      [{ excludedSessionCodes: null }],
-      [],
-      [],
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -689,16 +825,116 @@ describe("getPurchaseTrackerData", () => {
       [],
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [],
-      [{ sessionId: "SES-001" }], // purchased SES-001 — but it's in combos
-      [],
-      // SES-001 removed from allTouchedCodes by the delete loop → no off-schedule query
-      [{ excludedSessionCodes: null }],
-      [],
-      [],
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [{ sessionId: "SES-001" }], // 14. purchasedSessionCodes — in combos
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
+      // SES-001 removed by the delete loop → no offScheduleRows
     ];
 
     const result = await getPurchaseTrackerData("group-1");
     expect(result.data!.offScheduleSessions).toHaveLength(0);
+  });
+
+  it("includes sessions from reported prices in off-schedule list", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    mockGetPurchaseDataForSessions
+      .mockResolvedValueOnce(emptyPurchaseData())
+      .mockResolvedValueOnce(emptyPurchaseData());
+
+    queryResults = [
+      [], // 1. timeslotRow
+      [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
+      [makeComboSession("c-1", "SES-001")],
+      [], // interestedRows
+      [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
+      [], // windows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [], // 14. purchasedSessionCodes — empty
+      [{ sessionId: "REPORTED-001" }], // 15. reportedSessionCodes — has a reported price
+      [], // 16. soldOutReportedCodes
+      [makeSession("REPORTED-001", { sessionDate: "2028-07-22" })], // 17. offScheduleRows
+    ];
+
+    const result = await getPurchaseTrackerData("group-1");
+    expect(result.data!.offScheduleSessions).toHaveLength(1);
+    expect(result.data!.offScheduleSessions[0].sessionCode).toBe(
+      "REPORTED-001"
+    );
+  });
+
+  it("includes sessions from sold-out reports in off-schedule list", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    mockGetPurchaseDataForSessions
+      .mockResolvedValueOnce(emptyPurchaseData())
+      .mockResolvedValueOnce(emptyPurchaseData());
+
+    queryResults = [
+      [], // 1. timeslotRow
+      [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
+      [makeComboSession("c-1", "SES-001")],
+      [], // interestedRows
+      [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
+      [], // windows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [], // 14. purchasedSessionCodes — empty
+      [], // 15. reportedSessionCodes — empty
+      [{ sessionId: "SOLDOUT-RPT-001" }], // 16. soldOutReportedCodes — has a sold-out report
+      [makeSession("SOLDOUT-RPT-001", { sessionDate: "2028-07-23" })], // 17. offScheduleRows
+    ];
+
+    const result = await getPurchaseTrackerData("group-1");
+    expect(result.data!.offScheduleSessions).toHaveLength(1);
+    expect(result.data!.offScheduleSessions[0].sessionCode).toBe(
+      "SOLDOUT-RPT-001"
+    );
+  });
+
+  it("combines purchases, reported prices, and sold-out reports into off-schedule set", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    mockGetPurchaseDataForSessions
+      .mockResolvedValueOnce(emptyPurchaseData())
+      .mockResolvedValueOnce(emptyPurchaseData());
+
+    queryResults = [
+      [], // 1. timeslotRow
+      [{ comboId: "c-1", day: "2028-07-15", rank: "primary", score: 90 }],
+      [makeComboSession("c-1", "SES-001")],
+      [], // interestedRows
+      [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
+      [], // windows
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [{ sessionId: "BUY-001" }], // 14. purchasedSessionCodes
+      [{ sessionId: "RPT-001" }], // 15. reportedSessionCodes
+      [{ sessionId: "SO-001" }], // 16. soldOutReportedCodes
+      [
+        makeSession("BUY-001", { sessionDate: "2028-07-20" }),
+        makeSession("RPT-001", { sessionDate: "2028-07-21" }),
+        makeSession("SO-001", { sessionDate: "2028-07-22" }),
+      ], // 17. offScheduleRows
+    ];
+
+    const result = await getPurchaseTrackerData("group-1");
+    expect(result.data!.offScheduleSessions).toHaveLength(3);
+    // Sorted by sessionDate
+    expect(result.data!.offScheduleSessions[0].sessionCode).toBe("BUY-001");
+    expect(result.data!.offScheduleSessions[1].sessionCode).toBe("RPT-001");
+    expect(result.data!.offScheduleSessions[2].sessionCode).toBe("SO-001");
   });
 
   it("sorts off-schedule sessions by sessionDate", async () => {
@@ -715,16 +951,17 @@ describe("getPurchaseTrackerData", () => {
       [],
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [],
-      [{ sessionId: "OFF-B" }, { sessionId: "OFF-A" }], // two off-schedule purchases
-      [],
-      [], // groupComboSessionRows — neither in any combo
+      [{ excludedSessionCodes: null }], // 8. memberRow
+      [], // 9. soldOutRows
+      [], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [{ sessionId: "OFF-B" }, { sessionId: "OFF-A" }], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
       [
         makeSession("OFF-B", { sessionDate: "2028-07-25" }),
         makeSession("OFF-A", { sessionDate: "2028-07-20" }),
-      ],
-      [{ excludedSessionCodes: null }],
-      [],
-      [],
+      ], // 17. offScheduleRows
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -734,7 +971,7 @@ describe("getPurchaseTrackerData", () => {
     expect(result.data!.offScheduleSessions[1].sessionCode).toBe("OFF-B");
   });
 
-  it("includes new OOB sessions not in combos as excluded", async () => {
+  it("includes OOB sessions from snapshot as excluded", async () => {
     mockGetMembership.mockResolvedValue(membership);
 
     mockGetPurchaseDataForSessions
@@ -748,12 +985,21 @@ describe("getPurchaseTrackerData", () => {
       [],
       [{ memberId: "m-1", firstName: "A", lastName: "S", avatarColor: "blue" }],
       [],
-      [],
-      [],
-      [{ excludedSessionCodes: null }],
-      [],
-      [{ sessionCode: "OOB-001" }], // newly OOB, not in combos
-      [makeSession("OOB-001")],
+      [
+        {
+          excludedSessionCodes: [
+            { code: "OOB-001", soldOut: false, outOfBudget: true },
+          ],
+        },
+      ], // 8. memberRow — OOB-001 in snapshot
+      [], // 9. soldOutRows
+      [{ sessionCode: "OOB-001", createdAt: new Date("2028-07-01") }], // 10. oobRows
+      [{ scheduleGeneratedAt: null, soldOutCodesAtGeneration: null }], // 11. groupRow
+      [makeSession("OOB-001")], // 12. excludedSessionRows
+      // getPurchaseDataForSessions called (2nd mock: excluded)
+      [], // 14. purchasedSessionCodes
+      [], // 15. reportedSessionCodes
+      [], // 16. soldOutReportedCodes
     ];
 
     const result = await getPurchaseTrackerData("group-1");
@@ -767,24 +1013,27 @@ describe("lookupSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryResults = [];
+    mockGetPurchaseDataForSessions.mockResolvedValue(emptyPurchaseData());
   });
 
-  it("returns error when not authenticated", async () => {
-    mockGetCurrentUser.mockResolvedValue(null);
-    const result = await lookupSession("SES-001");
-    expect(result).toEqual({ error: "Not authenticated." });
+  it("returns error when not a group member", async () => {
+    mockGetMembership.mockResolvedValue(null);
+    const result = await lookupSession("SES-001", "group-1");
+    expect(result).toEqual({
+      error: "You are not an active member of this group.",
+    });
     expect(mockSelect).not.toHaveBeenCalled();
   });
 
   it("returns error when session not found", async () => {
-    mockGetCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockGetMembership.mockResolvedValue({ id: "member-1" });
     queryResults = [[]];
-    const result = await lookupSession("INVALID-CODE");
+    const result = await lookupSession("INVALID-CODE", "group-1");
     expect(result).toEqual({ error: "Session not found." });
   });
 
-  it("returns session data when found", async () => {
-    mockGetCurrentUser.mockResolvedValue({ id: "user-1" });
+  it("returns session data with purchases and prices when found", async () => {
+    mockGetMembership.mockResolvedValue({ id: "member-1" });
     const sessionData = {
       sessionCode: "SWM-101",
       sport: "Swimming",
@@ -796,12 +1045,36 @@ describe("lookupSession", () => {
       startTime: "09:00",
       endTime: "11:00",
     };
+    const purchaseData = emptyPurchaseData();
+    purchaseData.purchases.set("SWM-101", [
+      {
+        purchaseId: "p-1",
+        buyerMemberId: "member-1",
+        buyerFirstName: "Alice",
+        buyerLastName: "A",
+        pricePerTicket: 150,
+        assignees: [],
+        createdAt: new Date("2028-07-01"),
+      },
+    ]);
+    purchaseData.soldOutSessions.add("SWM-101");
+    mockGetPurchaseDataForSessions.mockResolvedValue(purchaseData);
     queryResults = [[sessionData]];
 
-    const result = await lookupSession("SWM-101");
+    const result = await lookupSession("SWM-101", "group-1");
 
     expect(result.error).toBeUndefined();
-    expect(result.data).toEqual(sessionData);
+    expect(result.data).toEqual({
+      ...sessionData,
+      isSoldOut: true,
+      purchases: purchaseData.purchases.get("SWM-101"),
+      reportedPrices: [],
+    });
+    expect(mockGetPurchaseDataForSessions).toHaveBeenCalledWith(
+      "group-1",
+      "member-1",
+      ["SWM-101"]
+    );
   });
 });
 

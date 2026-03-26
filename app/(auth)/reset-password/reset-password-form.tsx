@@ -44,8 +44,8 @@ export default function ResetPasswordForm() {
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500">
               <span className="text-sm font-bold text-white">28</span>
             </div>
-            <span className="text-sm font-medium uppercase tracking-widest text-[#009de5]/60">
-              LA 2028 Scheduler
+            <span className="font-[family-name:var(--font-pacifico)] text-xl text-[#009de5]/60">
+              collaboly
             </span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-[#009de5]">

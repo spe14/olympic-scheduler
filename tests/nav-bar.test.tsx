@@ -39,6 +39,10 @@ vi.mock("@/components/user-avatar", () => ({
   default: () => <div data-testid="user-avatar" />,
 }));
 
+vi.mock("@/components/medal-icon", () => ({
+  default: () => <svg data-testid="medal-icon" />,
+}));
+
 const defaultProps = {
   firstName: "Jane",
   lastName: "Doe",
@@ -73,19 +77,46 @@ describe("NavBar navigation guards", () => {
     setGlobalGuard(null);
   });
 
-  // ── Home link ───────────────────────────────────────────────────
+  // ── Brand / layout ─────────────────────────────────────────────
 
-  describe("home link", () => {
+  describe("brand and layout", () => {
+    it("renders brand name and medal icon", () => {
+      render(<NavBar {...defaultProps} />);
+
+      expect(screen.getByText("collaboly")).toBeTruthy();
+      expect(screen.getByTestId("medal-icon")).toBeTruthy();
+    });
+
+    it("renders My Groups and About nav links", () => {
+      render(<NavBar {...defaultProps} />);
+
+      const groupsLink = screen.getByText("My Groups").closest("a")!;
+      expect(groupsLink.getAttribute("href")).toBe("/groups");
+
+      const aboutLink = screen.getByText("About").closest("a")!;
+      expect(aboutLink.getAttribute("href")).toBe("/about");
+    });
+
+    it("displays username in avatar button", () => {
+      render(<NavBar {...defaultProps} />);
+
+      expect(screen.getByText("@janedoe")).toBeTruthy();
+    });
+  });
+
+  // ── My Groups link ────────────────────────────────────────────
+
+  describe("My Groups link", () => {
     it("navigates when no guard is registered", () => {
       render(<NavBar {...defaultProps} />);
 
-      const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
+      const link = screen.getByText("My Groups").closest("a")!;
       const clickEvent = new MouseEvent("click", {
         bubbles: true,
         cancelable: true,
       });
       act(() => {
-        homeLink.dispatchEvent(clickEvent);
+        link.dispatchEvent(clickEvent);
       });
 
       expect(clickEvent.defaultPrevented).toBe(false);
@@ -95,13 +126,13 @@ describe("NavBar navigation guards", () => {
       setGlobalGuard(() => true);
       render(<NavBar {...defaultProps} />);
 
-      const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
+      const link = screen.getByText("My Groups").closest("a")!;
       const clickEvent = new MouseEvent("click", {
         bubbles: true,
         cancelable: true,
       });
       act(() => {
-        homeLink.dispatchEvent(clickEvent);
+        link.dispatchEvent(clickEvent);
       });
 
       expect(clickEvent.defaultPrevented).toBe(false);
@@ -112,14 +143,44 @@ describe("NavBar navigation guards", () => {
       setGlobalGuard(mockGuard);
       render(<NavBar {...defaultProps} />);
 
-      const homeLink = screen.getByText("LA 2028 Scheduler").closest("a")!;
-      fireEvent.click(homeLink);
+      const link = screen.getByText("My Groups").closest("a")!;
+      fireEvent.click(link);
 
-      expect(mockGuard).toHaveBeenCalledWith("/", undefined);
+      expect(mockGuard).toHaveBeenCalledWith("/groups", undefined);
     });
   });
 
-  // ── Profile link ────────────────────────────────────────────────
+  // ── About link ────────────────────────────────────────────────
+
+  describe("About link", () => {
+    it("navigates when no guard is registered", () => {
+      render(<NavBar {...defaultProps} />);
+
+      const link = screen.getByText("About").closest("a")!;
+      const clickEvent = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        link.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    it("prevents navigation when guard blocks (unsaved changes)", () => {
+      const mockGuard = vi.fn(() => false);
+      setGlobalGuard(mockGuard);
+      render(<NavBar {...defaultProps} />);
+
+      const link = screen.getByText("About").closest("a")!;
+      fireEvent.click(link);
+
+      expect(mockGuard).toHaveBeenCalledWith("/about", undefined);
+    });
+  });
+
+  // ── Profile link ──────────────────────────────────────────────
 
   describe("profile link", () => {
     it("navigates when no guard is registered", () => {
@@ -175,7 +236,43 @@ describe("NavBar navigation guards", () => {
     });
   });
 
-  // ── Logout button ───────────────────────────────────────────────
+  // ── Dropdown open/close ───────────────────────────────────────
+
+  describe("dropdown behavior", () => {
+    it("opens dropdown on avatar button click", () => {
+      render(<NavBar {...defaultProps} />);
+
+      expect(screen.queryByText("Profile")).toBeNull();
+
+      const avatarButton = screen.getByText("@janedoe").closest("button")!;
+      fireEvent.click(avatarButton);
+
+      expect(screen.getByText("Profile")).toBeTruthy();
+      expect(screen.getByText("Log Out")).toBeTruthy();
+    });
+
+    it("shows user info in dropdown", () => {
+      render(<NavBar {...defaultProps} />);
+      const avatarButton = screen.getByText("@janedoe").closest("button")!;
+      fireEvent.click(avatarButton);
+
+      expect(screen.getByText("Jane Doe")).toBeTruthy();
+    });
+
+    it("closes dropdown on outside click", () => {
+      render(<NavBar {...defaultProps} />);
+      const avatarButton = screen.getByText("@janedoe").closest("button")!;
+      fireEvent.click(avatarButton);
+
+      expect(screen.getByText("Profile")).toBeTruthy();
+
+      fireEvent.mouseDown(document.body);
+
+      expect(screen.queryByText("Profile")).toBeNull();
+    });
+  });
+
+  // ── Logout button ─────────────────────────────────────────────
 
   describe("logout button", () => {
     it("submits form when no guard is registered", () => {

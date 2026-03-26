@@ -1,4 +1,5 @@
 import { btnSecondaryClass } from "@/lib/constants";
+import { useScrollLock } from "@/lib/use-scroll-lock";
 
 type Props = {
   title?: string;
@@ -19,6 +20,7 @@ export default function ConfirmModal({
   onCancel,
   disabled,
 }: Props) {
+  useScrollLock();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-xl">

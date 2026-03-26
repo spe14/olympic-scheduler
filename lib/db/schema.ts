@@ -147,6 +147,7 @@ export const group = pgTable("groups", {
         name: string;
         departedAt: string;
         rejoinedAt?: string;
+        wasPartOfSchedule?: boolean;
       }[]
     >()
     .default([]),
@@ -160,6 +161,9 @@ export const group = pgTable("groups", {
     .$type<string[]>()
     .default([]),
   purchaseDataChangedAt: timestamp("purchase_data_changed_at"),
+  soldOutCodesAtGeneration: jsonb("sold_out_codes_at_generation")
+    .$type<string[]>()
+    .default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -308,7 +312,7 @@ export const purchasePlanEntry = pgTable(
     assigneeMemberId: uuid("assignee_member_id")
       .notNull()
       .references(() => member.id, { onDelete: "cascade" }),
-    priceCeiling: integer("price_ceiling"),
+    priceCeiling: real("price_ceiling"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -331,7 +335,7 @@ export const ticketPurchase = pgTable(
       .notNull()
       .references(() => member.id, { onDelete: "cascade" }),
     // Nullable: price may be unknown at time of purchase recording
-    pricePerTicket: integer("price_per_ticket"),
+    pricePerTicket: real("price_per_ticket"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -352,7 +356,7 @@ export const ticketPurchaseAssignee = pgTable(
     memberId: uuid("member_id")
       .notNull()
       .references(() => member.id, { onDelete: "cascade" }),
-    pricePaid: integer("price_paid"),
+    pricePaid: real("price_paid"),
   },
   (table) => [primaryKey({ columns: [table.ticketPurchaseId, table.memberId] })]
 );
@@ -405,8 +409,8 @@ export const reportedPrice = pgTable("reported_price", {
   reportedByMemberId: uuid("reported_by_member_id")
     .notNull()
     .references(() => member.id, { onDelete: "cascade" }),
-  minPrice: integer("min_price"),
-  maxPrice: integer("max_price"),
+  minPrice: real("min_price"),
+  maxPrice: real("max_price"),
   comments: text("comments"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

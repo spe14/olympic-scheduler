@@ -36,6 +36,8 @@ export type WindowRankingInput = {
   consecutiveDays?: number;
   startDate?: string;
   endDate?: string;
+  /** Dates that every valid window must contain (e.g. purchased session dates). */
+  requiredDays?: string[];
 };
 
 export type WindowRankingResult = {
@@ -140,7 +142,7 @@ export function computeWindowRankings(
   if (!consecutiveDays || consecutiveDays < 1) return [];
 
   const olympicEnd = addDays(OLYMPIC_START, OLYMPIC_DAYS_COUNT - 1);
-  const windows: (WindowRankingResult & {
+  let windows: (WindowRankingResult & {
     stdev: number;
     resilience: number;
   })[] = [];
@@ -166,6 +168,14 @@ export function computeWindowRankings(
       stdev: userScoreStdev,
       resilience,
     });
+  }
+
+  // Filter to windows that contain all required days (purchased session dates)
+  if (input.requiredDays && input.requiredDays.length > 0) {
+    const required = input.requiredDays;
+    windows = windows.filter((w) =>
+      required.every((d) => d >= w.startDate && d <= w.endDate)
+    );
   }
 
   // Sort by score desc, tie-break by lower stdev, then higher resilience, then earlier start

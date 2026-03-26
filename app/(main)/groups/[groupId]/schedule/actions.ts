@@ -20,6 +20,7 @@ import {
   type PurchaseData,
   type ReportedPriceData,
 } from "./purchase-actions";
+import { sortRanks } from "@/lib/schedule-utils";
 
 export type InterestedMember = BaseMemberInfo & {
   username: string;
@@ -67,7 +68,7 @@ export async function getMySchedule(groupId: string): Promise<{
   error?: string;
 }> {
   const { membership, error: authError } = await requireMembership(groupId);
-  if (authError) return authError;
+  if (authError) return { error: authError.error };
 
   const combos = await db
     .select({
@@ -206,6 +207,9 @@ export async function getMySchedule(groupId: string): Promise<{
       });
       scheduledMap.set(row.sessionId, list);
     }
+  }
+  for (const members of scheduledMap.values()) {
+    for (const m of members) sortRanks(m.ranks);
   }
 
   // Fetch purchase data for all sessions

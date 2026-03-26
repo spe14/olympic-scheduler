@@ -12,7 +12,7 @@ These are the high-level principles that guide the algorithm design:
 
 - **Date config is set at group creation or deferred, required before generation.** The owner sets the date configuration (N consecutive days or a specific date range) at group creation or defers it to discuss with the group. Date config must be set before the owner triggers schedule generation. It can be changed at any point — including after schedules are finalized — without re-running the algorithm, since it only affects window ranking.
 
-- **Fairness weight is fixed.** The algorithm uses a fixed fairness weight of 0.25 to balance total group satisfaction with equal distribution. This prevents scenarios where one user has a significantly worse experience than others.
+- **Fairness weight is fixed.** The algorithm uses a fixed fairness weight of 0.5 to balance total group satisfaction with equal distribution. This prevents scenarios where one user has a significantly worse experience than others.
 
 - **Implicit schedule acceptance.** After schedules are generated, users review the output. There is no explicit confirmation step — members implicitly accept by proceeding. If unsatisfied, they can re-enter preferences and the owner can re-generate.
 
@@ -254,17 +254,19 @@ These are the high-level principles that guide the algorithm design:
 
 ---
 
-## Decision 15: Preference Viewing vs. Editing Access
+## Decision 15: Preference Viewing and In-Place Editing
 
-**The Question:** Should users be able to view their preferences at any phase, or only during preference input?
+**The Question:** Should users be able to view and edit their preferences at any phase, or only during preference input?
 
-**We Chose:** Users can view preferences at any phase; editing is restricted to the preference input phase
+**We Chose:** Users can view AND edit preferences at any phase, with a warning during `schedule_review`
 
 **Why:**
 
-- Users may want to reference their sport rankings, buddy constraints, or session selections during schedule review
-- Read-only access during later phases prevents accidental edits that would trigger a full re-run
-- If a user needs to change preferences after generation, they must explicitly re-enter the preference wizard (which resets the group)
+- Users may want to reference or adjust their sport rankings, buddy constraints, or session selections during schedule review
+- During `schedule_review`, a warning modal is shown before saving: "Schedules have already been generated. If you update preferences now, the owner will need to re-generate schedules for all group members."
+- No status reset on edit — member stays at `preferences_set`, only `statusChangedAt` is updated
+- The owner sees a regeneration notification and can re-generate when ready
+- This avoids the friction of a formal "re-enter preferences" workflow while still making the impact of edits clear
 
 ---
 

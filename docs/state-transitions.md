@@ -44,7 +44,8 @@ pending_approval → joined → preferences_set
 
 | #   | From               | To                | Trigger                                                     | Condition                                                                        | Group Phase Effect                                                                      |
 | --- | ------------------ | ----------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 1   | `pending_approval` | `joined`          | Owner approves join request                                 | —                                                                                | None — newly joined member enters preferences alongside existing members                |
+| 1a  | `pending_approval` | `joined`          | Owner approves join request                                 | —                                                                                | None — newly joined member enters preferences alongside existing members                |
+| 1b  | `pending_approval` | `denied`          | Owner denies join request                                   | —                                                                                | None — denied member cannot access the group                                            |
 | 2   | `joined`           | `preferences_set` | Member saves sessions step (`preference_step = 'sessions'`) | Group phase must be `preferences`                                                | None                                                                                    |
 | 3   | `preferences_set`  | `preferences_set` | Owner triggers algorithm generation                         | All members must be `preferences_set`, no pending join requests, date config set | Members stay at `preferences_set`. Group → `schedule_review`. Window rankings computed. |
 
@@ -85,25 +86,25 @@ The group phase is determined by the collective state of its members:
 
                     ┌──────────────────┐
                     │ pending_approval │
-                    └────────┬─────────┘
-                             │ owner approves (#1)
-                             ▼
-                    ┌─────────┐
-                    │ joined  │                               preferences
-                    └────┬────┘
-                         │ submit preferences (#2)
-                         ▼
-                    ┌─────────────────┐
-                    │ preferences_set │                       preferences
-                    └────────┬────────┘
-                             │ owner generates (#3)
-                             │ (status unchanged;
-                             │  window rankings computed)
-                             ▼
-                    ┌─────────────────┐
-                    │ preferences_set │◄─── edit prefs (#4)   schedule_review
-                    │                 │     (status unchanged;
-                    └─────────────────┘      statusChangedAt updated)
+                    └───┬──────────┬───┘
+          owner denies  │          │  owner approves (#1a)
+              (#1b)     ▼          ▼
+                  ┌────────┐  ┌─────────┐
+                  │ denied │  │ joined  │                     preferences
+                  └────────┘  └────┬────┘
+                                   │ submit preferences (#2)
+                                   ▼
+                          ┌─────────────────┐
+                          │ preferences_set │                 preferences
+                          └────────┬────────┘
+                                   │ owner generates (#3)
+                                   │ (status unchanged;
+                                   │  window rankings computed)
+                                   ▼
+                          ┌─────────────────┐
+                          │ preferences_set │◄─── edit prefs (#4)   schedule_review
+                          │                 │     (status unchanged;
+                          └─────────────────┘      statusChangedAt updated)
 ```
 
 ---

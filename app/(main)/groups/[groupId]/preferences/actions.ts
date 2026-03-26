@@ -249,6 +249,7 @@ export async function saveSportRankings(
     return { error: failedAction("save sport rankings") };
   }
 
+  revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };
 }
 
@@ -300,7 +301,9 @@ export async function saveSessionPreferences(
         .where(eq(member.id, membership.id))
         .limit(1);
 
-      const rankedSports = (memberData?.sportRankings as string[]) ?? [];
+      const rankedSports = Array.isArray(memberData?.sportRankings)
+        ? (memberData.sportRankings as string[])
+        : [];
       if (rankedSports.length === 0) {
         return { error: "You must complete sport rankings first." };
       }

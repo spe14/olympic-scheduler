@@ -6,11 +6,47 @@ import {
   formatSessionDateHeader,
   formatTimeslotDateTime,
   formatActionTimestamp,
+  formatPrice,
   groupBy,
   parseOrError,
   getDateDisplay,
   parseFieldErrors,
 } from "@/lib/utils";
+
+// ── formatPrice ─────────────────────────────────────────────────────────────
+
+describe("formatPrice", () => {
+  it("formats whole dollar amounts without decimals", () => {
+    expect(formatPrice(88)).toBe("$88");
+    expect(formatPrice(150)).toBe("$150");
+    expect(formatPrice(0)).toBe("$0");
+    expect(formatPrice(1)).toBe("$1");
+  });
+
+  it("formats prices with cents to 2 decimal places", () => {
+    expect(formatPrice(88.5)).toBe("$88.50");
+    expect(formatPrice(88.99)).toBe("$88.99");
+    expect(formatPrice(0.5)).toBe("$0.50");
+    expect(formatPrice(0.01)).toBe("$0.01");
+    expect(formatPrice(100.1)).toBe("$100.10");
+  });
+
+  it("rounds prices beyond 2 decimal places", () => {
+    expect(formatPrice(88.999)).toBe("$89.00");
+    expect(formatPrice(88.555)).toBe("$88.56");
+    expect(formatPrice(88.001)).toBe("$88.00");
+  });
+
+  it("handles floating-point precision errors", () => {
+    // 0.1 + 0.2 = 0.30000000000000004 in JavaScript
+    expect(formatPrice(0.1 + 0.2)).toBe("$0.30");
+  });
+
+  it("handles large amounts", () => {
+    expect(formatPrice(9999)).toBe("$9999");
+    expect(formatPrice(9999.99)).toBe("$9999.99");
+  });
+});
 
 // ── formatSessionTime ───────────────────────────────────────────────────────
 

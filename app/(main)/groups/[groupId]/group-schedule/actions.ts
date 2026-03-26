@@ -2,7 +2,7 @@
 
 import { requireMembership } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { combo, comboSession, member, session } from "@/lib/db/schema";
+import { combo, comboSession, member, session, user } from "@/lib/db/schema";
 import { eq, and, inArray, notInArray } from "drizzle-orm";
 import type { AvatarColor } from "@/lib/constants";
 import type { BaseMemberInfo } from "@/lib/types";
@@ -40,7 +40,7 @@ export async function getGroupSchedule(groupId: string): Promise<{
   error?: string;
 }> {
   const { membership, error: authError } = await requireMembership(groupId);
-  if (authError) return authError;
+  if (authError) return { error: authError.error };
 
   // Fetch all combos (P+B1+B2) for all active members
   const activeMembers = await db
@@ -93,7 +93,6 @@ export async function getGroupSchedule(groupId: string): Promise<{
     .where(inArray(comboSession.comboId, comboIds));
 
   // Fetch member details
-  const { user } = await import("@/lib/db/schema");
   const memberDetails = await db
     .select({
       id: member.id,

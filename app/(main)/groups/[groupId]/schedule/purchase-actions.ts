@@ -33,7 +33,7 @@ export async function getTimeslot(
   groupId: string
 ): Promise<{ data?: TimeslotData | null; error?: string }> {
   const { membership, error: authError } = await requireMembership(groupId);
-  if (authError) return authError;
+  if (authError) return { error: authError.error };
 
   const [row] = await db
     .select()
@@ -732,16 +732,137 @@ export async function reportSessionPrice(
     return { error: "Min price cannot exceed max price." };
 
   try {
-    await db.insert(reportedPrice).values({
-      groupId,
-      sessionId: data.sessionId,
-      reportedByMemberId: membership.id,
-      minPrice: data.minPrice,
-      maxPrice: data.maxPrice,
-      comments: trimmedComments,
-    });
+    const [inserted] = await db
+      .insert(reportedPrice)
+      .values({
+        groupId,
+        sessionId: data.sessionId,
+        reportedByMemberId: membership.id,
+        minPrice: data.minPrice,
+        maxPrice: data.maxPrice,
+        comments: trimmedComments,
+      })
+      .returning({ id: reportedPrice.id });
+
+    revalidatePath(`/groups/${groupId}/schedule`);
+    revalidatePath(`/groups/${groupId}/group-schedule`);
+    return { success: true, data: { reportedPriceId: inserted.id } };
   } catch {
     return { error: failedAction("report session price") };
+  }
+}
+
+export async function updateReportedPrice(
+  groupId: string,
+  data: {
+    reportedPriceId: string;
+    minPrice: number | null;
+    maxPrice: number | null;
+    comments: string | null;
+  }
+): Promise<ActionResult> {
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
+
+  const trimmedComments = data.comments?.trim().slice(0, 200) || null;
+
+  if (data.minPrice == null && data.maxPrice == null && !trimmedComments) {
+    return { error: "At least one price or a comment is required." };
+  }
+  if (data.minPrice != null && (isNaN(data.minPrice) || data.minPrice <= 0))
+    return { error: "Min price must be a positive number." };
+  if (data.maxPrice != null && (isNaN(data.maxPrice) || data.maxPrice <= 0))
+    return { error: "Max price must be a positive number." };
+  if (
+    data.minPrice != null &&
+    data.maxPrice != null &&
+    data.minPrice > data.maxPrice
+  )
+    return { error: "Min price cannot exceed max price." };
+
+  try {
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ reportedByMemberId: reportedPrice.reportedByMemberId })
+        .from(reportedPrice)
+        .where(eq(reportedPrice.id, data.reportedPriceId))
+        .limit(1);
+
+      if (!row) {
+        throw new Error("Not found");
+      }
+      if (row.reportedByMemberId !== membership.id) {
+        throw new Error("Not authorized");
+      }
+
+      await tx
+        .update(reportedPrice)
+        .set({
+          minPrice: data.minPrice,
+          maxPrice: data.maxPrice,
+          comments: trimmedComments,
+        })
+        .where(eq(reportedPrice.id, data.reportedPriceId));
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "Not found") {
+      return {
+        error: "Reported price not found. Please refresh and try again.",
+      };
+    }
+    if (e instanceof Error && e.message === "Not authorized") {
+      return { error: "You can only edit your own reported prices." };
+    }
+    return { error: failedAction("update reported price") };
+  }
+
+  revalidatePath(`/groups/${groupId}/schedule`);
+  revalidatePath(`/groups/${groupId}/group-schedule`);
+  return { success: true };
+}
+
+export async function deleteReportedPrice(
+  groupId: string,
+  data: { reportedPriceId: string }
+): Promise<ActionResult> {
+  const { membership, error: authError } = await requireMembership(groupId);
+  if (authError) return authError;
+
+  try {
+    await db.transaction(async (tx) => {
+      // Verify ownership
+      const [row] = await tx
+        .select({ reportedByMemberId: reportedPrice.reportedByMemberId })
+        .from(reportedPrice)
+        .where(eq(reportedPrice.id, data.reportedPriceId))
+        .limit(1);
+
+      if (!row) {
+        throw new Error("Not found");
+      }
+      if (row.reportedByMemberId !== membership.id) {
+        throw new Error("Not authorized");
+      }
+
+      await tx
+        .delete(reportedPrice)
+        .where(eq(reportedPrice.id, data.reportedPriceId));
+
+      await tx
+        .update(group)
+        .set({ purchaseDataChangedAt: new Date() })
+        .where(eq(group.id, groupId));
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "Not found") {
+      return {
+        error: "Reported price not found. Please refresh and try again.",
+      };
+    }
+    if (e instanceof Error && e.message === "Not authorized") {
+      return { error: "You can only delete your own reported prices." };
+    }
+    return { error: failedAction("delete reported price") };
   }
 
   revalidatePath(`/groups/${groupId}/schedule`);
@@ -821,6 +942,8 @@ export type PurchaseData = {
 };
 
 export type ReportedPriceData = {
+  id: string;
+  reporterMemberId: string;
   reporterFirstName: string;
   reporterLastName: string;
   minPrice: number | null;
@@ -971,7 +1094,9 @@ export async function getPurchaseDataForSessions(
   // 5. Reported prices for this group
   const priceRows = await db
     .select({
+      id: reportedPrice.id,
       sessionId: reportedPrice.sessionId,
+      reportedByMemberId: reportedPrice.reportedByMemberId,
       minPrice: reportedPrice.minPrice,
       maxPrice: reportedPrice.maxPrice,
       comments: reportedPrice.comments,
@@ -993,6 +1118,8 @@ export async function getPurchaseDataForSessions(
     priceRows,
     (r) => r.sessionId,
     (row): ReportedPriceData => ({
+      id: row.id,
+      reporterMemberId: row.reportedByMemberId,
       reporterFirstName: row.reporterFirstName,
       reporterLastName: row.reporterLastName,
       minPrice: row.minPrice,

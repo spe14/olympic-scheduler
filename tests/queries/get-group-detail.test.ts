@@ -69,6 +69,7 @@ vi.mock("@/lib/db/schema", () => ({
     affectedBuddyMembers: "affected_buddy_members",
     membersWithNoCombos: "members_with_no_combos",
     purchaseDataChangedAt: "purchase_data_changed_at",
+    nonConvergenceMembers: "non_convergence_members",
     createdAt: "created_at",
   },
   purchaseTimeslot: {
@@ -113,6 +114,10 @@ vi.mock("@/lib/db/schema", () => ({
     score: "score",
     selected: "selected",
   },
+  session: {
+    sessionCode: "session_code",
+    sessionDate: "session_date",
+  },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -150,6 +155,7 @@ const baseGroup = {
   departedMembers: [],
   affectedBuddyMembers: {},
   membersWithNoCombos: [],
+  nonConvergenceMembers: [],
   memberTimeslots: [],
   purchaseDataChangedAt: null,
   createdAt: new Date("2028-01-01"),
@@ -393,5 +399,130 @@ describe("getGroupDetail", () => {
     ];
     const result2 = await getGroupDetail(GROUP_ID, USER_ID);
     expect(result2!.membersWithNoCombos).toEqual([]);
+  });
+
+  // ── nonConvergenceMembers ─────────────────────────────────────────
+
+  it("returns nonConvergenceMembers when stored as array", async () => {
+    queryResults = [
+      [baseMembership],
+      [{ ...baseGroup, nonConvergenceMembers: ["m2", "m3"] }],
+      [],
+      [],
+    ];
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result!.nonConvergenceMembers).toEqual(["m2", "m3"]);
+  });
+
+  it("returns empty array for null nonConvergenceMembers", async () => {
+    queryResults = [
+      [baseMembership],
+      [{ ...baseGroup, nonConvergenceMembers: null }],
+      [],
+      [],
+    ];
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result!.nonConvergenceMembers).toEqual([]);
+  });
+
+  it("returns empty array for non-array nonConvergenceMembers", async () => {
+    queryResults = [
+      [baseMembership],
+      [{ ...baseGroup, nonConvergenceMembers: "invalid" }],
+      [],
+      [],
+    ];
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result!.nonConvergenceMembers).toEqual([]);
+  });
+
+  // ── purchasedDatesOutsideRange (specific date mode) ────────────────
+
+  it("computes purchased dates outside the specific date range", async () => {
+    const specificGroup = {
+      ...baseGroup,
+      dateMode: "specific" as const,
+      startDate: "2028-07-20",
+      endDate: "2028-07-25",
+    };
+    queryResults = [
+      [baseMembership], // 1. membership
+      [specificGroup], // 2. group data
+      [], // 3. window rankings
+      [baseMember], // 4. members
+      [], // 5. timeslotRows
+      [], // 6. purchaseBuyerRows
+      [], // 7. purchaseAssigneeRows
+      // 8. purchasedSessionDates — some inside, some outside
+      [
+        { sessionDate: "2028-07-18" }, // before range
+        { sessionDate: "2028-07-22" }, // inside range
+        { sessionDate: "2028-07-26" }, // after range
+        { sessionDate: "2028-07-30" }, // after range
+      ],
+    ];
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result!.purchasedDatesOutsideRange).toEqual([
+      "2028-07-18",
+      "2028-07-26",
+      "2028-07-30",
+    ]);
+  });
+
+  it("returns empty purchasedDatesOutsideRange when all dates are in range", async () => {
+    const specificGroup = {
+      ...baseGroup,
+      dateMode: "specific" as const,
+      startDate: "2028-07-20",
+      endDate: "2028-07-25",
+    };
+    queryResults = [
+      [baseMembership],
+      [specificGroup],
+      [],
+      [baseMember],
+      [],
+      [],
+      [],
+      [{ sessionDate: "2028-07-21" }, { sessionDate: "2028-07-23" }],
+    ];
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result!.purchasedDatesOutsideRange).toEqual([]);
+  });
+
+  it("returns empty purchasedDatesOutsideRange when no purchased sessions exist", async () => {
+    const specificGroup = {
+      ...baseGroup,
+      dateMode: "specific" as const,
+      startDate: "2028-07-20",
+      endDate: "2028-07-25",
+    };
+    queryResults = [
+      [baseMembership],
+      [specificGroup],
+      [],
+      [baseMember],
+      [],
+      [],
+      [],
+      [], // no purchased session dates
+    ];
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result!.purchasedDatesOutsideRange).toEqual([]);
+  });
+
+  it("skips purchasedDatesOutsideRange query in consecutive date mode", async () => {
+    queryResults = [
+      [baseMembership],
+      [{ ...baseGroup, dateMode: "consecutive" as const }],
+      [],
+      [baseMember],
+      [],
+      [],
+      [],
+      // No 8th entry needed — query should not run
+    ];
+    const result = await getGroupDetail(GROUP_ID, USER_ID);
+    expect(result!.purchasedDatesOutsideRange).toEqual([]);
   });
 });

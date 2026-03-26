@@ -295,6 +295,109 @@ describe("NotificationsSection", () => {
     ).toBeInTheDocument();
   });
 
+  // --- Departed with wasPartOfSchedule=false (INFO, no regeneration message) ---
+
+  it("shows info notification without regeneration message for departed member not in schedule", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      departedMembers: [
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+          wasPartOfSchedule: false,
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    expect(
+      screen.getByText(/Charlie Brown recently left the group/)
+    ).toBeInTheDocument();
+    // Should NOT show regeneration message
+    expect(screen.queryByText(/regenerate schedules/)).not.toBeInTheDocument();
+  });
+
+  it("renders departed with wasPartOfSchedule=false using info styling", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      departedMembers: [
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+          wasPartOfSchedule: false,
+        },
+      ],
+    });
+    const { container } = render(<NotificationsSection />);
+    // Should NOT have red border
+    expect(container.querySelector(".border-red-200")).not.toBeInTheDocument();
+    // Should have blue info styling
+    expect(
+      container.querySelector(".text-\\[\\#009de5\\]")
+    ).toBeInTheDocument();
+  });
+
+  it("shows both red and blue departed notifications when mixed wasPartOfSchedule", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      departedMembers: [
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+          wasPartOfSchedule: true,
+        },
+        {
+          userId: "user-diana",
+          name: "Diana Prince",
+          departedAt: "2028-01-11T12:00:00Z",
+          wasPartOfSchedule: false,
+        },
+      ],
+    });
+    const { container } = render(<NotificationsSection />);
+    // Charlie: red departed (was in schedule)
+    expect(container.querySelector(".border-red-200")).toBeInTheDocument();
+    // Diana: blue departed (was not in schedule)
+    expect(
+      screen.getByText(/Diana Prince recently left the group/)
+    ).toBeInTheDocument();
+    // Only Charlie's notification should mention regeneration
+    expect(
+      screen.getByText(/Charlie Brown recently left the group/)
+    ).toBeInTheDocument();
+  });
+
+  it("shows info notification for multiple departed members not in schedule with latest timestamp", () => {
+    mockGroup = baseGroup({
+      phase: "preferences",
+      departedMembers: [
+        {
+          userId: "user-charlie",
+          name: "Charlie Brown",
+          departedAt: "2028-01-10T12:00:00Z",
+          wasPartOfSchedule: false,
+        },
+        {
+          userId: "user-diana",
+          name: "Diana Prince",
+          departedAt: "2028-01-15T08:00:00Z",
+          wasPartOfSchedule: false,
+        },
+      ],
+    });
+    render(<NotificationsSection />);
+    // Both names should appear in a single info notification
+    expect(
+      screen.getByText(/Charlie Brown and Diana Prince recently left the group/)
+    ).toBeInTheDocument();
+    // Should NOT show regeneration message (wasPartOfSchedule === false)
+    expect(screen.queryByText(/regenerate schedules/)).not.toBeInTheDocument();
+    // Should use the latest departedAt timestamp (Jan 15)
+    expect(screen.getByText(/Jan 15, 2028/)).toBeInTheDocument();
+  });
+
   it("rejoined member does NOT appear in newly joined notification", () => {
     mockGroup = baseGroup({
       phase: "preferences",
@@ -754,35 +857,39 @@ describe("NotificationsSection", () => {
 
   // --- Updated preferences (BLUE) ---
 
-  it("shows updated preferences message with new text", () => {
+  it("shows updated preferences message with new text for non-owner", () => {
     mockGroup = baseGroup({
       phase: "schedule_review",
+      myRole: "member",
+      myMemberId: "member-2",
       scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       members: [
         {
           id: "owner-1",
+          userId: "user-alice",
           firstName: "Alice",
           lastName: "Smith",
           role: "owner",
           status: "preferences_set",
           joinedAt: "2027-12-01T00:00:00Z",
-          statusChangedAt: null,
+          statusChangedAt: "2028-01-05T10:00:00Z",
         },
         {
           id: "member-2",
+          userId: "user-bob",
           firstName: "Bob",
           lastName: "Jones",
           role: "member",
           status: "preferences_set",
           joinedAt: "2027-12-01T00:00:00Z",
-          statusChangedAt: "2028-01-05T10:00:00Z",
+          statusChangedAt: null,
         },
       ],
     });
     render(<NotificationsSection />);
     expect(
       screen.getByText(
-        /Bob Jones has updated their preferences\. These updates won't be reflected on your schedule until the owner regenerates schedules\./
+        /Alice Smith has updated their preferences\. These updates won't be reflected on member schedules until the owner regenerates schedules\./
       )
     ).toBeInTheDocument();
   });
@@ -1189,7 +1296,7 @@ describe("NotificationsSection", () => {
     render(<NotificationsSection />);
     expect(
       screen.getByText(
-        /won't be reflected on your schedule until the owner regenerates/
+        /won't be reflected on member schedules until the owner regenerates/
       )
     ).toBeInTheDocument();
   });

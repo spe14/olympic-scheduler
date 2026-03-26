@@ -10,7 +10,6 @@ import { approveMember, denyMember, removeMember } from "../actions";
 import ConfirmMemberRemovalModal from "./confirm-member-removal-modal";
 import NotificationsSection from "./notifications-section";
 import GenerateScheduleSection from "./generate-schedule-section";
-import TimeslotForm from "../schedule/_components/timeslot-form";
 import { Clock } from "lucide-react";
 import Tooltip from "@/components/tooltip";
 
@@ -90,7 +89,6 @@ export default function OverviewContent() {
             timeslot={timeslotMap.get(m.id) ?? null}
             hasPurchased={timeslotMap.has(m.id) && purchasedMemberIds.has(m.id)}
             hasPurchaseData={purchaseDataMemberIds.has(m.id)}
-            myTimeslot={m.id === group.myMemberId ? group.myTimeslot : null}
           />
         ))}
 
@@ -135,7 +133,6 @@ function ActiveMemberRow({
   timeslot,
   hasPurchased,
   hasPurchaseData,
-  myTimeslot,
 }: {
   member: GroupDetailMember;
   groupId: string;
@@ -149,10 +146,8 @@ function ActiveMemberRow({
   timeslot: { timeslotStart: Date | string; timeslotEnd: Date | string } | null;
   hasPurchased: boolean;
   hasPurchaseData: boolean;
-  myTimeslot: GroupDetail["myTimeslot"];
 }) {
   const [showConfirm, setShowConfirm] = useState(false);
-  const [showTimeslot, setShowTimeslot] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -208,10 +203,13 @@ function ActiveMemberRow({
           </span>
           {timeslot && (
             <Tooltip label="Assigned Purchase Timeslot">
-              <span className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              <span
+                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-[#059669]"
+                style={{ backgroundColor: "rgba(16, 185, 129, 0.12)" }}
+              >
                 <Clock size={12} />
-                {formatTimeslot(timeslot.timeslotStart)} –{" "}
-                {formatTimeslot(timeslot.timeslotEnd)}
+                {formatTimeslot(timeslot.timeslotStart)} PT –{" "}
+                {formatTimeslot(timeslot.timeslotEnd)} PT
               </span>
             </Tooltip>
           )}
@@ -222,22 +220,6 @@ function ActiveMemberRow({
               title={`Remove ${m.firstName}`}
             >
               <TrashIcon />
-            </button>
-          )}
-          {isCurrentUser && !hasTimeslot && (
-            <button
-              onClick={() => setShowTimeslot(true)}
-              className="rounded-lg bg-[#009de5] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[#0088c9]"
-            >
-              Enter Purchase Timeslot
-            </button>
-          )}
-          {isCurrentUser && hasTimeslot && (
-            <button
-              onClick={() => setShowTimeslot(true)}
-              className="rounded-lg bg-[#009de5] px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-[#0088c9]"
-            >
-              Edit Purchase Timeslot
             </button>
           )}
         </div>
@@ -280,13 +262,6 @@ function ActiveMemberRow({
       <div className="flex justify-center">
         {hasPurchased ? <CheckMark /> : <EmptyCircle />}
       </div>
-      {showTimeslot && (
-        <TimeslotModal
-          groupId={groupId}
-          myTimeslot={myTimeslot}
-          onClose={() => setShowTimeslot(false)}
-        />
-      )}
       {showConfirm && (
         <ConfirmMemberRemovalModal
           type="remove"
@@ -372,8 +347,8 @@ function PendingMemberRow({
     setLoading("approve");
     setError("");
     const result = await approveMember(groupId, m.id);
-    setLoading(null);
     if (result.error) {
+      setLoading(null);
       setError(result.error);
     } else {
       router.refresh();
@@ -384,8 +359,8 @@ function PendingMemberRow({
     setLoading("deny");
     setError("");
     const result = await denyMember(groupId, m.id);
-    setLoading(null);
     if (result.error) {
+      setLoading(null);
       setError(result.error);
     } else {
       router.refresh();
@@ -445,71 +420,12 @@ function PendingMemberRow({
 
 function formatTimeslot(date: Date | string): string {
   const d = new Date(date);
-  return d.toLocaleDateString("en-US", {
+  return d.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
-}
-
-function TimeslotModal({
-  groupId,
-  myTimeslot,
-  onClose,
-}: {
-  groupId: string;
-  myTimeslot: GroupDetail["myTimeslot"];
-  onClose: () => void;
-}) {
-  const router = useRouter();
-
-  const timeslotForForm = myTimeslot
-    ? {
-        id: "",
-        timeslotStart: new Date(myTimeslot.timeslotStart),
-        timeslotEnd: new Date(myTimeslot.timeslotEnd),
-      }
-    : null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-xl bg-white p-8 shadow-xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-            <Clock size={20} />
-            {myTimeslot ? "Edit Purchase Timeslot" : "Enter Purchase Timeslot"}
-          </h3>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
-        <TimeslotForm
-          groupId={groupId}
-          timeslot={timeslotForForm}
-          onSaved={() => {
-            onClose();
-            router.refresh();
-          }}
-        />
-      </div>
-    </div>
-  );
 }

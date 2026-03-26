@@ -117,7 +117,7 @@ export async function signUp(
         return { error: recoverMessage, values: safeValues };
       }
 
-      redirect("/");
+      redirect("/about");
     }
 
     return { error: error.message, values: safeValues };
@@ -151,7 +151,7 @@ export async function signUp(
     return { error: message, values: safeValues };
   }
 
-  redirect("/");
+  redirect("/about");
 }
 
 export async function login(

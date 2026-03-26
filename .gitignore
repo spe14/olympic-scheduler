@@ -50,3 +50,6 @@ build/
 
 /docs/test-scenarios
 /memory
+/tests/algorithm/stress-test-output.txt
+/tests/algorithm/stress-test-variant-output.txt
+/scripts/raw

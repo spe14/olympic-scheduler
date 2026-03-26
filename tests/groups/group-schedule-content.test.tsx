@@ -149,8 +149,13 @@ function makeGroup(overrides: Partial<GroupDetail> = {}): GroupDetail {
       },
     ],
     membersWithNoCombos: [],
+    nonConvergenceMembers: [],
+    membersPurchased: [],
+    membersWithPurchaseData: [],
     memberTimeslots: [],
     myTimeslot: null,
+    purchaseDataChangedAt: null,
+    myScheduleWarningAckedAt: null,
     departedMembers: [],
     affectedBuddyMembers: {},
     windowRankings: [
@@ -173,6 +178,7 @@ function makeGroup(overrides: Partial<GroupDetail> = {}): GroupDetail {
         score: 65,
       },
     ],
+    purchasedDatesOutsideRange: [],
     ...overrides,
   };
 }
@@ -456,7 +462,7 @@ describe("GroupScheduleContent — empty states", () => {
     await act(async () => {
       render(<GroupScheduleContent />);
     });
-    expect(screen.getByText("No schedule data available.")).toBeDefined();
+    expect(screen.getByText(/Schedules need to be regenerated/)).toBeDefined();
   });
 });
 
@@ -626,7 +632,7 @@ describe("GroupScheduleContent — sidebar window rankings", () => {
   it("renders top 3 window rankings with scores", async () => {
     await renderWithSchedule(consecutiveOverrides);
     const sidebar = renderSidebar();
-    expect(sidebar.container.textContent).toContain("Top Windows");
+    expect(sidebar.container.textContent).toContain("Top 5-Day Windows");
     expect(sidebar.container.textContent).toContain("85.0");
     expect(sidebar.container.textContent).toContain("72.0");
     expect(sidebar.container.textContent).toContain("65.0");
@@ -695,17 +701,18 @@ describe("GroupScheduleContent — sidebar window rankings", () => {
     }
   });
 
-  it("does not render window section when no rankings", async () => {
+  it("shows no-feasible-windows message when rankings are empty in consecutive mode", async () => {
     await renderWithSchedule({ ...consecutiveOverrides, windowRankings: [] });
     const sidebar = renderSidebar();
-    expect(sidebar.container.textContent).not.toContain("Top Windows");
+    expect(sidebar.container.textContent).toContain("Top 5-Day Windows");
+    expect(sidebar.container.textContent).toContain("No feasible");
     cleanup();
   });
 
   it("hides Top Windows section in specific date mode", async () => {
     await renderWithSchedule({ dateMode: "specific" });
     const sidebar = renderSidebar();
-    expect(sidebar.container.textContent).not.toContain("Top Windows");
+    expect(sidebar.container.textContent).not.toContain("Day Windows");
     cleanup();
   });
 });
@@ -789,8 +796,8 @@ describe("GroupScheduleContent — sidebar section ordering", () => {
     const text = sidebar.container.textContent ?? "";
     const viewAsIdx = text.indexOf("View As");
     const datesIdx = text.indexOf("Selected Dates");
-    const windowsIdx = text.indexOf("Top Windows");
-    const membersIdx = text.indexOf("Members");
+    const windowsIdx = text.indexOf("Top 5-Day Windows");
+    const membersIdx = text.indexOf("Filter by Members");
     expect(viewAsIdx).toBeLessThan(datesIdx);
     expect(datesIdx).toBeLessThan(windowsIdx);
     expect(windowsIdx).toBeLessThan(membersIdx);
@@ -803,10 +810,10 @@ describe("GroupScheduleContent — sidebar section ordering", () => {
     const text = sidebar.container.textContent ?? "";
     const viewAsIdx = text.indexOf("View As");
     const datesIdx = text.indexOf("Selected Dates");
-    const membersIdx = text.indexOf("Members");
+    const membersIdx = text.indexOf("Filter by Members");
     expect(viewAsIdx).toBeLessThan(datesIdx);
     expect(datesIdx).toBeLessThan(membersIdx);
-    expect(text).not.toContain("Top Windows");
+    expect(text).not.toContain("Day Windows");
     cleanup();
   });
 });
@@ -1686,6 +1693,8 @@ describe("GroupScheduleContent — purchase and sold-out filters", () => {
             isOutOfBudget: false,
             reportedPrices: [
               {
+                id: "rp-001",
+                reporterMemberId: "member-alex",
                 reporterFirstName: "Alex",
                 reporterLastName: "Chen",
                 minPrice: 80,
@@ -1889,6 +1898,8 @@ describe("GroupScheduleContent — session detail modal with purchases", () => {
             isOutOfBudget: true,
             reportedPrices: [
               {
+                id: "rp-002",
+                reporterMemberId: "member-alex",
                 reporterFirstName: "Alex",
                 reporterLastName: "Chen",
                 minPrice: 80,
@@ -1897,6 +1908,8 @@ describe("GroupScheduleContent — session detail modal with purchases", () => {
                 createdAt: new Date("2028-07-09T10:00:00Z"),
               },
               {
+                id: "rp-003",
+                reporterMemberId: "member-jordan",
                 reporterFirstName: "Jordan",
                 reporterLastName: "Park",
                 minPrice: null,

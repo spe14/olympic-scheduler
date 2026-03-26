@@ -362,4 +362,65 @@ describe("filterCandidateSessions", () => {
     // minBuddies=0 → filter is no-op
     expect(result).toHaveLength(1);
   });
+
+  it("locked session code not in candidateSessions produces empty locked array", () => {
+    // lockedSessionCodes references a session that doesn't exist in candidateSessions.
+    // The locked filter finds nothing, so the locked bypass is effectively a no-op.
+    const s1 = makeSession("SWM01");
+
+    const alice = makeMember("Alice", {
+      lockedSessionCodes: ["NONEXISTENT"],
+      candidateSessions: [s1],
+    });
+
+    const sessionInterestCounts = new Map([["SWM01", 1]]);
+
+    const result = filterCandidateSessions(
+      alice,
+      [alice],
+      sessionInterestCounts
+    );
+
+    // SWM01 is not locked, so it goes through normal filtering.
+    // No hard buddies, minBuddies=0 → SWM01 passes.
+    expect(result).toHaveLength(1);
+    expect(result[0].sessionCode).toBe("SWM01");
+    // NONEXISTENT never appears (not in candidateSessions)
+    expect(result.find((s) => s.sessionCode === "NONEXISTENT")).toBeUndefined();
+  });
+
+  it("locked sessions bypass hard buddy filter even when unlocked sessions are fully filtered", () => {
+    // Alice has hard buddy Bob. Bob has no shared sessions with Alice.
+    // Alice's unlocked session (GYM01) gets filtered out by hard buddy.
+    // But her locked session (SWM01) bypasses the filter.
+    const s1 = makeSession("SWM01");
+    const s2 = makeSession("GYM01", { sport: "Gymnastics" });
+
+    const alice = makeMember("Alice", {
+      hardBuddies: ["Bob"],
+      lockedSessionCodes: ["SWM01"],
+      candidateSessions: [s1, s2],
+    });
+
+    const bob = makeMember("Bob", {
+      candidateSessions: [makeSession("TRK01", { sport: "Track & Field" })],
+    });
+
+    const sessionInterestCounts = new Map([
+      ["SWM01", 1],
+      ["GYM01", 1],
+      ["TRK01", 1],
+    ]);
+
+    const result = filterCandidateSessions(
+      alice,
+      [alice, bob],
+      sessionInterestCounts
+    );
+
+    // SWM01 is locked → bypasses all filters → included
+    // GYM01 is unlocked → hard buddy filter: Bob has {TRK01}, no GYM01 → filtered out
+    expect(result).toHaveLength(1);
+    expect(result[0].sessionCode).toBe("SWM01");
+  });
 });

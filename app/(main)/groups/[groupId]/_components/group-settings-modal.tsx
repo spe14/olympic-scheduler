@@ -131,8 +131,7 @@ export default function GroupSettingsModal({
         <p className="mb-4 text-base text-slate-600">
           This action is{" "}
           <span className="font-semibold text-red-600">permanent</span> and
-          cannot be undone. All group data including members, preferences,
-          schedules, and configurations will be deleted.
+          cannot be undone. All group data will be deleted.
         </p>
         <p className="mb-2 text-base text-slate-600">
           Type{" "}

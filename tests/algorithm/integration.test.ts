@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { runScheduleGeneration } from "@/lib/algorithm/runner";
 import type { MemberData, TravelEntry } from "@/lib/algorithm/types";
 
@@ -21,7 +21,8 @@ function makeMember(
   };
 }
 
-function makeSession(
+// --- Real session helper (matches la2028_sessions.csv exactly) ---
+function realSession(
   code: string,
   sport: string,
   zone: string,
@@ -41,52 +42,274 @@ function makeSession(
   };
 }
 
-const LA_TRAVEL_ENTRIES: TravelEntry[] = [
+// --- Real travel entries (from driving_times.csv and transit_times.csv) ---
+const REAL_TRAVEL: TravelEntry[] = [
+  // Inglewood ↔ Pasadena
   {
-    originZone: "SoFi Stadium Zone",
-    destinationZone: "Downtown LA Zone",
-    drivingMinutes: 20,
-    transitMinutes: 35,
+    originZone: "Inglewood Zone",
+    destinationZone: "Pasadena Zone",
+    drivingMinutes: 43.55,
+    transitMinutes: 128,
   },
   {
-    originZone: "SoFi Stadium Zone",
+    originZone: "Pasadena Zone",
+    destinationZone: "Inglewood Zone",
+    drivingMinutes: 36.25,
+    transitMinutes: 128,
+  },
+  // Exposition Park ↔ DTLA
+  {
+    originZone: "Exposition Park Zone",
+    destinationZone: "DTLA Zone",
+    drivingMinutes: 11.3,
+    transitMinutes: 20,
+  },
+  {
+    originZone: "DTLA Zone",
+    destinationZone: "Exposition Park Zone",
+    drivingMinutes: 9.9,
+    transitMinutes: 18,
+  },
+  // Exposition Park ↔ Pasadena
+  {
+    originZone: "Exposition Park Zone",
+    destinationZone: "Pasadena Zone",
+    drivingMinutes: 27.33,
+    transitMinutes: 91,
+  },
+  {
+    originZone: "Pasadena Zone",
+    destinationZone: "Exposition Park Zone",
+    drivingMinutes: 25.02,
+    transitMinutes: 97,
+  },
+  // DTLA ↔ Pasadena
+  {
+    originZone: "DTLA Zone",
+    destinationZone: "Pasadena Zone",
+    drivingMinutes: 22.02,
+    transitMinutes: 69,
+  },
+  {
+    originZone: "Pasadena Zone",
+    destinationZone: "DTLA Zone",
+    drivingMinutes: 22.37,
+    transitMinutes: 72,
+  },
+  // DTLA ↔ Valley
+  {
+    originZone: "DTLA Zone",
+    destinationZone: "Valley Zone",
+    drivingMinutes: 26.97,
+    transitMinutes: 100,
+  },
+  {
+    originZone: "Valley Zone",
+    destinationZone: "DTLA Zone",
+    drivingMinutes: 32.08,
+    transitMinutes: 100,
+  },
+  // Pasadena ↔ Valley
+  {
+    originZone: "Pasadena Zone",
+    destinationZone: "Valley Zone",
+    drivingMinutes: 25.52,
+    transitMinutes: 151,
+  },
+  {
+    originZone: "Valley Zone",
+    destinationZone: "Pasadena Zone",
+    drivingMinutes: 24.72,
+    transitMinutes: 135,
+  },
+  // Pasadena ↔ Long Beach
+  {
+    originZone: "Pasadena Zone",
     destinationZone: "Long Beach Zone",
-    drivingMinutes: 25,
-    transitMinutes: 50,
-  },
-  {
-    originZone: "SoFi Stadium Zone",
-    destinationZone: "Rose Bowl Zone",
-    drivingMinutes: 35,
-    transitMinutes: 60,
-  },
-  {
-    originZone: "Downtown LA Zone",
-    destinationZone: "Long Beach Zone",
-    drivingMinutes: 28,
-    transitMinutes: 45,
-  },
-  {
-    originZone: "Downtown LA Zone",
-    destinationZone: "Rose Bowl Zone",
-    drivingMinutes: 12,
-    transitMinutes: 25,
+    drivingMinutes: 49.38,
+    transitMinutes: 158,
   },
   {
     originZone: "Long Beach Zone",
-    destinationZone: "Rose Bowl Zone",
-    drivingMinutes: 42,
-    transitMinutes: 70,
+    destinationZone: "Pasadena Zone",
+    drivingMinutes: 49.88,
+    transitMinutes: 160,
+  },
+  // Exposition Park ↔ Long Beach
+  {
+    originZone: "Exposition Park Zone",
+    destinationZone: "Long Beach Zone",
+    drivingMinutes: 33.33,
+    transitMinutes: 120,
   },
   {
-    originZone: "SoFi Stadium Zone",
+    originZone: "Long Beach Zone",
+    destinationZone: "Exposition Park Zone",
+    drivingMinutes: 35.55,
+    transitMinutes: 102,
+  },
+  // Long Beach ↔ DTLA
+  {
+    originZone: "Long Beach Zone",
+    destinationZone: "DTLA Zone",
+    drivingMinutes: 39.53,
+    transitMinutes: 98,
+  },
+  {
+    originZone: "DTLA Zone",
+    destinationZone: "Long Beach Zone",
+    drivingMinutes: 37.13,
+    transitMinutes: 95,
+  },
+  // Long Beach ↔ Valley
+  {
+    originZone: "Long Beach Zone",
+    destinationZone: "Valley Zone",
+    drivingMinutes: 50.97,
+    transitMinutes: 191,
+  },
+  {
+    originZone: "Valley Zone",
+    destinationZone: "Long Beach Zone",
+    drivingMinutes: 48.9,
+    transitMinutes: 191,
+  },
+  // Inglewood ↔ DTLA
+  {
+    originZone: "Inglewood Zone",
+    destinationZone: "DTLA Zone",
+    drivingMinutes: 27.35,
+    transitMinutes: 69,
+  },
+  {
+    originZone: "DTLA Zone",
+    destinationZone: "Inglewood Zone",
+    drivingMinutes: 21.15,
+    transitMinutes: 54,
+  },
+  // Inglewood ↔ Long Beach
+  {
+    originZone: "Inglewood Zone",
+    destinationZone: "Long Beach Zone",
+    drivingMinutes: 35.42,
+    transitMinutes: 118,
+  },
+  {
+    originZone: "Long Beach Zone",
+    destinationZone: "Inglewood Zone",
+    drivingMinutes: 33.93,
+    transitMinutes: 100,
+  },
+  // Inglewood ↔ Exposition Park
+  {
+    originZone: "Inglewood Zone",
+    destinationZone: "Exposition Park Zone",
+    drivingMinutes: 14.17,
+    transitMinutes: 40,
+  },
+  {
+    originZone: "Exposition Park Zone",
+    destinationZone: "Inglewood Zone",
+    drivingMinutes: 12.55,
+    transitMinutes: 38,
+  },
+  // Inglewood ↔ Valley
+  {
+    originZone: "Inglewood Zone",
+    destinationZone: "Valley Zone",
+    drivingMinutes: 38.5,
+    transitMinutes: 130,
+  },
+  {
+    originZone: "Valley Zone",
+    destinationZone: "Inglewood Zone",
+    drivingMinutes: 40.2,
+    transitMinutes: 135,
+  },
+  // Exposition Park ↔ Valley
+  {
+    originZone: "Exposition Park Zone",
+    destinationZone: "Valley Zone",
+    drivingMinutes: 28.5,
+    transitMinutes: 105,
+  },
+  {
+    originZone: "Valley Zone",
+    destinationZone: "Exposition Park Zone",
+    drivingMinutes: 30.1,
+    transitMinutes: 108,
+  },
+  // Anaheim ↔ others (for Volleyball VVO sessions)
+  {
+    originZone: "Anaheim Zone",
+    destinationZone: "Exposition Park Zone",
+    drivingMinutes: 41.98,
+    transitMinutes: 110,
+  },
+  {
+    originZone: "Exposition Park Zone",
+    destinationZone: "Anaheim Zone",
+    drivingMinutes: 42.23,
+    transitMinutes: 110,
+  },
+  {
+    originZone: "Anaheim Zone",
+    destinationZone: "DTLA Zone",
+    drivingMinutes: 41.42,
+    transitMinutes: 89,
+  },
+  {
+    originZone: "DTLA Zone",
+    destinationZone: "Anaheim Zone",
+    drivingMinutes: 40.3,
+    transitMinutes: 87,
+  },
+  {
+    originZone: "Anaheim Zone",
+    destinationZone: "Long Beach Zone",
+    drivingMinutes: 21.57,
+    transitMinutes: 117,
+  },
+  {
+    originZone: "Long Beach Zone",
+    destinationZone: "Anaheim Zone",
+    drivingMinutes: 23.1,
+    transitMinutes: 110,
+  },
+  {
+    originZone: "Anaheim Zone",
+    destinationZone: "Pasadena Zone",
+    drivingMinutes: 46.2,
+    transitMinutes: 141,
+  },
+  {
+    originZone: "Pasadena Zone",
+    destinationZone: "Anaheim Zone",
+    drivingMinutes: 47.62,
+    transitMinutes: 123,
+  },
+  // Trestles Beach ↔ others (driving only, no transit)
+  {
+    originZone: "Inglewood Zone",
     destinationZone: "Trestles Beach Zone",
     drivingMinutes: 75,
     transitMinutes: null,
   },
   {
-    originZone: "Downtown LA Zone",
+    originZone: "Trestles Beach Zone",
+    destinationZone: "Inglewood Zone",
+    drivingMinutes: 75,
+    transitMinutes: null,
+  },
+  {
+    originZone: "DTLA Zone",
     destinationZone: "Trestles Beach Zone",
+    drivingMinutes: 80,
+    transitMinutes: null,
+  },
+  {
+    originZone: "Trestles Beach Zone",
+    destinationZone: "DTLA Zone",
     drivingMinutes: 80,
     transitMinutes: null,
   },
@@ -97,8 +320,20 @@ const LA_TRAVEL_ENTRIES: TravelEntry[] = [
     transitMinutes: null,
   },
   {
-    originZone: "Rose Bowl Zone",
+    originZone: "Trestles Beach Zone",
+    destinationZone: "Long Beach Zone",
+    drivingMinutes: 70,
+    transitMinutes: null,
+  },
+  {
+    originZone: "Pasadena Zone",
     destinationZone: "Trestles Beach Zone",
+    drivingMinutes: 85,
+    transitMinutes: null,
+  },
+  {
+    originZone: "Trestles Beach Zone",
+    destinationZone: "Pasadena Zone",
     drivingMinutes: 85,
     transitMinutes: null,
   },
@@ -113,55 +348,55 @@ const DAYS = ["2028-07-22", "2028-07-23", "2028-07-24"];
 describe("runScheduleGeneration - end-to-end", () => {
   describe("basic 2-member group", () => {
     it("generates combos for 2 members with overlapping sports", () => {
-      const swmSession = makeSession(
+      const swmSession = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00",
+        "10:00:00",
+        "12:00:00",
         "high",
         200
       );
-      const gymSession = makeSession(
+      const gymSession = realSession(
         "GYM01",
-        "Gymnastics",
-        "Downtown LA Zone",
+        "Artistic Gymnastics",
+        "DTLA Zone",
         "2028-07-22",
-        "14:30",
-        "16:30",
+        "14:30:00",
+        "16:30:00",
         "medium",
         300
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [swmSession, gymSession],
       });
 
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics", "Swimming"],
+        sportRankings: ["Artistic Gymnastics", "Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "14:30",
-            "16:30"
+            "14:30:00",
+            "16:30:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -194,98 +429,105 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Carol has minBuddies = 1
       // All three are interested in SWM01 and GYM01
       // Only Alice and Bob are interested in TRK01
-      const sharedSession1 = makeSession(
+      const sharedSession1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "10:30",
+        "09:00:00",
+        "10:30:00",
         "high"
       );
-      const sharedSession2 = makeSession(
+      const sharedSession2 = realSession(
         "GYM01",
-        "Gymnastics",
-        "Downtown LA Zone",
+        "Artistic Gymnastics",
+        "DTLA Zone",
         "2028-07-22",
-        "13:00",
-        "15:00",
+        "13:00:00",
+        "15:00:00",
         "high"
       );
-      const abOnlySession = makeSession(
+      const abOnlySession = realSession(
         "TRK01",
-        "Track & Field",
-        "Rose Bowl Zone",
+        "Athletics (Track & Field)",
+        "Pasadena Zone",
         "2028-07-23",
-        "10:00",
-        "12:00",
+        "10:00:00",
+        "12:00:00",
         "high"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         hardBuddies: ["Bob"],
         candidateSessions: [sharedSession1, sharedSession2, abOnlySession],
       });
 
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics", "Swimming", "Track & Field"],
+        sportRankings: [
+          "Artistic Gymnastics",
+          "Swimming",
+          "Athletics (Track & Field)",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "10:30"
+            "09:00:00",
+            "10:30:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "13:00",
-            "15:00"
+            "13:00:00",
+            "15:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "Rose Bowl Zone",
+            "Athletics (Track & Field)",
+            "Pasadena Zone",
             "2028-07-23",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const carol = makeMember("Carol", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         minBuddies: 1,
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "10:30"
+            "09:00:00",
+            "10:30:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "13:00",
-            "15:00"
+            "13:00:00",
+            "15:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22", "2028-07-23"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+        "2028-07-23",
+      ]);
 
       // Alice's hard buddy is Bob → Alice only gets sessions Bob also has
       // Bob has SWM01, GYM01, TRK01 → Alice keeps all 3
@@ -306,116 +548,124 @@ describe("runScheduleGeneration - end-to-end", () => {
     it("handles mixed rankings, overlapping sessions, and buddy constraints", () => {
       // 4 members, day 1 and day 2 sessions
       const aliceSessions = [
-        makeSession(
+        realSession(
           "SWM01",
           "Swimming",
-          "SoFi Stadium Zone",
+          "Inglewood Zone",
           "2028-07-22",
-          "09:00",
-          "11:00"
+          "09:00:00",
+          "11:00:00"
         ),
-        makeSession(
+        realSession(
           "GYM01",
-          "Gymnastics",
-          "Downtown LA Zone",
+          "Artistic Gymnastics",
+          "DTLA Zone",
           "2028-07-22",
-          "14:00",
-          "16:00"
+          "14:00:00",
+          "16:00:00"
         ),
-        makeSession(
+        realSession(
           "TRK01",
-          "Track & Field",
-          "Rose Bowl Zone",
+          "Athletics (Track & Field)",
+          "Pasadena Zone",
           "2028-07-23",
-          "10:00",
-          "12:00"
+          "10:00:00",
+          "12:00:00"
         ),
       ];
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         softBuddies: ["Bob"],
         candidateSessions: aliceSessions,
       });
 
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics", "Swimming"],
+        sportRankings: ["Artistic Gymnastics", "Swimming"],
         hardBuddies: ["Alice"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
 
       const carol = makeMember("Carol", {
-        sportRankings: ["Track & Field", "Swimming"],
+        sportRankings: ["Athletics (Track & Field)", "Swimming"],
         minBuddies: 1,
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "Rose Bowl Zone",
+            "Athletics (Track & Field)",
+            "Pasadena Zone",
             "2028-07-23",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const dave = makeMember("Dave", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "Rose Bowl Zone",
+            "Athletics (Track & Field)",
+            "Pasadena Zone",
             "2028-07-23",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const result = runScheduleGeneration(
         [alice, bob, carol, dave],
-        LA_TRAVEL_ENTRIES,
+        REAL_TRAVEL,
         ["2028-07-22", "2028-07-23"]
       );
 
@@ -434,13 +684,13 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("member with no valid combos due to hard buddy constraint", () => {
     it("reports member in membersWithNoCombos when hard buddy eliminates all sessions", () => {
-      const eveSession = makeSession(
+      const eveSession = realSession(
         "DIV01",
         "Diving",
         "Long Beach Zone",
         "2028-07-22",
-        "10:00",
-        "12:00",
+        "10:00:00",
+        "12:00:00",
         "high"
       );
 
@@ -454,18 +704,18 @@ describe("runScheduleGeneration - end-to-end", () => {
       const frank = makeMember("Frank", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([eve, frank], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([eve, frank], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -478,13 +728,13 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("all sessions filtered out by minBuddies", () => {
     it("reports member when minBuddies exceeds available group size", () => {
-      const session = makeSession(
+      const session = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00",
+        "10:00:00",
+        "12:00:00",
         "high"
       );
 
@@ -498,18 +748,18 @@ describe("runScheduleGeneration - end-to-end", () => {
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -521,31 +771,31 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("single member group", () => {
     it("generates combos correctly for a solo member with no buddy constraints", () => {
-      const s1 = makeSession(
+      const s1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "11:00",
+        "09:00:00",
+        "11:00:00",
         "high"
       );
-      const s2 = makeSession(
+      const s2 = realSession(
         "GYM01",
-        "Gymnastics",
-        "Downtown LA Zone",
+        "Artistic Gymnastics",
+        "DTLA Zone",
         "2028-07-22",
-        "14:00",
-        "16:00",
+        "14:00:00",
+        "16:00:00",
         "medium"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [s1, s2],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -564,7 +814,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: [],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -575,49 +825,54 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("sessions on different days", () => {
     it("groups combos by day with no cross-day contamination", () => {
-      const day1S1 = makeSession(
+      const day1S1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00",
+        "10:00:00",
+        "12:00:00",
         "high"
       );
-      const day1S2 = makeSession(
+      const day1S2 = realSession(
         "GYM01",
-        "Gymnastics",
-        "SoFi Stadium Zone",
+        "Artistic Gymnastics",
+        "Inglewood Zone",
         "2028-07-22",
-        "14:00",
-        "16:00",
+        "14:00:00",
+        "16:00:00",
         "high"
       );
-      const day2S1 = makeSession(
+      const day2S1 = realSession(
         "TRK01",
-        "Track & Field",
-        "Rose Bowl Zone",
+        "Athletics (Track & Field)",
+        "Pasadena Zone",
         "2028-07-23",
-        "10:00",
-        "12:00",
+        "10:00:00",
+        "12:00:00",
         "high"
       );
-      const day3S1 = makeSession(
+      const day3S1 = realSession(
         "DIV01",
         "Diving",
         "Long Beach Zone",
         "2028-07-24",
-        "10:00",
-        "12:00",
+        "10:00:00",
+        "12:00:00",
         "medium"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field", "Diving"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+          "Diving",
+        ],
         candidateSessions: [day1S1, day1S2, day2S1, day3S1],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, DAYS);
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, DAYS);
 
       expect(result.membersWithNoCombos).toHaveLength(0);
 
@@ -651,33 +906,33 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("travel constraints reduce combos", () => {
     it("excludes infeasible combos when sessions are in far-apart zones with short gaps", () => {
-      // SoFi → Rose Bowl: 35 min driving → 150 min required gap
-      const s1 = makeSession(
+      // Inglewood → Pasadena: 43.55 min driving → 150 min required gap
+      const s1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "10:00",
+        "09:00:00",
+        "10:00:00",
         "high"
       );
-      const s2 = makeSession(
+      const s2 = realSession(
         "GYM01",
-        "Gymnastics",
-        "Rose Bowl Zone",
+        "Artistic Gymnastics",
+        "Pasadena Zone",
         "2028-07-22",
-        "11:00",
-        "13:00",
+        "11:00:00",
+        "13:00:00",
         "high"
       );
       // gap = 11:00 - 10:00 = 60 min < 150 min required → infeasible as pair
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [s1, s2],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -694,33 +949,33 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("Trestles Beach isolation", () => {
     it("requires 4-hour gap for Trestles Beach sessions", () => {
-      const trestlesSession = makeSession(
+      const trestlesSession = realSession(
         "SRF01",
         "Surfing",
         "Trestles Beach Zone",
         "2028-07-22",
-        "08:00",
-        "10:00",
+        "08:00:00",
+        "10:00:00",
         "high"
       );
-      const closeSession = makeSession(
+      const closeSession = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "13:00",
-        "15:00",
+        "13:00:00",
+        "15:00:00",
         "high"
       );
       // gap = 13:00 - 10:00 = 180 min < 240 required → infeasible
 
-      const farSession = makeSession(
+      const farSession = realSession(
         "GYM01",
-        "Gymnastics",
-        "SoFi Stadium Zone",
+        "Artistic Gymnastics",
+        "Inglewood Zone",
         "2028-07-22",
-        "14:00",
-        "16:00",
+        "14:00:00",
+        "16:00:00",
         "high"
       );
       // gap = 14:00 - 10:00 = 240 min = 240 required → feasible
@@ -731,33 +986,31 @@ describe("runScheduleGeneration - end-to-end", () => {
       });
 
       const aliceFar = makeMember("AliceFar", {
-        sportRankings: ["Surfing", "Gymnastics"],
+        sportRankings: ["Surfing", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SRF01",
             "Surfing",
             "Trestles Beach Zone",
             "2028-07-22",
-            "08:00",
-            "10:00"
+            "08:00:00",
+            "10:00:00"
           ),
           farSession,
         ],
       });
 
       // Close session pairing: should only have individual combos
-      const resultClose = runScheduleGeneration(
-        [aliceClose],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22"]
-      );
+      const resultClose = runScheduleGeneration([aliceClose], REAL_TRAVEL, [
+        "2028-07-22",
+      ]);
       const closePairs = resultClose.combos.filter(
         (c) => c.sessionCodes.length === 2
       );
       expect(closePairs).toHaveLength(0);
 
       // Far session pairing: should allow the 2-session combo
-      const resultFar = runScheduleGeneration([aliceFar], LA_TRAVEL_ENTRIES, [
+      const resultFar = runScheduleGeneration([aliceFar], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const farPairs = resultFar.combos.filter(
@@ -770,46 +1023,46 @@ describe("runScheduleGeneration - end-to-end", () => {
   describe("soft buddy bonus affects ranking", () => {
     it("ranks combos with soft buddy presence higher than combos without", () => {
       // Two identical sessions, but Alice's soft buddy Bob is interested in GYM01 only
-      const s1 = makeSession(
+      const s1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "11:00",
+        "09:00:00",
+        "11:00:00",
         "high"
       );
-      const s2 = makeSession(
+      const s2 = realSession(
         "GYM01",
-        "Gymnastics",
-        "SoFi Stadium Zone",
+        "Artistic Gymnastics",
+        "Inglewood Zone",
         "2028-07-22",
-        "12:30",
-        "14:30",
+        "12:30:00",
+        "14:30:00",
         "high"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         softBuddies: ["Bob"],
         candidateSessions: [s1, s2],
       });
 
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:30",
-            "14:30"
+            "12:30:00",
+            "14:30:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -860,75 +1113,73 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Bob's hard buddy Carol is NOT interested in SWM01, so Bob's
       // hard buddy filter removes SWM01. Alice should NOT get a soft
       // buddy bonus for SWM01.
-      const s1 = makeSession(
+      const s1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "11:00",
+        "09:00:00",
+        "11:00:00",
         "high"
       );
-      const s2 = makeSession(
+      const s2 = realSession(
         "GYM01",
-        "Gymnastics",
-        "SoFi Stadium Zone",
+        "Artistic Gymnastics",
+        "Inglewood Zone",
         "2028-07-22",
-        "12:30",
-        "14:30",
+        "12:30:00",
+        "14:30:00",
         "high"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         softBuddies: ["Bob"],
         candidateSessions: [s1, s2],
       });
 
       // Bob is interested in SWM01 and GYM01, but has hard buddy Carol
       const bob = makeMember("Bob", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         hardBuddies: ["Carol"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:30",
-            "14:30"
+            "12:30:00",
+            "14:30:00"
           ),
         ],
       });
 
       // Carol is only interested in GYM01 → Bob's SWM01 gets filtered out
       const carol = makeMember("Carol", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:30",
-            "14:30"
+            "12:30:00",
+            "14:30:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+      ]);
 
       const aliceCombos = result.combos.filter(
         (c) => c.memberId === "Alice" && c.day === "2028-07-22"
@@ -966,27 +1217,27 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Alice has soft buddy Bob. Bob has minBuddies=2, but only 1 other
       // member (Alice) is interested in TRK01. So Bob's TRK01 gets filtered
       // by minBuddies. Alice should NOT get a soft buddy bonus for TRK01.
-      const s1 = makeSession(
+      const s1 = realSession(
         "TRK01",
-        "Track & Field",
-        "SoFi Stadium Zone",
+        "Athletics (Track & Field)",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "11:00",
+        "09:00:00",
+        "11:00:00",
         "high"
       );
-      const s2 = makeSession(
+      const s2 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "12:30",
-        "14:30",
+        "12:30:00",
+        "14:30:00",
         "high"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Track & Field", "Swimming"],
+        sportRankings: ["Athletics (Track & Field)", "Swimming"],
         softBuddies: ["Bob"],
         candidateSessions: [s1, s2],
       });
@@ -995,29 +1246,29 @@ describe("runScheduleGeneration - end-to-end", () => {
       // TRK01: 2 total interested (Alice + Bob), Bob needs 2 others → 2-1=1 < 2 → filtered
       // SWM01: 2 total interested (Alice + Bob), Bob needs 2 others → 2-1=1 < 2 → filtered
       const bob = makeMember("Bob", {
-        sportRankings: ["Track & Field", "Swimming"],
+        sportRankings: ["Athletics (Track & Field)", "Swimming"],
         minBuddies: 2,
         candidateSessions: [
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:30",
-            "14:30"
+            "12:30:00",
+            "14:30:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1044,13 +1295,13 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Alice has soft buddy Bob. Bob has hard buddy Carol, and Carol IS
       // interested in SWM01. So Bob's SWM01 survives filtering, and Alice
       // should get the soft buddy bonus.
-      const s1 = makeSession(
+      const s1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "11:00",
+        "09:00:00",
+        "11:00:00",
         "high"
       );
 
@@ -1064,13 +1315,13 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         hardBuddies: ["Carol"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
         ],
       });
@@ -1079,22 +1330,20 @@ describe("runScheduleGeneration - end-to-end", () => {
       const carol = makeMember("Carol", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+      ]);
 
       const alicePrimary = result.combos.find(
         (c) => c.memberId === "Alice" && c.rank === "primary"
@@ -1108,136 +1357,144 @@ describe("runScheduleGeneration - end-to-end", () => {
   describe("re-generation produces same results (deterministic)", () => {
     it("produces identical output when run twice with same input", () => {
       const sessions = [
-        makeSession(
+        realSession(
           "SWM01",
           "Swimming",
-          "SoFi Stadium Zone",
+          "Inglewood Zone",
           "2028-07-22",
-          "09:00",
-          "11:00"
+          "09:00:00",
+          "11:00:00"
         ),
-        makeSession(
+        realSession(
           "GYM01",
-          "Gymnastics",
-          "Downtown LA Zone",
+          "Artistic Gymnastics",
+          "DTLA Zone",
           "2028-07-22",
-          "14:00",
-          "16:00"
+          "14:00:00",
+          "16:00:00"
         ),
-        makeSession(
+        realSession(
           "TRK01",
-          "Track & Field",
-          "Rose Bowl Zone",
+          "Athletics (Track & Field)",
+          "Pasadena Zone",
           "2028-07-23",
-          "10:00",
-          "12:00"
+          "10:00:00",
+          "12:00:00"
         ),
       ];
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         softBuddies: ["Bob"],
         candidateSessions: sessions,
       });
 
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics", "Swimming"],
+        sportRankings: ["Artistic Gymnastics", "Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "Rose Bowl Zone",
+            "Athletics (Track & Field)",
+            "Pasadena Zone",
             "2028-07-23",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result1 = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result1 = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
         "2028-07-23",
       ]);
 
       // Re-create members (fresh objects) to ensure no mutation
       const alice2 = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         softBuddies: ["Bob"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "Rose Bowl Zone",
+            "Athletics (Track & Field)",
+            "Pasadena Zone",
             "2028-07-23",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const bob2 = makeMember("Bob", {
-        sportRankings: ["Gymnastics", "Swimming"],
+        sportRankings: ["Artistic Gymnastics", "Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "Rose Bowl Zone",
+            "Athletics (Track & Field)",
+            "Pasadena Zone",
             "2028-07-23",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result2 = runScheduleGeneration([alice2, bob2], LA_TRAVEL_ENTRIES, [
+      const result2 = runScheduleGeneration([alice2, bob2], REAL_TRAVEL, [
         "2028-07-22",
         "2028-07-23",
       ]);
@@ -1253,20 +1510,20 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("single member edge cases", () => {
     it("single member with 1 session on 1 day gets exactly 1 primary combo", () => {
-      const s = makeSession(
+      const s = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
       const alice = makeMember("Alice", {
         sportRankings: ["Swimming"],
         candidateSessions: [s],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1277,13 +1534,13 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("single member with minBuddies > 0 gets no combos (can't satisfy alone)", () => {
-      const s = makeSession(
+      const s = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
       const alice = makeMember("Alice", {
         sportRankings: ["Swimming"],
@@ -1291,7 +1548,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: [s],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1301,13 +1558,13 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("single member with hardBuddies pointing to nobody gets no combos", () => {
-      const s = makeSession(
+      const s = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
       const alice = makeMember("Alice", {
         sportRankings: ["Swimming"],
@@ -1317,7 +1574,7 @@ describe("runScheduleGeneration - end-to-end", () => {
 
       // "Ghost" doesn't exist → input filter skips that buddy, but post-generation
       // validation detects "Ghost" has no combo with SWM01 → session pruned → no combos
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1331,13 +1588,13 @@ describe("runScheduleGeneration - end-to-end", () => {
         const day = `2028-07-${d.toString().padStart(2, "0")}`;
         allDays.push(day);
         sessions.push(
-          makeSession(
+          realSession(
             `SWM${d}`,
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             day,
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           )
         );
       }
@@ -1347,7 +1604,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: sessions,
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, allDays);
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, allDays);
 
       expect(result.membersWithNoCombos).toHaveLength(0);
       // 19 days, 1 session per day → 19 primary combos
@@ -1362,13 +1619,13 @@ describe("runScheduleGeneration - end-to-end", () => {
       const sessions = [];
       for (let i = 0; i < 8; i++) {
         sessions.push(
-          makeSession(
+          realSession(
             `S${i.toString().padStart(2, "0")}`,
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            `${8 + i * 2}:00`,
-            `${9 + i * 2}:00`
+            `${8 + i * 2}:00:00`,
+            `${9 + i * 2}:00:00`
           )
         );
       }
@@ -1378,7 +1635,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: sessions,
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1405,13 +1662,13 @@ describe("runScheduleGeneration - end-to-end", () => {
           makeMember(`M${i}`, {
             sportRankings: ["Swimming"],
             candidateSessions: [
-              makeSession(
+              realSession(
                 "SWM01",
                 "Swimming",
-                "SoFi Stadium Zone",
+                "Inglewood Zone",
                 "2028-07-22",
-                "10:00",
-                "12:00",
+                "10:00:00",
+                "12:00:00",
                 "high"
               ),
             ],
@@ -1419,7 +1676,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         );
       }
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration(members, REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1441,20 +1698,20 @@ describe("runScheduleGeneration - end-to-end", () => {
             sportRankings: ["Swimming"],
             minBuddies: 11,
             candidateSessions: [
-              makeSession(
+              realSession(
                 "SWM01",
                 "Swimming",
-                "SoFi Stadium Zone",
+                "Inglewood Zone",
                 "2028-07-22",
-                "10:00",
-                "12:00"
+                "10:00:00",
+                "12:00:00"
               ),
             ],
           })
         );
       }
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration(members, REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1471,13 +1728,13 @@ describe("runScheduleGeneration - end-to-end", () => {
             sportRankings: ["Swimming"],
             minBuddies: 11,
             candidateSessions: [
-              makeSession(
+              realSession(
                 "SWM01",
                 "Swimming",
-                "SoFi Stadium Zone",
+                "Inglewood Zone",
                 "2028-07-22",
-                "10:00",
-                "12:00"
+                "10:00:00",
+                "12:00:00"
               ),
             ],
           })
@@ -1486,21 +1743,21 @@ describe("runScheduleGeneration - end-to-end", () => {
       // M11 is interested in a DIFFERENT session
       members.push(
         makeMember("M11", {
-          sportRankings: ["Gymnastics"],
+          sportRankings: ["Artistic Gymnastics"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "GYM01",
-              "Gymnastics",
-              "Downtown LA Zone",
+              "Artistic Gymnastics",
+              "DTLA Zone",
               "2028-07-22",
-              "10:00",
-              "12:00"
+              "10:00:00",
+              "12:00:00"
             ),
           ],
         })
       );
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration(members, REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1528,20 +1785,20 @@ describe("runScheduleGeneration - end-to-end", () => {
             sportRankings: ["Swimming"],
             hardBuddies,
             candidateSessions: [
-              makeSession(
+              realSession(
                 "SWM01",
                 "Swimming",
-                "SoFi Stadium Zone",
+                "Inglewood Zone",
                 "2028-07-22",
-                "10:00",
-                "12:00"
+                "10:00:00",
+                "12:00:00"
               ),
             ],
           })
         );
       }
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration(members, REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1559,8 +1816,8 @@ describe("runScheduleGeneration - end-to-end", () => {
   describe("member ranking 10 sports with many sessions", () => {
     const tenSports = [
       "Swimming",
-      "Gymnastics",
-      "Track & Field",
+      "Artistic Gymnastics",
+      "Athletics (Track & Field)",
       "Diving",
       "Basketball",
       "Volleyball",
@@ -1573,13 +1830,13 @@ describe("runScheduleGeneration - end-to-end", () => {
     it("correctly applies sport multiplier across 10 ranked sports", () => {
       // Create 10 sessions, one per sport, all on the same day in the same zone
       const sessions = tenSports.map((sport, i) =>
-        makeSession(
+        realSession(
           `${sport.substring(0, 3).toUpperCase()}01`,
           sport,
-          "SoFi Stadium Zone",
+          "Inglewood Zone",
           "2028-07-22",
-          `${8 + i}:30`,
-          `${9 + i}:00`
+          `${8 + i}:30:00`,
+          `${9 + i}:00:00`
         )
       );
 
@@ -1588,7 +1845,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: sessions,
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1610,13 +1867,13 @@ describe("runScheduleGeneration - end-to-end", () => {
       for (const day of days) {
         for (let i = 0; i < tenSports.length; i++) {
           sessions.push(
-            makeSession(
+            realSession(
               `${tenSports[i].substring(0, 3).toUpperCase()}${day.slice(-2)}`,
               tenSports[i],
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               day,
-              `${8 + i}:30`,
-              `${9 + i}:00`
+              `${8 + i}:30:00`,
+              `${9 + i}:00:00`
             )
           );
         }
@@ -1627,7 +1884,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: sessions,
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, days);
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, days);
 
       expect(result.membersWithNoCombos).toHaveLength(0);
       // Should have combos for each of the 3 days
@@ -1644,49 +1901,49 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("all 12 members ranking 10 sports with 5 shared sessions produces valid output", () => {
       const fiveSessionsPerDay = [
-        makeSession(
+        realSession(
           "SWM01",
           "Swimming",
-          "SoFi Stadium Zone",
+          "Inglewood Zone",
           "2028-07-22",
-          "08:00",
-          "09:30",
+          "08:00:00",
+          "09:30:00",
           "high"
         ),
-        makeSession(
+        realSession(
           "GYM01",
-          "Gymnastics",
-          "SoFi Stadium Zone",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
           "2028-07-22",
-          "10:30",
-          "12:00",
+          "10:30:00",
+          "12:00:00",
           "medium"
         ),
-        makeSession(
+        realSession(
           "TRK01",
-          "Track & Field",
-          "SoFi Stadium Zone",
+          "Athletics (Track & Field)",
+          "Inglewood Zone",
           "2028-07-22",
-          "13:00",
-          "14:30",
+          "13:00:00",
+          "14:30:00",
           "high"
         ),
-        makeSession(
+        realSession(
           "DIV01",
           "Diving",
-          "SoFi Stadium Zone",
+          "Inglewood Zone",
           "2028-07-22",
-          "15:30",
-          "17:00",
+          "15:30:00",
+          "17:00:00",
           "low"
         ),
-        makeSession(
+        realSession(
           "BAS01",
           "Basketball",
-          "SoFi Stadium Zone",
+          "Inglewood Zone",
           "2028-07-22",
-          "18:00",
-          "19:30",
+          "18:00:00",
+          "19:30:00",
           "medium"
         ),
       ];
@@ -1706,7 +1963,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         );
       }
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration(members, REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1728,53 +1985,53 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("buddy constraint edge cases", () => {
     it("mutual hard buddies: A requires B, B requires A — both keep shared sessions", () => {
-      const shared = makeSession(
+      const shared = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
-      const aOnly = makeSession(
+      const aOnly = realSession(
         "GYM01",
-        "Gymnastics",
-        "Downtown LA Zone",
+        "Artistic Gymnastics",
+        "DTLA Zone",
         "2028-07-22",
-        "14:00",
-        "16:00"
+        "14:00:00",
+        "16:00:00"
       );
-      const bOnly = makeSession(
+      const bOnly = realSession(
         "TRK01",
-        "Track & Field",
-        "Rose Bowl Zone",
+        "Athletics (Track & Field)",
+        "Pasadena Zone",
         "2028-07-22",
-        "14:00",
-        "16:00"
+        "14:00:00",
+        "16:00:00"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         hardBuddies: ["Bob"],
         candidateSessions: [shared, aOnly],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Swimming", "Track & Field"],
+        sportRankings: ["Swimming", "Athletics (Track & Field)"],
         hardBuddies: ["Alice"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
           bOnly,
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1793,85 +2050,87 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("chain of hard buddies: A→B, B→C, C→A — only triple-overlap sessions survive", () => {
-      const all3 = makeSession(
+      const all3 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
-      const abOnly = makeSession(
+      const abOnly = realSession(
         "GYM01",
-        "Gymnastics",
-        "SoFi Stadium Zone",
+        "Artistic Gymnastics",
+        "Inglewood Zone",
         "2028-07-22",
-        "14:00",
-        "16:00"
+        "14:00:00",
+        "16:00:00"
       );
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         hardBuddies: ["Bob"],
         candidateSessions: [all3, abOnly],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         hardBuddies: ["Carol"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
       const carol = makeMember("Carol", {
-        sportRankings: ["Swimming", "Track & Field"],
+        sportRankings: ["Swimming", "Athletics (Track & Field)"],
         hardBuddies: ["Alice"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+      ]);
 
       // Alice needs Bob: Bob has {SWM01, GYM01, TRK01} → Alice keeps {SWM01, GYM01}
       // Bob needs Carol: Carol has {SWM01, TRK01} → Bob keeps {SWM01, TRK01}
@@ -1894,21 +2153,21 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("asymmetric hard buddy: A requires B, but B doesn't require A", () => {
-      const shared = makeSession(
+      const shared = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
-      const bOnly = makeSession(
+      const bOnly = realSession(
         "GYM01",
-        "Gymnastics",
-        "Downtown LA Zone",
+        "Artistic Gymnastics",
+        "DTLA Zone",
         "2028-07-22",
-        "14:00",
-        "16:00"
+        "14:00:00",
+        "16:00:00"
       );
 
       const alice = makeMember("Alice", {
@@ -1917,22 +2176,22 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: [shared],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         // No hard buddies — doesn't require Alice
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
           bOnly,
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -1953,94 +2212,98 @@ describe("runScheduleGeneration - end-to-end", () => {
     it("hard buddy with 3 buddies: only triple-intersection survives", () => {
       // Alice requires Bob AND Carol AND Dave
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         hardBuddies: ["Bob", "Carol", "Dave"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "18:00",
-            "20:00"
+            "18:00:00",
+            "20:00:00"
           ),
         ],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
       const carol = makeMember("Carol", {
-        sportRankings: ["Swimming", "Track & Field"],
+        sportRankings: ["Swimming", "Athletics (Track & Field)"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK01",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "18:00",
-            "20:00"
+            "18:00:00",
+            "20:00:00"
           ),
         ],
       });
       const dave = makeMember("Dave", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const result = runScheduleGeneration(
         [alice, bob, carol, dave],
-        LA_TRAVEL_ENTRIES,
+        REAL_TRAVEL,
         ["2028-07-22"]
       );
 
@@ -2053,43 +2316,43 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("soft buddies don't filter sessions, only boost scores", () => {
-      const shared = makeSession(
+      const shared = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
-      const aliceOnly = makeSession(
+      const aliceOnly = realSession(
         "GYM01",
-        "Gymnastics",
-        "SoFi Stadium Zone",
+        "Artistic Gymnastics",
+        "Inglewood Zone",
         "2028-07-22",
-        "14:00",
-        "16:00"
+        "14:00:00",
+        "16:00:00"
       );
 
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         softBuddies: ["Bob"],
         candidateSessions: [shared, aliceOnly],
       });
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2105,79 +2368,79 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Alice: hardBuddies=["Bob"], minBuddies=2
       // 4 members, but only 2 interested in SWM01 besides Alice
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         hardBuddies: ["Bob"],
         minBuddies: 2,
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
       const carol = makeMember("Carol", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
       const dave = makeMember("Dave", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
 
       const result = runScheduleGeneration(
         [alice, bob, carol, dave],
-        LA_TRAVEL_ENTRIES,
+        REAL_TRAVEL,
         ["2028-07-22"]
       );
 
@@ -2198,48 +2461,46 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         minBuddies: 2,
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
       const carol = makeMember("Carol", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+      ]);
 
       // SWM01: 3 interested, Alice needs 2 others → 3-1=2 >= 2 ✓
       expect(result.membersWithNoCombos).not.toContain("Alice");
@@ -2250,61 +2511,59 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         minBuddies: 3,
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
       const carol = makeMember("Carol", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+      ]);
 
       // SWM01: 3 interested, Alice needs 3 others → 3-1=2 < 3 ✗
       expect(result.membersWithNoCombos).toContain("Alice");
     });
 
     it("multiple soft buddies increase score multiplicatively", () => {
-      const session = makeSession(
+      const session = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "10:00",
-        "12:00"
+        "10:00:00",
+        "12:00:00"
       );
 
       const alice = makeMember("Alice", {
@@ -2315,46 +2574,46 @@ describe("runScheduleGeneration - end-to-end", () => {
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
       const carol = makeMember("Carol", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
       const dave = makeMember("Dave", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const result = runScheduleGeneration(
         [alice, bob, carol, dave],
-        LA_TRAVEL_ENTRIES,
+        REAL_TRAVEL,
         ["2028-07-22"]
       );
 
@@ -2368,24 +2627,24 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("soft buddy not interested in a session means no bonus for that session", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         softBuddies: ["Bob"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
@@ -2393,18 +2652,18 @@ describe("runScheduleGeneration - end-to-end", () => {
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2430,28 +2689,28 @@ describe("runScheduleGeneration - end-to-end", () => {
   describe("travel distance edge cases", () => {
     it("back-to-back sessions in same zone with exactly 90-min gap is feasible", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:30",
-            "12:00"
+            "10:30:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2464,28 +2723,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("back-to-back sessions in same zone with 89-min gap is NOT feasible", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:01"
+            "08:00:00",
+            "09:01:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:30",
-            "12:00"
+            "10:30:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2497,30 +2756,30 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("close zones (<15 min) need 90-min gap — boundary test", () => {
-      // Downtown LA → Rose Bowl: 12 min driving → 90 min required
+      // Exposition Park → DTLA: 11.3 min driving → 90 min required
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
-            "SWM01",
-            "Swimming",
-            "Downtown LA Zone",
+          realSession(
+            "ATH01",
+            "Athletics (Track & Field)",
+            "Exposition Park Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Rose Bowl Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "10:30",
-            "12:00"
+            "10:30:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2533,28 +2792,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("close zones (<15 min) with 89-min gap is NOT feasible", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
-            "SWM01",
-            "Swimming",
-            "Downtown LA Zone",
+          realSession(
+            "ATH01",
+            "Athletics (Track & Field)",
+            "Exposition Park Zone",
             "2028-07-22",
-            "08:00",
-            "09:01"
+            "08:00:00",
+            "09:01:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Rose Bowl Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "10:30",
-            "12:00"
+            "10:30:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2566,30 +2825,30 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("medium zones (30-44 min) need 150-min gap — boundary test", () => {
-      // SoFi → Rose Bowl: 35 min driving → 150 min required
+      // Inglewood → Pasadena: 43.55 min driving → 150 min required
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Rose Bowl Zone",
+            "Artistic Gymnastics",
+            "Pasadena Zone",
             "2028-07-22",
-            "11:30",
-            "13:00"
+            "11:30:00",
+            "13:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2602,28 +2861,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("medium zones (30-44 min) with 149-min gap is NOT feasible", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:01"
+            "08:00:00",
+            "09:01:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Rose Bowl Zone",
+            "Artistic Gymnastics",
+            "Pasadena Zone",
             "2028-07-22",
-            "11:30",
-            "13:00"
+            "11:30:00",
+            "13:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2636,28 +2895,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("unknown zones default to 210-min (3.5h) required gap", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
             "Unknown Zone Alpha",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
+            "Artistic Gymnastics",
             "Unknown Zone Beta",
             "2028-07-22",
-            "12:30",
-            "14:00"
+            "12:30:00",
+            "14:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2670,28 +2929,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("unknown zones with 209-min gap is NOT feasible", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
             "Unknown Zone Alpha",
             "2028-07-22",
-            "08:00",
-            "09:01"
+            "08:00:00",
+            "09:01:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
+            "Artistic Gymnastics",
             "Unknown Zone Beta",
             "2028-07-22",
-            "12:30",
-            "14:00"
+            "12:30:00",
+            "14:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2706,26 +2965,26 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: ["Surfing", "Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SRF01",
             "Surfing",
             "Trestles Beach Zone",
             "2028-07-22",
-            "06:00",
-            "08:00"
+            "06:00:00",
+            "08:00:00"
           ),
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:00",
-            "14:00"
+            "12:00:00",
+            "14:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2740,26 +2999,26 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: ["Surfing", "Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SRF01",
             "Surfing",
             "Trestles Beach Zone",
             "2028-07-22",
-            "06:00",
-            "08:01"
+            "06:00:00",
+            "08:01:00"
           ),
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:00",
-            "14:00"
+            "12:00:00",
+            "14:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2771,43 +3030,47 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("3-session chain: feasible first hop, infeasible second hop → no 3-combo", () => {
-      // Downtown LA → Rose Bowl (12 min, 90 min gap), then Rose Bowl → Long Beach (42 min, 150 min gap)
+      // Exposition Park → DTLA (11.3 min, 90 min gap), then DTLA → Long Beach (37.13 min, 150 min gap)
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Athletics (Track & Field)",
+          "Artistic Gymnastics",
+          "Swimming",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S01",
-            "Swimming",
-            "Downtown LA Zone",
+            "Athletics (Track & Field)",
+            "Exposition Park Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "S02",
-            "Gymnastics",
-            "Rose Bowl Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "10:30",
-            "12:00"
+            "10:30:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "S03",
-            "Track & Field",
+            "Swimming",
             "Long Beach Zone",
             "2028-07-22",
-            "13:00",
-            "15:00"
+            "13:00:00",
+            "15:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
-      // Hop 1: 10:30 - 09:00 = 90 >= 90 ✓
-      // Hop 2: 13:00 - 12:00 = 60 < 150 ✗
+      // Hop 1: 10:30 - 09:00 = 90 >= 90 (Expo Park→DTLA 11.3 min → 90 min required) ✓
+      // Hop 2: 13:00 - 12:00 = 60 < 150 (DTLA→Long Beach 37.13 min → 150 min required) ✗
       // 3-session combo NOT feasible, but {S01, S02} and {S01} and {S02} and {S03} are fine
       const threeCombos = result.combos.filter(
         (c) => c.sessionCodes.length === 3
@@ -2828,34 +3091,34 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: ["Surfing"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SRF01",
             "Surfing",
             "Trestles Beach Zone",
             "2028-07-22",
-            "06:00",
-            "07:00"
+            "06:00:00",
+            "07:00:00"
           ),
-          makeSession(
+          realSession(
             "SRF02",
             "Surfing",
             "Trestles Beach Zone",
             "2028-07-22",
-            "08:30",
-            "09:30"
+            "08:30:00",
+            "09:30:00"
           ),
-          makeSession(
+          realSession(
             "SRF03",
             "Surfing",
             "Trestles Beach Zone",
             "2028-07-22",
-            "11:00",
-            "12:00"
+            "11:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2869,28 +3132,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("session ending at midnight (00:00) treated as end-of-day", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "21:00",
-            "00:00"
+            "21:00:00",
+            "00:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "10:00"
+            "08:00:00",
+            "10:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2904,23 +3167,23 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("no travel entries → all cross-zone pairs default to 210-min gap", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "12:30",
-            "14:00"
+            "12:30:00",
+            "14:00:00"
           ),
         ],
       });
@@ -2940,30 +3203,30 @@ describe("runScheduleGeneration - end-to-end", () => {
     it("session appearing only in backup combos still gets generated", () => {
       // Session A scores higher than Session B, so B is in backup only
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "low"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -2985,56 +3248,56 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: [
           "Swimming",
-          "Gymnastics",
-          "Track & Field",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
           "Diving",
           "Boxing",
         ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "S02",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:30",
-            "11:30"
+            "10:30:00",
+            "11:30:00"
           ),
-          makeSession(
+          realSession(
             "S03",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "13:00",
-            "14:00"
+            "13:00:00",
+            "14:00:00"
           ),
-          makeSession(
+          realSession(
             "S04",
             "Diving",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "15:30",
-            "16:30"
+            "15:30:00",
+            "16:30:00"
           ),
-          makeSession(
+          realSession(
             "S05",
             "Boxing",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "18:00",
-            "19:00"
+            "18:00:00",
+            "19:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const dayCombos = result.combos.filter(
@@ -3059,36 +3322,40 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("no backups when all sessions fit in one combo (3 same-zone sessions)", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "S02",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:30",
-            "11:30"
+            "10:30:00",
+            "11:30:00"
           ),
-          makeSession(
+          realSession(
             "S03",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "13:00",
-            "14:00"
+            "13:00:00",
+            "14:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const dayCombos = result.combos.filter(
@@ -3105,26 +3372,26 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "S02",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "11:00",
-            "12:00"
+            "11:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const dayCombos = result.combos.filter(
@@ -3140,36 +3407,40 @@ describe("runScheduleGeneration - end-to-end", () => {
       // 3 sessions all at 10:00-12:00, same zone → can't be paired.
       // Each becomes a solo combo. All distinct → P, B1, B2 each have a unique session.
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "TRK",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const dayCombos = result.combos.filter(
@@ -3191,44 +3462,49 @@ describe("runScheduleGeneration - end-to-end", () => {
       // S04 (rank 4 sport) can only appear in backup combos.
       // B1 must contain S04 since all other combos are subsets of P.
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field", "Diving"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+          "Diving",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00"
+            "08:00:00",
+            "09:00:00"
           ),
-          makeSession(
+          realSession(
             "S02",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:30",
-            "11:30"
+            "10:30:00",
+            "11:30:00"
           ),
-          makeSession(
+          realSession(
             "S03",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "13:00",
-            "14:00"
+            "13:00:00",
+            "14:00:00"
           ),
-          makeSession(
+          realSession(
             "S04",
             "Diving",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "15:30",
-            "16:30"
+            "15:30:00",
+            "16:30:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const dayCombos = result.combos.filter(
@@ -3251,37 +3527,41 @@ describe("runScheduleGeneration - end-to-end", () => {
       // P = {S01, S02} (highest pair), B1 = {S03} (new vs P, can't pair with anything).
       // Remaining candidates: {S01} and {S02} — both subsets of P → no B2.
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "10:00"
+            "08:00:00",
+            "10:00:00"
           ),
-          makeSession(
+          realSession(
             "S02",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "11:30",
-            "13:30"
+            "11:30:00",
+            "13:30:00"
           ),
           // S03 overlaps with S01 (starts at 09:00, before S01 ends at 10:00)
-          makeSession(
+          realSession(
             "S03",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const dayCombos = result.combos.filter(
@@ -3312,44 +3592,49 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Use overlapping sessions so only singles are feasible, ensuring P={S01}, etc.
       // Instead: 4 overlapping sessions. P=highest single, B1=second, B2=third.
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics", "Track & Field", "Diving"],
+        sportRankings: [
+          "Swimming",
+          "Artistic Gymnastics",
+          "Athletics (Track & Field)",
+          "Diving",
+        ],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "S02",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "S03",
-            "Track & Field",
-            "SoFi Stadium Zone",
+            "Athletics (Track & Field)",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "S04",
             "Diving",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const dayCombos = result.combos.filter(
@@ -3379,40 +3664,40 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Hard buddy filter removes 2 of 4 sessions → only 2 remain.
       // Both fit in one combo → no meaningful backups.
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         hardBuddies: ["Bob"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "10:00"
+            "08:00:00",
+            "10:00:00"
           ),
-          makeSession(
+          realSession(
             "SWM02",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:00",
-            "14:00"
+            "12:00:00",
+            "14:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "15:00",
-            "17:00"
+            "15:00:00",
+            "17:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM02",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "18:00",
-            "20:00"
+            "18:00:00",
+            "20:00:00"
           ),
         ],
       });
@@ -3421,26 +3706,26 @@ describe("runScheduleGeneration - end-to-end", () => {
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "10:00"
+            "08:00:00",
+            "10:00:00"
           ),
-          makeSession(
+          realSession(
             "SWM02",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:00",
-            "14:00"
+            "12:00:00",
+            "14:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
       const aliceCombos = result.combos.filter(
@@ -3465,28 +3750,28 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM_HIGH",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
-          makeSession(
+          realSession(
             "SWM_LOW",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00",
+            "14:00:00",
+            "16:00:00",
             "low"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -3509,8 +3794,8 @@ describe("runScheduleGeneration - end-to-end", () => {
     it("medium interest #1 ranked sport beats high interest #10 ranked sport", () => {
       const tenSports = [
         "Swimming",
-        "Gymnastics",
-        "Track & Field",
+        "Artistic Gymnastics",
+        "Athletics (Track & Field)",
         "Diving",
         "Basketball",
         "Volleyball",
@@ -3523,28 +3808,28 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: tenSports,
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "medium"
           ),
-          makeSession(
+          realSession(
             "FEN01",
             "Fencing",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00",
+            "14:00:00",
+            "16:00:00",
             "high"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -3583,28 +3868,28 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Diving"],
         hardBuddies: ["Carol"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "DIV01",
             "Diving",
             "Long Beach Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const carol = makeMember("Carol", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         minBuddies: 10,
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
@@ -3612,20 +3897,20 @@ describe("runScheduleGeneration - end-to-end", () => {
       const dave = makeMember("Dave", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
       const result = runScheduleGeneration(
         [alice, bob, carol, dave],
-        LA_TRAVEL_ENTRIES,
+        REAL_TRAVEL,
         ["2028-07-22"]
       );
 
@@ -3649,59 +3934,57 @@ describe("runScheduleGeneration - end-to-end", () => {
       //   Expected score: 2.0 × 1.0 × 1.35 = 2.7
       const alice = makeMember("Alice", {
         sportRankings: [
-          "Gymnastics",
+          "Artistic Gymnastics",
           "Swimming",
-          "Track & Field",
+          "Athletics (Track & Field)",
           "Diving",
           "Basketball",
         ],
         softBuddies: ["Bob", "Carol"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM-WFINAL",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM-WFINAL",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
       const carol = makeMember("Carol", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM-WFINAL",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "medium"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+      ]);
 
       const aliceCombo = result.combos.find((c) => c.memberId === "Alice");
       expect(aliceCombo).toBeDefined();
@@ -3718,68 +4001,67 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Sessions on separate days so each becomes its own primary (avoids subset filtering)
       const alice = makeMember("Alice", {
         sportRankings: [
-          "Gymnastics",
+          "Artistic Gymnastics",
           "Swimming",
-          "Track & Field",
+          "Athletics (Track & Field)",
           "Diving",
           "Basketball",
         ],
         softBuddies: ["Bob", "Carol"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "low"
           ),
-          makeSession(
+          realSession(
             "BAS01",
             "Basketball",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-23",
-            "14:00",
-            "16:00",
+            "14:00:00",
+            "16:00:00",
             "high"
           ),
         ],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
       const carol = makeMember("Carol", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "medium"
           ),
         ],
       });
 
-      const result = runScheduleGeneration(
-        [alice, bob, carol],
-        LA_TRAVEL_ENTRIES,
-        ["2028-07-22", "2028-07-23"]
-      );
+      const result = runScheduleGeneration([alice, bob, carol], REAL_TRAVEL, [
+        "2028-07-22",
+        "2028-07-23",
+      ]);
 
       const alicePrimaries = result.combos.filter(
         (c) => c.memberId === "Alice" && c.rank === "primary"
@@ -3814,31 +4096,31 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         softBuddies: buddyIds,
         candidateSessions: [
-          makeSession(
+          realSession(
             "SA",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00",
+            "08:00:00",
+            "09:00:00",
             "high"
           ),
-          makeSession(
+          realSession(
             "SB",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-23",
-            "08:00",
-            "09:00",
+            "08:00:00",
+            "09:00:00",
             "high"
           ),
-          makeSession(
+          realSession(
             "SC",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-24",
-            "08:00",
-            "09:00",
+            "08:00:00",
+            "09:00:00",
             "high"
           ),
         ],
@@ -3852,26 +4134,26 @@ describe("runScheduleGeneration - end-to-end", () => {
         const sessions = [];
         // All 6 buddies interested in SC
         sessions.push(
-          makeSession(
+          realSession(
             "SC",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-24",
-            "08:00",
-            "09:00",
+            "08:00:00",
+            "09:00:00",
             "high"
           )
         );
         // First 3 buddies also interested in SB
         if (i < 3) {
           sessions.push(
-            makeSession(
+            realSession(
               "SB",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-23",
-              "08:00",
-              "09:00",
+              "08:00:00",
+              "09:00:00",
               "high"
             )
           );
@@ -3884,7 +4166,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         );
       }
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration(members, REAL_TRAVEL, [
         "2028-07-22",
         "2028-07-23",
         "2028-07-24",
@@ -3923,22 +4205,22 @@ describe("runScheduleGeneration - end-to-end", () => {
           sportRankings: ["Swimming"],
           softBuddies: buddyIds13,
           candidateSessions: [
-            makeSession(
+            realSession(
               "HIGH",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "08:00",
-              "09:00",
+              "08:00:00",
+              "09:00:00",
               "high"
             ),
-            makeSession(
+            realSession(
               "LOW",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-23",
-              "11:00",
-              "12:00",
+              "11:00:00",
+              "12:00:00",
               "low"
             ),
           ],
@@ -3950,13 +4232,13 @@ describe("runScheduleGeneration - end-to-end", () => {
           makeMember(id, {
             sportRankings: ["Swimming"],
             candidateSessions: [
-              makeSession(
+              realSession(
                 "LOW",
                 "Swimming",
-                "SoFi Stadium Zone",
+                "Inglewood Zone",
                 "2028-07-23",
-                "11:00",
-                "12:00",
+                "11:00:00",
+                "12:00:00",
                 "high"
               ),
             ],
@@ -3964,7 +4246,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         );
       }
 
-      const result13 = runScheduleGeneration(members13, LA_TRAVEL_ENTRIES, [
+      const result13 = runScheduleGeneration(members13, REAL_TRAVEL, [
         "2028-07-22",
         "2028-07-23",
       ]);
@@ -3995,28 +4277,28 @@ describe("runScheduleGeneration - end-to-end", () => {
   describe("overlapping sessions rejected", () => {
     it("fully overlapping sessions (same time) are never in the same combo", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4034,28 +4316,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("partially overlapping sessions (end > next start) are never in the same combo", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "11:30",
-            "13:30"
+            "11:30:00",
+            "13:30:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4068,28 +4350,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("session completely contained within another is rejected as pair", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "15:00"
+            "09:00:00",
+            "15:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4104,28 +4386,28 @@ describe("runScheduleGeneration - end-to-end", () => {
 
     it("sessions ending and starting at exact same time: gap=0 < 90 → rejected", () => {
       const alice = makeMember("Alice", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "12:00",
-            "14:00"
+            "12:00:00",
+            "14:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4151,45 +4433,45 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         softBuddies: ["Bob"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Swimming", "Gymnastics"],
+        sportRankings: ["Swimming", "Artistic Gymnastics"],
         candidateSessions: [
           // Bob IS interested in SWM01 (has it in candidateSessions)
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "medium"
           ),
           // Bob also has a higher-scoring session at the same time
           // which may become his primary instead of SWM01
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4207,34 +4489,34 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         softBuddies: ["Bob"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
           // Bob at same venue, same day, but different session — no interest in SWM01
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "SoFi Stadium Zone",
+            "Artistic Gymnastics",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00",
+            "14:00:00",
+            "16:00:00",
             "high"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4250,13 +4532,13 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         softBuddies: [], // No soft buddies
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
@@ -4264,19 +4546,19 @@ describe("runScheduleGeneration - end-to-end", () => {
       const carol = makeMember("Carol", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, carol], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, carol], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4299,28 +4581,28 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "S1",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "08:00",
-            "09:00",
+            "08:00:00",
+            "09:00:00",
             "high"
           ),
-          makeSession(
+          realSession(
             "S2",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:30",
-            "11:30",
+            "10:30:00",
+            "11:30:00",
             "high"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4339,37 +4621,37 @@ describe("runScheduleGeneration - end-to-end", () => {
       const alice = makeMember("Alice", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "ZZZ01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
-          makeSession(
+          realSession(
             "AAA01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
-          makeSession(
+          realSession(
             "MMM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00",
+            "10:00:00",
+            "12:00:00",
             "high"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4395,13 +4677,13 @@ describe("runScheduleGeneration - end-to-end", () => {
 
   describe("convergence loop", () => {
     it("converges in 1 pass when no violations exist", () => {
-      const s1 = makeSession(
+      const s1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "11:00",
+        "09:00:00",
+        "11:00:00",
         "high"
       );
 
@@ -4413,18 +4695,18 @@ describe("runScheduleGeneration - end-to-end", () => {
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4434,13 +4716,13 @@ describe("runScheduleGeneration - end-to-end", () => {
     });
 
     it("returns convergence info with all results", () => {
-      const s1 = makeSession(
+      const s1 = realSession(
         "SWM01",
         "Swimming",
-        "SoFi Stadium Zone",
+        "Inglewood Zone",
         "2028-07-22",
-        "09:00",
-        "11:00",
+        "09:00:00",
+        "11:00:00",
         "high"
       );
 
@@ -4449,7 +4731,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: [s1],
       });
 
-      const result = runScheduleGeneration([alice], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4468,32 +4750,32 @@ describe("runScheduleGeneration - end-to-end", () => {
         sportRankings: ["Swimming"],
         hardBuddies: ["Bob"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "09:00",
-            "11:00"
+            "09:00:00",
+            "11:00:00"
           ),
         ],
       });
 
       const bob = makeMember("Bob", {
-        sportRankings: ["Gymnastics"],
+        sportRankings: ["Artistic Gymnastics"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "GYM01",
-            "Gymnastics",
-            "Downtown LA Zone",
+            "Artistic Gymnastics",
+            "DTLA Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -4523,13 +4805,13 @@ describe("runScheduleGeneration - end-to-end", () => {
         const endMin = startMin + 10;
         const endHour = startHour + Math.floor(endMin / 60);
         const pad = (n: number) => String(n).padStart(2, "0");
-        return makeSession(
+        return realSession(
           `EV${pad(i + 1)}`,
           "Swimming",
-          "SoFi Stadium Zone",
+          "Inglewood Zone",
           DAY,
-          `${pad(startHour)}:${pad(startMin)}`,
-          `${pad(endHour)}:${pad(endMin % 60)}`
+          `${pad(startHour)}:${pad(startMin)}:00`,
+          `${pad(endHour)}:${pad(endMin % 60)}:00`
         );
       });
 
@@ -4545,9 +4827,7 @@ describe("runScheduleGeneration - end-to-end", () => {
         candidateSessions: sessions.map((s) => ({ ...s })),
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
-        DAY,
-      ]);
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [DAY]);
 
       expect(result.convergence.converged).toBe(false);
       expect(result.convergence.iterations).toBe(5);
@@ -4569,32 +4849,32 @@ describe("runScheduleGeneration - end-to-end", () => {
         makeMember("A", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
           ],
         }),
         makeMember("B", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
           ],
         }),
       ];
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS, {
+      const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS, {
         timeoutMs: -1,
       });
 
@@ -4606,19 +4886,19 @@ describe("runScheduleGeneration - end-to-end", () => {
         makeMember("A", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
           ],
         }),
       ];
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS, {
+      const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS, {
         timeoutMs: 60000,
       });
 
@@ -4637,21 +4917,21 @@ describe("runScheduleGeneration - end-to-end", () => {
           sportRankings: ["Swimming"],
           hardBuddies: ["B"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
@@ -4659,34 +4939,34 @@ describe("runScheduleGeneration - end-to-end", () => {
           sportRankings: ["Swimming"],
           hardBuddies: ["C"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
         makeMember("C", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
@@ -4702,7 +4982,7 @@ describe("runScheduleGeneration - end-to-end", () => {
       });
 
       try {
-        const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS, {
+        const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS, {
           timeoutMs: 100000,
         });
 
@@ -4743,21 +5023,21 @@ describe("runScheduleGeneration - end-to-end", () => {
           sportRankings: ["Swimming"],
           hardBuddies: ["B"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
@@ -4765,40 +5045,40 @@ describe("runScheduleGeneration - end-to-end", () => {
           sportRankings: ["Swimming"],
           hardBuddies: ["C"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
         makeMember("C", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
       ];
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS);
+      const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS);
 
       // A's primary should have S2 (the session that satisfies all constraints)
       const aPrimary = result.combos.filter(
@@ -4823,48 +5103,48 @@ describe("runScheduleGeneration - end-to-end", () => {
         makeMember("A", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
         makeMember("B", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
       ];
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS);
+      const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS);
 
       expect(result.convergence.converged).toBe(true);
       const aDay = result.combos.filter(
@@ -4889,61 +5169,61 @@ describe("runScheduleGeneration - end-to-end", () => {
           minBuddies: 1,
           hardBuddies: ["B"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
-            makeSession(
+            realSession(
               "S3",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "18:00",
-              "20:00"
+              "18:00:00",
+              "20:00:00"
             ),
           ],
         }),
         makeMember("B", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S1",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "09:00",
-              "11:00"
+              "09:00:00",
+              "11:00:00"
             ),
           ],
         }),
         makeMember("C", {
           sportRankings: ["Swimming"],
           candidateSessions: [
-            makeSession(
+            realSession(
               "S2",
               "Swimming",
-              "SoFi Stadium Zone",
+              "Inglewood Zone",
               "2028-07-22",
-              "14:00",
-              "16:00"
+              "14:00:00",
+              "16:00:00"
             ),
           ],
         }),
       ];
 
-      const result = runScheduleGeneration(members, LA_TRAVEL_ENTRIES, DAYS);
+      const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS);
 
       // S3 should NOT appear anywhere in A's combos (was naturally filtered, not pruned)
       const aCombos = result.combos.filter(
@@ -4967,39 +5247,39 @@ describe("runScheduleGeneration - end-to-end", () => {
         minBuddies: 1,
         lockedSessionCodes: ["LOCK-01"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "LOCK-01",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "10:00",
-            "12:00"
+            "10:00:00",
+            "12:00:00"
           ),
-          makeSession(
+          realSession(
             "SWM-02",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
       const bob = makeMember("Bob", {
         sportRankings: ["Swimming"],
         candidateSessions: [
-          makeSession(
+          realSession(
             "SWM-02",
             "Swimming",
-            "SoFi Stadium Zone",
+            "Inglewood Zone",
             "2028-07-22",
-            "14:00",
-            "16:00"
+            "14:00:00",
+            "16:00:00"
           ),
         ],
       });
 
-      const result = runScheduleGeneration([alice, bob], LA_TRAVEL_ENTRIES, [
+      const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
         "2028-07-22",
       ]);
 
@@ -5012,5 +5292,2937 @@ describe("runScheduleGeneration - end-to-end", () => {
       // Should converge (locked session skips minBuddies check)
       expect(result.convergence.converged).toBe(true);
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Timeout at convergence iteration boundary
+  // -------------------------------------------------------------------------
+
+  describe("timeout between convergence iterations", () => {
+    it("returns early with timedOut when timeout triggers at start of iteration 2", () => {
+      // Scenario: A→hardBuddy B, B→hardBuddy C. All prefer S1+S2, C only S2.
+      // Iteration 1: A's primary with S1 fails validation (B filtered out S1
+      // because C doesn't have it) → violation → prune S1 from A.
+      // Before iteration 2 starts, timeout fires at the loop boundary check.
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["B"],
+          candidateSessions: [
+            realSession(
+              "S1",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "09:00:00",
+              "11:00:00"
+            ),
+            realSession(
+              "S2",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "14:00:00",
+              "16:00:00"
+            ),
+          ],
+        }),
+        makeMember("B", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["C"],
+          candidateSessions: [
+            realSession(
+              "S1",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "09:00:00",
+              "11:00:00"
+            ),
+            realSession(
+              "S2",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "14:00:00",
+              "16:00:00"
+            ),
+          ],
+        }),
+        makeMember("C", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            realSession(
+              "S2",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "14:00:00",
+              "16:00:00"
+            ),
+          ],
+        }),
+      ];
+
+      // Mock Date.now: first call captures startTime (0), next 3 are
+      // per-member timeout checks inside iteration 1 (all pass). The 5th
+      // call is the iteration-boundary check at the top of iteration 2 —
+      // return a value that exceeds the timeout.
+      let callCount = 0;
+      const spy = vi.spyOn(Date, "now").mockImplementation(() => {
+        callCount++;
+        // Calls 1-4: startTime + 3 member checks in iteration 1
+        // Call 5: iteration 2 boundary check → exceed timeout
+        return callCount <= 4 ? 0 : 999999;
+      });
+
+      try {
+        const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS, {
+          timeoutMs: 100,
+        });
+
+        expect(result.convergence.timedOut).toBe(true);
+        expect(result.convergence.converged).toBe(false);
+        // Should report iteration 1 as the last completed iteration
+        expect(result.convergence.iterations).toBe(1);
+        // Violations from iteration 1 should be preserved
+        expect(result.convergence.violations.length).toBeGreaterThan(0);
+        // Combos from iteration 1 should be present
+        expect(result.combos.length).toBeGreaterThan(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Backup enhancement with locked sessions
+  // -------------------------------------------------------------------------
+
+  describe("backup enhancement with locked sessions", () => {
+    it("passes locked session codes to generateDayCombos during backup enhancement", () => {
+      // A has lockedSessionCodes: ["S-LOCK"], hardBuddy B. B has hardBuddy C.
+      // A prefers S-LOCK, S1, S2. B prefers S1, S2. C only prefers S2.
+      //
+      // Iteration 1: B's hard buddy filter removes S1 (C doesn't have it).
+      // A's primary with S1 violates (B has no S1 combo). S1 pruned from A.
+      // Iteration 2: A has S-LOCK + S2. Converges.
+      //
+      // Backup enhancement: A had S1 pruned → wide pool = [S-LOCK, S1, S2].
+      // lockedSet = {"S-LOCK"}. dayLockedCodes = {"S-LOCK"} (from filtering
+      // wideDaySessions for locked codes). generateDayCombos is called with
+      // dayLockedCodes, ensuring S-LOCK appears in backup combos.
+      const members = [
+        makeMember("A", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["B"],
+          lockedSessionCodes: ["S-LOCK"],
+          candidateSessions: [
+            realSession(
+              "S-LOCK",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "09:00:00",
+              "10:30:00"
+            ),
+            realSession(
+              "S1",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "14:00:00",
+              "16:00:00"
+            ),
+            realSession(
+              "S2",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "18:00:00",
+              "20:00:00"
+            ),
+          ],
+        }),
+        makeMember("B", {
+          sportRankings: ["Swimming"],
+          hardBuddies: ["C"],
+          candidateSessions: [
+            realSession(
+              "S1",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "14:00:00",
+              "16:00:00"
+            ),
+            realSession(
+              "S2",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "18:00:00",
+              "20:00:00"
+            ),
+          ],
+        }),
+        makeMember("C", {
+          sportRankings: ["Swimming"],
+          candidateSessions: [
+            realSession(
+              "S2",
+              "Swimming",
+              "Inglewood Zone",
+              "2028-07-22",
+              "18:00:00",
+              "20:00:00"
+            ),
+          ],
+        }),
+      ];
+
+      const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS);
+
+      // A's primary should contain S-LOCK (locked, always present)
+      const aPrimary = result.combos.find(
+        (c) =>
+          c.memberId === "A" && c.rank === "primary" && c.day === "2028-07-22"
+      );
+      expect(aPrimary).toBeDefined();
+      expect(aPrimary!.sessionCodes).toContain("S-LOCK");
+
+      // A should have backup combos that also include S-LOCK (locked sessions
+      // are passed as dayLockedCodes to generateDayCombos during enhancement)
+      const aBackups = result.combos.filter(
+        (c) =>
+          c.memberId === "A" && c.rank !== "primary" && c.day === "2028-07-22"
+      );
+      expect(aBackups.length).toBeGreaterThan(0);
+      // Every backup for that day should contain the locked session
+      for (const backup of aBackups) {
+        expect(backup.sessionCodes).toContain("S-LOCK");
+      }
+
+      // Pruned session S1 should appear in backups (re-included by enhancement)
+      const allBackupCodes = aBackups.flatMap((c) => c.sessionCodes);
+      expect(allBackupCodes).toContain("S1");
+    });
+  });
+});
+
+// ===========================================================================
+// E2E Scenario Verification — Algorithm-level tests matching docs/e2e-scenarios.md
+// Uses real session data from scripts/output/la2028_sessions.csv and real
+// travel times from scripts/output/driving_times.csv + transit_times.csv.
+// ===========================================================================
+
+describe("E2E scenario: GROUP B — solo member multi-sport scoring (Phase B3)", () => {
+  it("produces correct Jul 22 combos: P=[SWM01,SWM02], B1=[SWM01,DIV12], B2=[DIV11,SWM02]", () => {
+    const solo = makeMember("Solo", {
+      sportRankings: ["Swimming", "Diving"], // Swimming=2.0, Diving=1.0
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "09:30:00",
+          "11:30:00",
+          "high"
+        ),
+        realSession(
+          "SWM02",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "18:00:00",
+          "20:00:00",
+          "high"
+        ),
+        realSession(
+          "SWM03",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-23",
+          "09:30:00",
+          "11:30:00",
+          "medium"
+        ),
+        realSession(
+          "SWM04",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-23",
+          "18:00:00",
+          "20:00:00",
+          "high"
+        ),
+        realSession(
+          "DIV11",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00",
+          "medium"
+        ),
+        realSession(
+          "DIV12",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "15:30:00",
+          "16:45:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([solo], REAL_TRAVEL, [
+      "2028-07-22",
+      "2028-07-23",
+    ]);
+
+    expect(result.convergence.converged).toBe(true);
+    expect(result.membersWithNoCombos).toEqual([]);
+
+    // Jul 22 combos
+    const jul22 = result.combos.filter(
+      (c) => c.memberId === "Solo" && c.day === "2028-07-22"
+    );
+    const p22 = jul22.find((c) => c.rank === "primary")!;
+    const b1_22 = jul22.find((c) => c.rank === "backup1")!;
+    const b2_22 = jul22.find((c) => c.rank === "backup2")!;
+
+    expect(p22.sessionCodes.sort()).toEqual(["SWM01", "SWM02"]);
+    expect(p22.score).toBeCloseTo(4.0, 1);
+
+    expect(b1_22.sessionCodes.sort()).toEqual(["DIV12", "SWM01"]);
+    expect(b1_22.score).toBeCloseTo(3.0, 1);
+
+    expect(b2_22.sessionCodes.sort()).toEqual(["DIV11", "SWM02"]);
+    expect(b2_22.score).toBeCloseTo(2.7, 1);
+
+    // Jul 23 combos
+    const jul23 = result.combos.filter(
+      (c) => c.memberId === "Solo" && c.day === "2028-07-23"
+    );
+    const p23 = jul23.find((c) => c.rank === "primary")!;
+
+    expect(p23.sessionCodes.sort()).toEqual(["SWM03", "SWM04"]);
+    expect(p23.score).toBeCloseTo(3.4, 1);
+
+    // No backups on Jul 23 (only 2 sessions, both in primary)
+    expect(jul23.filter((c) => c.rank === "backup1")).toHaveLength(0);
+  });
+
+  it("DIV12→SWM02 is infeasible (75 min gap < 150 min required for Pasadena→Inglewood)", () => {
+    const solo = makeMember("Solo", {
+      sportRankings: ["Swimming", "Diving"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "09:30:00",
+          "11:30:00",
+          "high"
+        ),
+        realSession(
+          "SWM02",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "18:00:00",
+          "20:00:00",
+          "high"
+        ),
+        realSession(
+          "DIV12",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "15:30:00",
+          "16:45:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([solo], REAL_TRAVEL, ["2028-07-22"]);
+
+    const jul22 = result.combos.filter(
+      (c) => c.memberId === "Solo" && c.day === "2028-07-22"
+    );
+    // No combo should contain both DIV12 and SWM02
+    for (const c of jul22) {
+      const has = (code: string) => c.sessionCodes.includes(code);
+      expect(has("DIV12") && has("SWM02")).toBe(false);
+    }
+  });
+});
+
+describe("E2E scenario: Directional travel feasibility (Phase B5)", () => {
+  // Real asymmetric travel: DTLA→Valley 26.97 min (< 30 → 120 min gap),
+  // Valley→DTLA 32.08 min (< 45 → 150 min gap)
+  it("DTLA→Valley (120 min gap) is feasible but Valley→DTLA (120 min gap) is not", () => {
+    const solo = makeMember("Solo", {
+      sportRankings: ["Boxing", "3x3 Basketball", "Table Tennis"],
+      candidateSessions: [
+        // Real sessions from la2028_sessions.csv
+        realSession(
+          "BOX15",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "12:00:00",
+          "15:00:00",
+          "high"
+        ),
+        realSession(
+          "BK319",
+          "3x3 Basketball",
+          "Valley Zone",
+          "2028-07-22",
+          "17:00:00",
+          "19:00:00",
+          "high"
+        ),
+        realSession(
+          "TTE23",
+          "Table Tennis",
+          "DTLA Zone",
+          "2028-07-22",
+          "21:00:00",
+          "23:15:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([solo], REAL_TRAVEL, ["2028-07-22"]);
+
+    expect(result.convergence.converged).toBe(true);
+
+    const combos = result.combos.filter(
+      (c) => c.memberId === "Solo" && c.day === "2028-07-22"
+    );
+    const p = combos.find((c) => c.rank === "primary")!;
+    const b1 = combos.find((c) => c.rank === "backup1");
+
+    // Primary: [BOX15, BK319] — DTLA→Valley, 120 min gap, 26.97 drive → needs 120 ✓
+    expect(p.sessionCodes.sort()).toEqual(["BK319", "BOX15"]);
+    // sportMultiplier: Boxing=2.0 (rank 1), 3x3=1.5 (rank 2), TT=1.0 (rank 3)
+    // BOX15: 2.0×1.0=2.0, BK319: 1.5×1.0=1.5 → total=3.5
+    expect(p.score).toBeCloseTo(3.5, 1);
+
+    // Backup 1: [BOX15, TTE23] — same zone DTLA, 360 min gap ≥ 90 ✓
+    expect(b1).toBeDefined();
+    expect(b1!.sessionCodes.sort()).toEqual(["BOX15", "TTE23"]);
+    // BOX15: 2.0, TTE23: 1.0×1.0=1.0 → total=3.0
+    expect(b1!.score).toBeCloseTo(3.0, 1);
+
+    // [BK319, TTE23] should NOT appear — Valley→DTLA needs 150 min, only 120 available
+    for (const c of combos) {
+      const codes = c.sessionCodes;
+      expect(codes.includes("BK319") && codes.includes("TTE23")).toBe(false);
+    }
+
+    // No 3-session combo (second hop BK319→TTE23 fails)
+    for (const c of combos) {
+      expect(c.sessionCodes.length).toBeLessThanOrEqual(2);
+    }
+
+    // No B2 — only [BK319] and [TTE23] remain as singles, neither adds a new session
+    expect(combos.find((c) => c.rank === "backup2")).toBeUndefined();
+  });
+});
+
+describe("E2E scenario: GROUP A six-member hard buddy filtering (Phase A3, Jul 17)", () => {
+  const JUL17 = ["2028-07-17"];
+
+  // Real sessions from la2028_sessions.csv (Jul 17)
+  const ATH05 = realSession(
+    "ATH05",
+    "Athletics (Track & Field)",
+    "Exposition Park Zone",
+    "2028-07-17",
+    "09:00:00",
+    "14:00:00",
+    "high"
+  );
+  const ATH06 = realSession(
+    "ATH06",
+    "Athletics (Track & Field)",
+    "Exposition Park Zone",
+    "2028-07-17",
+    "16:30:00",
+    "19:30:00",
+    "high"
+  );
+  const ATH06_med = realSession(
+    "ATH06",
+    "Athletics (Track & Field)",
+    "Exposition Park Zone",
+    "2028-07-17",
+    "16:30:00",
+    "19:30:00",
+    "medium"
+  );
+  const GAR08 = realSession(
+    "GAR08",
+    "Artistic Gymnastics",
+    "DTLA Zone",
+    "2028-07-17",
+    "17:15:00",
+    "20:30:00",
+    "medium"
+  );
+  const GAR08_high = realSession(
+    "GAR08",
+    "Artistic Gymnastics",
+    "DTLA Zone",
+    "2028-07-17",
+    "17:15:00",
+    "20:30:00",
+    "high"
+  );
+  const DIV02 = realSession(
+    "DIV02",
+    "Diving",
+    "Pasadena Zone",
+    "2028-07-17",
+    "10:00:00",
+    "12:00:00"
+  );
+  const DIV02_med = realSession(
+    "DIV02",
+    "Diving",
+    "Pasadena Zone",
+    "2028-07-17",
+    "10:00:00",
+    "12:00:00",
+    "medium"
+  );
+  const DIV03 = realSession(
+    "DIV03",
+    "Diving",
+    "Pasadena Zone",
+    "2028-07-17",
+    "15:30:00",
+    "16:45:00"
+  );
+  const VBV07 = realSession(
+    "VBV07",
+    "Beach Volleyball",
+    "Long Beach Zone",
+    "2028-07-17",
+    "09:00:00",
+    "12:00:00"
+  );
+  const VBV07_low = realSession(
+    "VBV07",
+    "Beach Volleyball",
+    "Long Beach Zone",
+    "2028-07-17",
+    "09:00:00",
+    "12:00:00",
+    "low"
+  );
+  const VBV08 = realSession(
+    "VBV08",
+    "Beach Volleyball",
+    "Long Beach Zone",
+    "2028-07-17",
+    "14:00:00",
+    "18:00:00"
+  );
+  const BK304 = realSession(
+    "BK304",
+    "3x3 Basketball",
+    "Valley Zone",
+    "2028-07-17",
+    "14:00:00",
+    "16:00:00",
+    "medium"
+  );
+  const BK304_low = realSession(
+    "BK304",
+    "3x3 Basketball",
+    "Valley Zone",
+    "2028-07-17",
+    "14:00:00",
+    "16:00:00",
+    "low"
+  );
+  const ATH05_med = realSession(
+    "ATH05",
+    "Athletics (Track & Field)",
+    "Exposition Park Zone",
+    "2028-07-17",
+    "09:00:00",
+    "14:00:00",
+    "medium"
+  );
+
+  it("verifies all 6 members' Jul 17 primary combos match the E2E document", () => {
+    const alex = makeMember("Alex", {
+      sportRankings: ["Athletics (Track & Field)", "Artistic Gymnastics"],
+      minBuddies: 1,
+      hardBuddies: ["Blake"],
+      softBuddies: ["Casey"],
+      candidateSessions: [
+        { ...ATH05 },
+        { ...ATH06 },
+        { ...GAR08, interest: "medium" },
+      ],
+    });
+
+    const blake = makeMember("Blake", {
+      sportRankings: ["Athletics (Track & Field)", "Diving"],
+      softBuddies: ["Alex"],
+      candidateSessions: [
+        { ...ATH05 },
+        { ...ATH06_med },
+        { ...DIV02_med },
+        { ...DIV03 },
+      ],
+    });
+
+    const casey = makeMember("Casey", {
+      sportRankings: [
+        "Artistic Gymnastics",
+        "Athletics (Track & Field)",
+        "Beach Volleyball",
+      ],
+      candidateSessions: [
+        { ...ATH05_med },
+        { ...GAR08_high },
+        { ...VBV07_low },
+      ],
+    });
+
+    const dana = makeMember("Dana", {
+      sportRankings: ["Beach Volleyball", "3x3 Basketball"],
+      minBuddies: 1,
+      hardBuddies: ["Ellis"],
+      candidateSessions: [
+        { ...VBV07, interest: "high" },
+        { ...VBV08, interest: "high" },
+        { ...BK304 },
+      ],
+    });
+
+    const ellis = makeMember("Ellis", {
+      sportRankings: ["Beach Volleyball", "Diving"],
+      candidateSessions: [
+        { ...VBV07, interest: "high" },
+        { ...VBV08, interest: "medium" },
+        { ...DIV02, interest: "high" },
+      ],
+    });
+
+    const frankie = makeMember("Frankie", {
+      sportRankings: ["Diving", "3x3 Basketball"],
+      candidateSessions: [
+        { ...DIV02, interest: "high" },
+        { ...DIV03, interest: "high" },
+        { ...BK304 },
+      ],
+    });
+
+    const result = runScheduleGeneration(
+      [alex, blake, casey, dana, ellis, frankie],
+      REAL_TRAVEL,
+      JUL17
+    );
+
+    expect(result.convergence.converged).toBe(true);
+    expect(result.membersWithNoCombos).toEqual([]);
+
+    const primary = (id: string) =>
+      result.combos.find(
+        (c) =>
+          c.memberId === id && c.rank === "primary" && c.day === "2028-07-17"
+      )!;
+
+    // Alex: P=[ATH05, ATH06] — GAR08 filtered (hard buddy Blake doesn't have it)
+    const alexP = primary("Alex");
+    expect(alexP.sessionCodes.sort()).toEqual(["ATH05", "ATH06"]);
+
+    // Blake: P=[ATH05, ATH06] — soft buddy Alex boosts both
+    const blakeP = primary("Blake");
+    expect(blakeP.sessionCodes.sort()).toEqual(["ATH05", "ATH06"]);
+
+    // Casey: P=[ATH05, GAR08] — no constraints, picks best combo
+    const caseyP = primary("Casey");
+    expect(caseyP.sessionCodes.sort()).toEqual(["ATH05", "GAR08"]);
+
+    // Dana: P=[VBV07, VBV08] — BK304 filtered (hard buddy Ellis doesn't have it)
+    const danaP = primary("Dana");
+    expect(danaP.sessionCodes.sort()).toEqual(["VBV07", "VBV08"]);
+
+    // Ellis: P=[VBV07, VBV08]
+    const ellisP = primary("Ellis");
+    expect(ellisP.sessionCodes.sort()).toEqual(["VBV07", "VBV08"]);
+
+    // Frankie: P=[DIV02, DIV03]
+    const frankieP = primary("Frankie");
+    expect(frankieP.sessionCodes.sort()).toEqual(["DIV02", "DIV03"]);
+  });
+
+  it("verifies Blake's Jul 17 backup combos match the E2E document", () => {
+    const alex = makeMember("Alex", {
+      sportRankings: ["Athletics", "Artistic Gymnastics"],
+      minBuddies: 1,
+      hardBuddies: ["Blake"],
+      softBuddies: ["Casey"],
+      candidateSessions: [{ ...ATH05 }, { ...ATH06 }],
+    });
+
+    const blake = makeMember("Blake", {
+      sportRankings: ["Athletics (Track & Field)", "Diving"],
+      softBuddies: ["Alex"],
+      candidateSessions: [
+        { ...ATH05 },
+        { ...ATH06_med },
+        { ...DIV02_med },
+        { ...DIV03 },
+      ],
+    });
+
+    const casey = makeMember("Casey", {
+      sportRankings: [
+        "Artistic Gymnastics",
+        "Athletics (Track & Field)",
+        "Beach Volleyball",
+      ],
+      candidateSessions: [
+        { ...ATH05_med },
+        { ...GAR08_high },
+        { ...VBV07_low },
+      ],
+    });
+
+    const dana = makeMember("Dana", {
+      sportRankings: ["Beach Volleyball", "3x3 Basketball"],
+      minBuddies: 1,
+      hardBuddies: ["Ellis"],
+      candidateSessions: [
+        { ...VBV07, interest: "high" },
+        { ...VBV08, interest: "high" },
+      ],
+    });
+
+    const ellis = makeMember("Ellis", {
+      sportRankings: ["Beach Volleyball", "Diving"],
+      candidateSessions: [
+        { ...VBV07, interest: "high" },
+        { ...VBV08, interest: "medium" },
+        { ...DIV02, interest: "high" },
+      ],
+    });
+
+    const frankie = makeMember("Frankie", {
+      sportRankings: ["Diving", "3x3 Basketball"],
+      candidateSessions: [
+        { ...DIV02, interest: "high" },
+        { ...DIV03, interest: "high" },
+        { ...BK304 },
+      ],
+    });
+
+    const result = runScheduleGeneration(
+      [alex, blake, casey, dana, ellis, frankie],
+      REAL_TRAVEL,
+      JUL17
+    );
+
+    const blakeCombos = result.combos.filter(
+      (c) => c.memberId === "Blake" && c.day === "2028-07-17"
+    );
+
+    // B1=[DIV02, ATH06]: DIV02 ends 12:00, ATH06 starts 16:30 → Pasadena→Expo 25.02 → 120 min gap, actual 270 ✓
+    const b1 = blakeCombos.find((c) => c.rank === "backup1")!;
+    expect(b1.sessionCodes.sort()).toEqual(["ATH06", "DIV02"]);
+
+    // B2=[DIV02, DIV03]: same zone Pasadena, gap 210 min ≥ 90 ✓
+    const b2 = blakeCombos.find((c) => c.rank === "backup2")!;
+    expect(b2.sessionCodes.sort()).toEqual(["DIV02", "DIV03"]);
+  });
+
+  it("verifies hard buddy filtering: Alex has no GAR08, Dana has no BK304", () => {
+    const alex = makeMember("Alex", {
+      sportRankings: ["Athletics", "Artistic Gymnastics"],
+      minBuddies: 1,
+      hardBuddies: ["Blake"],
+      candidateSessions: [
+        { ...ATH05 },
+        { ...ATH06 },
+        { ...GAR08, interest: "medium" },
+      ],
+    });
+
+    const blake = makeMember("Blake", {
+      sportRankings: ["Athletics", "Diving"],
+      candidateSessions: [{ ...ATH05 }, { ...ATH06_med }, { ...DIV02_med }],
+    });
+
+    const dana = makeMember("Dana", {
+      sportRankings: ["Beach Volleyball", "3x3 Basketball"],
+      minBuddies: 1,
+      hardBuddies: ["Ellis"],
+      candidateSessions: [
+        { ...VBV07, interest: "high" },
+        { ...VBV08, interest: "high" },
+        { ...BK304 },
+      ],
+    });
+
+    const ellis = makeMember("Ellis", {
+      sportRankings: ["Beach Volleyball", "Diving"],
+      candidateSessions: [
+        { ...VBV07, interest: "high" },
+        { ...VBV08, interest: "medium" },
+      ],
+    });
+
+    const result = runScheduleGeneration(
+      [alex, blake, dana, ellis],
+      REAL_TRAVEL,
+      JUL17
+    );
+
+    // Alex: GAR08 should not appear in any combo (Blake doesn't have it → hard buddy filter)
+    const alexCombos = result.combos.filter((c) => c.memberId === "Alex");
+    for (const c of alexCombos) {
+      expect(c.sessionCodes).not.toContain("GAR08");
+    }
+
+    // Dana: BK304 should not appear in any combo (Ellis doesn't have it → hard buddy filter)
+    const danaCombos = result.combos.filter((c) => c.memberId === "Dana");
+    for (const c of danaCombos) {
+      expect(c.sessionCodes).not.toContain("BK304");
+    }
+  });
+});
+
+// ===========================================================================
+// Locked session — hard buddy bypass (Phase A7.4)
+// ===========================================================================
+
+describe("E2E scenario: locked session bypasses hard buddy filter (Phase A7.4)", () => {
+  it("locked VBV07 appears despite hard buddy Frankie not having it", () => {
+    // Dana: hard buddy = Frankie, locked VBV07. Real sessions from CSV.
+    // Frankie has DIV02, DIV03, BK304 — NOT VBV07
+    // VBV07 should still appear (locked bypass) but BK304 can't pair with it (travel)
+    const dana = makeMember("Dana", {
+      sportRankings: ["Beach Volleyball", "3x3 Basketball"],
+      minBuddies: 1,
+      hardBuddies: ["Frankie"],
+      lockedSessionCodes: ["VBV07"],
+      candidateSessions: [
+        realSession(
+          "VBV07",
+          "Beach Volleyball",
+          "Long Beach Zone",
+          "2028-07-17",
+          "09:00:00",
+          "12:00:00",
+          "high"
+        ),
+        realSession(
+          "VBV08",
+          "Beach Volleyball",
+          "Long Beach Zone",
+          "2028-07-17",
+          "14:00:00",
+          "18:00:00",
+          "high"
+        ),
+        realSession(
+          "BK304",
+          "3x3 Basketball",
+          "Valley Zone",
+          "2028-07-17",
+          "14:00:00",
+          "16:00:00",
+          "medium"
+        ),
+      ],
+    });
+
+    const frankie = makeMember("Frankie", {
+      sportRankings: ["Diving", "3x3 Basketball"],
+      candidateSessions: [
+        realSession(
+          "DIV02",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-17",
+          "10:00:00",
+          "12:00:00",
+          "high"
+        ),
+        realSession(
+          "DIV03",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-17",
+          "15:30:00",
+          "16:45:00",
+          "high"
+        ),
+        realSession(
+          "BK304",
+          "3x3 Basketball",
+          "Valley Zone",
+          "2028-07-17",
+          "14:00:00",
+          "16:00:00",
+          "medium"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([dana, frankie], REAL_TRAVEL, [
+      "2028-07-17",
+    ]);
+
+    expect(result.convergence.converged).toBe(true);
+
+    const danaP = result.combos.find(
+      (c) =>
+        c.memberId === "Dana" && c.rank === "primary" && c.day === "2028-07-17"
+    )!;
+
+    // VBV07 must appear (locked) despite Frankie not having it
+    expect(danaP.sessionCodes).toContain("VBV07");
+
+    // VBV08 filtered out by hard buddy (Frankie doesn't have it), not locked
+    // BK304: Frankie has it → passes hard buddy filter, but:
+    //   VBV07 (LB, ends 12:00) → BK304 (Valley, starts 14:00): LB→Valley ~51 min → 180 min gap, actual 120 < 180 → infeasible
+    // So Dana ends up with just [VBV07]
+    expect(danaP.sessionCodes).toEqual(["VBV07"]);
+
+    // No backups — no other session can pair with locked VBV07
+    const danaBackups = result.combos.filter(
+      (c) =>
+        c.memberId === "Dana" && c.rank !== "primary" && c.day === "2028-07-17"
+    );
+    expect(danaBackups).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Locked session constrains travel-feasible combos (Phase B4.4)
+// ===========================================================================
+
+describe("E2E scenario: locked session constrains combos via travel (Phase B4.4)", () => {
+  it("locked SWM02 forces out DIV12 (75 min gap < 150 min) but keeps DIV11", () => {
+    // Real sessions from CSV. SWM02 is locked (purchased).
+    // DIV12 ends 16:45, SWM02 starts 18:00: Pasadena→Inglewood 36.25 min → 150 min gap, only 75 min → infeasible
+    // DIV11 ends 12:00, SWM02 starts 18:00: 360 min gap ≥ 150 → feasible
+    const solo = makeMember("Solo", {
+      sportRankings: ["Swimming", "Diving"],
+      lockedSessionCodes: ["SWM02"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "09:30:00",
+          "11:30:00",
+          "high"
+        ),
+        realSession(
+          "SWM02",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "18:00:00",
+          "20:00:00",
+          "high"
+        ),
+        realSession(
+          "DIV11",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00",
+          "medium"
+        ),
+        realSession(
+          "DIV12",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "15:30:00",
+          "16:45:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([solo], REAL_TRAVEL, ["2028-07-22"]);
+
+    const combos = result.combos.filter(
+      (c) => c.memberId === "Solo" && c.day === "2028-07-22"
+    );
+
+    // Every combo must contain SWM02 (locked)
+    for (const c of combos) {
+      expect(c.sessionCodes).toContain("SWM02");
+    }
+
+    // DIV12 + SWM02 is infeasible → DIV12 should not appear in any combo
+    for (const c of combos) {
+      expect(c.sessionCodes).not.toContain("DIV12");
+    }
+
+    // Primary: [SWM01, SWM02] — both Inglewood, same zone, gap 390 min ≥ 90 ✓
+    const p = combos.find((c) => c.rank === "primary")!;
+    expect(p.sessionCodes.sort()).toEqual(["SWM01", "SWM02"]);
+    expect(p.score).toBeCloseTo(4.0, 1);
+
+    // B1: [DIV11, SWM02] — DIV11 ends 12:00, SWM02 starts 18:00, gap 360 ≥ 150 ✓
+    const b1 = combos.find((c) => c.rank === "backup1")!;
+    expect(b1.sessionCodes.sort()).toEqual(["DIV11", "SWM02"]);
+    expect(b1.score).toBeCloseTo(2.7, 1);
+
+    // No B2 — only [SWM02] alone remains and it's a subset of P/B1
+    expect(combos.find((c) => c.rank === "backup2")).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// Non-convergence with backup enhancement penalty (Phase A7.3)
+// ===========================================================================
+
+describe("E2E scenario: non-convergence backup enhancement with 0.1x penalty (Phase A7.3)", () => {
+  it("5 mutually infeasible sessions: non-convergence with pruned backups", () => {
+    // Alex: 5 mutually infeasible sessions (all overlap or zero gap with wrong zones).
+    // Hard buddy Blake. Blake has all 5 as Low interest but 4 high-scoring
+    // Volleyball sessions fill P/B1/B2, leaving no room for shared sessions.
+    //
+    // Each iteration: Alex's primary = highest remaining session. Blake doesn't
+    // have it in any combo → hardBuddies violation → prune. After 5 iterations,
+    // converged=false. Backup enhancement re-includes pruned sessions with 0.1× penalty.
+
+    const DAY = "2028-07-17";
+
+    // Alex's 5 real sessions — all different zones, all overlapping/infeasible
+    const alex = makeMember("Alex", {
+      sportRankings: [
+        "Athletics (Track & Field)",
+        "Diving",
+        "Beach Volleyball",
+        "Fencing",
+        "Boxing",
+      ],
+      minBuddies: 1,
+      hardBuddies: ["Blake"],
+      softBuddies: ["Casey"],
+      candidateSessions: [
+        realSession(
+          "ATH05",
+          "Athletics (Track & Field)",
+          "Exposition Park Zone",
+          DAY,
+          "09:00:00",
+          "14:00:00",
+          "high"
+        ),
+        realSession(
+          "DIV02",
+          "Diving",
+          "Pasadena Zone",
+          DAY,
+          "10:00:00",
+          "12:00:00",
+          "high"
+        ),
+        realSession(
+          "VBV07",
+          "Beach Volleyball",
+          "Long Beach Zone",
+          DAY,
+          "09:00:00",
+          "12:00:00",
+          "high"
+        ),
+        realSession(
+          "FEN05",
+          "Fencing",
+          "DTLA Zone",
+          DAY,
+          "09:00:00",
+          "16:20:00",
+          "high"
+        ),
+        realSession(
+          "BOX05",
+          "Boxing",
+          "DTLA Zone",
+          DAY,
+          "12:00:00",
+          "15:00:00",
+          "high"
+        ),
+      ],
+    });
+
+    // Casey has ATH05 and VBV07 (for soft buddy bonus on Alex)
+    const casey = makeMember("Casey", {
+      sportRankings: ["Athletics (Track & Field)", "Beach Volleyball"],
+      candidateSessions: [
+        realSession(
+          "ATH05",
+          "Athletics (Track & Field)",
+          "Exposition Park Zone",
+          DAY,
+          "09:00:00",
+          "14:00:00",
+          "medium"
+        ),
+        realSession(
+          "VBV07",
+          "Beach Volleyball",
+          "Long Beach Zone",
+          DAY,
+          "09:00:00",
+          "12:00:00",
+          "low"
+        ),
+      ],
+    });
+
+    // Blake: 4 Volleyball sessions (all Anaheim Zone, spaced for 3-session combos)
+    // + all 5 of Alex's sessions at Low interest
+    const blake = makeMember("Blake", {
+      sportRankings: [
+        "Volleyball",
+        "Athletics (Track & Field)",
+        "Diving",
+        "Beach Volleyball",
+        "Fencing",
+        "Boxing",
+      ],
+      softBuddies: ["Alex"],
+      candidateSessions: [
+        realSession(
+          "VVO09",
+          "Volleyball",
+          "Anaheim Zone",
+          DAY,
+          "09:00:00",
+          "11:30:00",
+          "high"
+        ),
+        realSession(
+          "VVO10",
+          "Volleyball",
+          "Anaheim Zone",
+          DAY,
+          "13:00:00",
+          "15:30:00",
+          "high"
+        ),
+        realSession(
+          "VVO11",
+          "Volleyball",
+          "Anaheim Zone",
+          DAY,
+          "17:00:00",
+          "19:30:00",
+          "high"
+        ),
+        realSession(
+          "VVO12",
+          "Volleyball",
+          "Anaheim Zone",
+          DAY,
+          "21:00:00",
+          "23:30:00",
+          "high"
+        ),
+        realSession(
+          "ATH05",
+          "Athletics (Track & Field)",
+          "Exposition Park Zone",
+          DAY,
+          "09:00:00",
+          "14:00:00",
+          "low"
+        ),
+        realSession(
+          "DIV02",
+          "Diving",
+          "Pasadena Zone",
+          DAY,
+          "10:00:00",
+          "12:00:00",
+          "low"
+        ),
+        realSession(
+          "VBV07",
+          "Beach Volleyball",
+          "Long Beach Zone",
+          DAY,
+          "09:00:00",
+          "12:00:00",
+          "low"
+        ),
+        realSession(
+          "FEN05",
+          "Fencing",
+          "DTLA Zone",
+          DAY,
+          "09:00:00",
+          "16:20:00",
+          "low"
+        ),
+        realSession(
+          "BOX05",
+          "Boxing",
+          "DTLA Zone",
+          DAY,
+          "12:00:00",
+          "15:00:00",
+          "low"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alex, blake, casey], REAL_TRAVEL, [
+      DAY,
+    ]);
+
+    // Non-convergence: 5 iterations, all Alex's sessions fail hard buddy check
+    expect(result.convergence.converged).toBe(false);
+    expect(result.convergence.iterations).toBe(5);
+    expect(result.convergence.violations.length).toBeGreaterThan(0);
+
+    // Alex's primary should be a single session (last one standing after 4 pruning rounds)
+    const alexP = result.combos.find(
+      (c) => c.memberId === "Alex" && c.rank === "primary" && c.day === DAY
+    )!;
+    expect(alexP.sessionCodes).toHaveLength(1);
+
+    // Backup enhancement: pruned sessions re-included with 0.1× penalty
+    const alexBackups = result.combos.filter(
+      (c) => c.memberId === "Alex" && c.rank !== "primary" && c.day === DAY
+    );
+    expect(alexBackups.length).toBeGreaterThan(0);
+
+    // Backup scores should be much lower than primary (0.1× penalty on pruned sessions)
+    for (const backup of alexBackups) {
+      expect(backup.score).toBeLessThan(alexP.score);
+    }
+
+    // Blake should be unaffected: P/B1/B2 all Volleyball 3-session combos
+    const blakeP = result.combos.find(
+      (c) => c.memberId === "Blake" && c.rank === "primary" && c.day === DAY
+    )!;
+    expect(blakeP.sessionCodes).toHaveLength(3);
+    expect(blakeP.sessionCodes.every((s) => s.startsWith("VVO"))).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Locked sessions are never pruned during convergence
+// ===========================================================================
+
+describe("locked sessions survive convergence pruning", () => {
+  it("locked session stays in combos even when unlocked sessions are pruned away", () => {
+    // Alice: hardBuddy Bob. Alice has SWM01 (locked) + SWM02 + SWM03 (unlocked).
+    // Bob has minBuddies=99 → all sessions filtered → no combos.
+    // Iteration 1: Alice's primary [SWM01, SWM02, SWM03]. Validation: SWM02 and SWM03
+    // fail hardBuddies check (Bob has no combos). SWM01 is locked → skipped.
+    // SWM02 and SWM03 get pruned. SWM01 survives (never pruned).
+    // Iteration 2: Alice's only candidate is SWM01 (locked). Primary = [SWM01].
+    // Validation: only SWM01, which is locked → skipped. No violations → converges.
+    const DAY = "2028-07-22";
+
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      hardBuddies: ["Bob"],
+      lockedSessionCodes: ["SWM01"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          DAY,
+          "09:30:00",
+          "11:30:00",
+          "high"
+        ),
+        realSession(
+          "SWM02",
+          "Swimming",
+          "Inglewood Zone",
+          DAY,
+          "18:00:00",
+          "20:00:00",
+          "high"
+        ),
+        realSession(
+          "SWM03",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-23",
+          "09:30:00",
+          "11:30:00",
+          "high"
+        ),
+      ],
+    });
+
+    const bob = makeMember("Bob", {
+      sportRankings: ["Swimming"],
+      minBuddies: 99,
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          DAY,
+          "09:30:00",
+          "11:30:00",
+          "high"
+        ),
+        realSession(
+          "SWM02",
+          "Swimming",
+          "Inglewood Zone",
+          DAY,
+          "18:00:00",
+          "20:00:00",
+          "high"
+        ),
+        realSession(
+          "SWM03",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-23",
+          "09:30:00",
+          "11:30:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
+      DAY,
+      "2028-07-23",
+    ]);
+
+    // Converges because after pruning, only locked SWM01 remains and it skips validation
+    expect(result.convergence.converged).toBe(true);
+
+    // Alice's Jul 22 primary must contain SWM01 (locked, never pruned)
+    const aliceP = result.combos.find(
+      (c) => c.memberId === "Alice" && c.rank === "primary" && c.day === DAY
+    )!;
+    expect(aliceP.sessionCodes).toContain("SWM01");
+
+    // SWM02 should NOT be in any primary combo on Jul 22 (pruned during convergence)
+    const aliceCombosJul22 = result.combos.filter(
+      (c) => c.memberId === "Alice" && c.rank === "primary" && c.day === DAY
+    );
+    for (const c of aliceCombosJul22) {
+      expect(c.sessionCodes).not.toContain("SWM02");
+    }
+  });
+});
+
+// ===========================================================================
+// Missing travel bracket boundary tests (15-29 min → 120 min gap)
+// ===========================================================================
+
+describe("travel bracket: 15-29 min driving → 120 min required gap", () => {
+  // DTLA → Pasadena: 22.02 min driving → falls in [15, 30) bracket → 120 min gap
+  it("DTLA→Pasadena (22 min) with exactly 120-min gap is feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Boxing", "Artistic Gymnastics"],
+      candidateSessions: [
+        realSession(
+          "BOX01",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Pasadena Zone",
+          "2028-07-22",
+          "11:00:00",
+          "13:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 11:00 - 09:00 = 120 min = 120 required → feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("DTLA→Pasadena (22 min) with 119-min gap is NOT feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Boxing", "Artistic Gymnastics"],
+      candidateSessions: [
+        realSession(
+          "BOX01",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:01:00"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Pasadena Zone",
+          "2028-07-22",
+          "11:00:00",
+          "13:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 11:00 - 09:01 = 119 min < 120 required → NOT feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Missing travel bracket boundary tests (45-59 min → 180 min required gap)
+// ===========================================================================
+
+describe("travel bracket: 45-59 min driving → 180 min required gap", () => {
+  // Pasadena → Long Beach: 49.38 min driving → falls in [45, 60) bracket → 180 min gap
+  it("Pasadena→Long Beach (49 min) with exactly 180-min gap is feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Diving", "Swimming"],
+      candidateSessions: [
+        realSession(
+          "DIV01",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Long Beach Zone",
+          "2028-07-22",
+          "12:00:00",
+          "14:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 12:00 - 09:00 = 180 min = 180 required → feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Pasadena→Long Beach (49 min) with 179-min gap is NOT feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Diving", "Swimming"],
+      candidateSessions: [
+        realSession(
+          "DIV01",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:01:00"
+        ),
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Long Beach Zone",
+          "2028-07-22",
+          "12:00:00",
+          "14:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 12:00 - 09:01 = 179 min < 180 required → NOT feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos).toHaveLength(0);
+  });
+
+  // Long Beach → Valley: 50.97 min driving → also [45, 60) bracket → 180 min gap
+  it("Long Beach→Valley (51 min) with exactly 180-min gap is feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "3x3 Basketball"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Long Beach Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "BK301",
+          "3x3 Basketball",
+          "Valley Zone",
+          "2028-07-22",
+          "12:00:00",
+          "14:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 12:00 - 09:00 = 180 min = 180 required → feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ===========================================================================
+// Successful 3-session combo across 3 real zones
+// ===========================================================================
+
+describe("3-session combo across 3 real zones — all hops feasible", () => {
+  it("Expo Park → DTLA → Pasadena: all gaps met → 3-session combo exists", () => {
+    // Hop 1: Exposition Park → DTLA: 11.3 min → 90 min gap required
+    // Hop 2: DTLA → Pasadena: 22.02 min → 120 min gap required
+    const alice = makeMember("Alice", {
+      sportRankings: [
+        "Athletics (Track & Field)",
+        "Boxing",
+        "Artistic Gymnastics",
+      ],
+      candidateSessions: [
+        realSession(
+          "ATH01",
+          "Athletics (Track & Field)",
+          "Exposition Park Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "BOX01",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "10:30:00",
+          "12:00:00"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Pasadena Zone",
+          "2028-07-22",
+          "14:00:00",
+          "16:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Hop 1: 10:30 - 09:00 = 90 min ≥ 90 (Expo→DTLA 11.3 min → 90 min) ✓
+    // Hop 2: 14:00 - 12:00 = 120 min ≥ 120 (DTLA→Pasadena 22.02 min → 120 min) ✓
+    const threeCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 3
+    );
+    expect(threeCombos.length).toBeGreaterThanOrEqual(1);
+    expect(threeCombos[0].sessionCodes.sort()).toEqual([
+      "ATH01",
+      "BOX01",
+      "GYM01",
+    ]);
+  });
+
+  it("Inglewood → Exposition Park → DTLA: 3 close zones, all feasible with 90-min gaps", () => {
+    // Inglewood → Expo Park: 14.17 min → < 15 → 90 min gap
+    // Expo Park → DTLA: 11.3 min → < 15 → 90 min gap
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Athletics (Track & Field)", "Boxing"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "ATH01",
+          "Athletics (Track & Field)",
+          "Exposition Park Zone",
+          "2028-07-22",
+          "10:30:00",
+          "12:00:00"
+        ),
+        realSession(
+          "BOX01",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "13:30:00",
+          "15:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Hop 1: 10:30 - 09:00 = 90 ≥ 90 (Inglewood→Expo 14.17 < 15 → 90) ✓
+    // Hop 2: 13:30 - 12:00 = 90 ≥ 90 (Expo→DTLA 11.3 < 15 → 90) ✓
+    const threeCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 3
+    );
+    expect(threeCombos.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("3-session combo fails when middle hop requires higher bracket gap", () => {
+    // Expo Park → Pasadena: 27.33 min → [15,30) → 120 min gap
+    // Pasadena → Long Beach: 49.38 min → [45,60) → 180 min gap
+    const alice = makeMember("Alice", {
+      sportRankings: [
+        "Athletics (Track & Field)",
+        "Artistic Gymnastics",
+        "Swimming",
+      ],
+      candidateSessions: [
+        realSession(
+          "ATH01",
+          "Athletics (Track & Field)",
+          "Exposition Park Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Pasadena Zone",
+          "2028-07-22",
+          "11:00:00",
+          "12:00:00"
+        ),
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Long Beach Zone",
+          "2028-07-22",
+          "14:00:00",
+          "16:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Hop 1: 11:00 - 09:00 = 120 ≥ 120 (Expo→Pasadena 27.33 → 120) ✓
+    // Hop 2: 14:00 - 12:00 = 120 < 180 (Pasadena→LB 49.38 → 180) ✗
+    const threeCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 3
+    );
+    expect(threeCombos).toHaveLength(0);
+
+    // But the first 2 sessions should pair fine
+    const athGymPair = result.combos.find(
+      (c) =>
+        c.sessionCodes.length === 2 &&
+        c.sessionCodes.includes("ATH01") &&
+        c.sessionCodes.includes("GYM01")
+    );
+    expect(athGymPair).toBeDefined();
+  });
+});
+
+// ===========================================================================
+// Non-Trestles → Trestles direction (arriving AT Trestles)
+// ===========================================================================
+
+describe("arriving at Trestles Beach (non-Trestles → Trestles)", () => {
+  it("session at Inglewood then Trestles with 240-min gap is feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Surfing"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "06:00:00",
+          "08:00:00"
+        ),
+        realSession(
+          "SRF01",
+          "Surfing",
+          "Trestles Beach Zone",
+          "2028-07-22",
+          "12:00:00",
+          "14:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 12:00 - 08:00 = 240 min = 240 required → feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("session at Inglewood then Trestles with 239-min gap is NOT feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Surfing"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "06:00:00",
+          "08:01:00"
+        ),
+        realSession(
+          "SRF01",
+          "Surfing",
+          "Trestles Beach Zone",
+          "2028-07-22",
+          "12:00:00",
+          "14:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 12:00 - 08:01 = 239 min < 240 required → NOT feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Multiple locked sessions on same day
+// ===========================================================================
+
+describe("multiple locked sessions on same day", () => {
+  it("2 locked sessions on same day both appear in every combo", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Artistic Gymnastics", "Diving"],
+      lockedSessionCodes: ["SWM01", "GYM01"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:30:00"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-22",
+          "11:00:00",
+          "12:30:00"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Inglewood Zone",
+          "2028-07-22",
+          "14:00:00",
+          "15:30:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    expect(result.membersWithNoCombos).toHaveLength(0);
+
+    // Every combo on that day must contain both locked sessions
+    const dayCombos = result.combos.filter(
+      (c) => c.memberId === "Alice" && c.day === "2028-07-22"
+    );
+    for (const c of dayCombos) {
+      expect(c.sessionCodes).toContain("SWM01");
+      expect(c.sessionCodes).toContain("GYM01");
+    }
+
+    // Primary should have all 3 (2 locked + 1 unlocked fills the 3rd slot)
+    const primary = dayCombos.find((c) => c.rank === "primary")!;
+    expect(primary.sessionCodes).toHaveLength(3);
+    expect(primary.sessionCodes).toContain("DIV01");
+  });
+
+  it("3 locked sessions on same day fills all slots — no unlocked sessions added", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Artistic Gymnastics", "Diving", "Boxing"],
+      lockedSessionCodes: ["SWM01", "GYM01", "DIV01"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:30:00"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-22",
+          "11:00:00",
+          "12:30:00"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Inglewood Zone",
+          "2028-07-22",
+          "14:00:00",
+          "15:30:00"
+        ),
+        realSession(
+          "BOX01",
+          "Boxing",
+          "Inglewood Zone",
+          "2028-07-22",
+          "17:00:00",
+          "18:30:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    expect(result.membersWithNoCombos).toHaveLength(0);
+
+    // remainingSlots = 3 - 3 = 0 → only one possible combo: [SWM01, GYM01, DIV01]
+    // BOX01 cannot be added since all 3 slots are locked
+    const dayCombos = result.combos.filter(
+      (c) => c.memberId === "Alice" && c.day === "2028-07-22"
+    );
+    expect(dayCombos).toHaveLength(1);
+    expect(dayCombos[0].rank).toBe("primary");
+    expect(dayCombos[0].sessionCodes.sort()).toEqual([
+      "DIV01",
+      "GYM01",
+      "SWM01",
+    ]);
+  });
+});
+
+// ===========================================================================
+// Locked sessions travel-infeasible with each other → locked-only fallback
+// ===========================================================================
+
+describe("locked sessions travel-infeasible with each other", () => {
+  it("2 locked sessions in far zones with insufficient gap falls back to locked-only combo", () => {
+    // SWM01 at Inglewood ends 11:30, DIV01 at Pasadena starts 12:30
+    // Inglewood → Pasadena: 43.55 min → [30,45) bracket → 150 min gap required
+    // Gap = 12:30 - 11:30 = 60 min < 150 → infeasible as pair
+    // But both are locked → fallback to locked-only combo (each on its own)
+    // Actually, locked-only for the combo means [SWM01, DIV01] is tried, fails,
+    // then falls back to just [locked sessions] anyway — combos.ts line 71-72.
+    // Wait, re-reading: if feasible.length === 0 AND locked.length > 0, return [[...locked]].
+    // The locked combo itself is also travel-checked. If even the locked-only combo
+    // [SWM01, DIV01] is infeasible... the fallback still returns it!
+    // combos.ts line 71: `feasible = [[...locked]]` — forced regardless of feasibility.
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Diving"],
+      lockedSessionCodes: ["SWM01", "DIV01"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "11:30:00"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "12:30:00",
+          "14:00:00"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-22",
+          "16:00:00",
+          "17:30:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    expect(result.membersWithNoCombos).toHaveLength(0);
+
+    // Primary combo must contain both locked sessions (forced fallback)
+    const primary = result.combos.find(
+      (c) => c.memberId === "Alice" && c.rank === "primary"
+    )!;
+    expect(primary.sessionCodes).toContain("SWM01");
+    expect(primary.sessionCodes).toContain("DIV01");
+  });
+});
+
+// ===========================================================================
+// Asymmetric travel: direction matters for bracket boundary
+// ===========================================================================
+
+describe("asymmetric travel at bracket boundary", () => {
+  // DTLA → Valley: 26.97 min → [15,30) bracket → 120 min gap
+  // Valley → DTLA: 32.08 min → [30,45) bracket → 150 min gap
+  it("DTLA→Valley needs 120-min gap; Valley→DTLA needs 150-min gap", () => {
+    // Forward: DTLA session first, then Valley
+    const forward = makeMember("Forward", {
+      sportRankings: ["Boxing", "3x3 Basketball"],
+      candidateSessions: [
+        realSession(
+          "BOX01",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "BK301",
+          "3x3 Basketball",
+          "Valley Zone",
+          "2028-07-22",
+          "11:00:00",
+          "13:00:00"
+        ),
+      ],
+    });
+
+    const resultFwd = runScheduleGeneration([forward], REAL_TRAVEL, [
+      "2028-07-22",
+    ]);
+
+    // Gap = 11:00 - 09:00 = 120 min ≥ 120 (DTLA→Valley 26.97 → 120) ✓
+    const fwdPairs = resultFwd.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(fwdPairs.length).toBeGreaterThanOrEqual(1);
+
+    // Reverse: Valley session first, then DTLA — same 120-min gap
+    const reverse = makeMember("Reverse", {
+      sportRankings: ["3x3 Basketball", "Boxing"],
+      candidateSessions: [
+        realSession(
+          "BK301",
+          "3x3 Basketball",
+          "Valley Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "BOX01",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "11:00:00",
+          "13:00:00"
+        ),
+      ],
+    });
+
+    const resultRev = runScheduleGeneration([reverse], REAL_TRAVEL, [
+      "2028-07-22",
+    ]);
+
+    // Gap = 11:00 - 09:00 = 120 min < 150 (Valley→DTLA 32.08 → 150) ✗
+    const revPairs = resultRev.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(revPairs).toHaveLength(0);
+  });
+
+  it("Valley→DTLA with exactly 150-min gap is feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["3x3 Basketball", "Boxing"],
+      candidateSessions: [
+        realSession(
+          "BK301",
+          "3x3 Basketball",
+          "Valley Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "BOX01",
+          "Boxing",
+          "DTLA Zone",
+          "2028-07-22",
+          "11:30:00",
+          "13:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 11:30 - 09:00 = 150 min = 150 (Valley→DTLA 32.08 → 150) ✓
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ===========================================================================
+// Convergence cascade: pruning reduces interest counts for other members
+// ===========================================================================
+
+describe("convergence cascade: pruning reduces interest counts", () => {
+  it("pruning a session from one member can cause another member's minBuddies to fail", () => {
+    // Setup:
+    // - Alice: hardBuddy=Bob, interested in S1, S2
+    // - Bob: interested in S2 only (not S1)
+    // - Carol: minBuddies=2, interested in S1, S2
+    // - Dave: interested in S1, S2
+    //
+    // Iteration 1:
+    //   Alice's hard buddy filter: Bob has {S2} → Alice keeps only S2.
+    //   S1 interest count for Carol's filter: Alice(filtered out), Carol, Dave = 2 interested
+    //   Carol needs minBuddies=2 → 2-1=1 < 2 → S1 filtered from Carol!
+    //   (Actually, minBuddies filter uses raw interest counts from candidateSessions,
+    //    not filtered. Let me re-check...)
+    //
+    // Actually, looking at the code: sessionInterestCounts is built from
+    // currentMembers[].candidateSessions, NOT from filtered sessions.
+    // So S1 interest count = Alice + Carol + Dave = 3 (Alice still has it in candidates
+    // even though hard buddy filter will remove it during filtering).
+    //
+    // After iteration 1, if Alice's primary includes S2, and post-validation:
+    //   - Alice: S2 in primary, Bob has S2 → no violation. ✓
+    //   - Carol: if S1 in primary and Alice doesn't have S1 in any combo...
+    //     Actually Carol's minBuddies is checked on HER primary sessions, not Alice's.
+    //
+    // Let me design a better cascade scenario:
+    // - Alice: hardBuddy=Bob, interested in S1
+    // - Bob: interested in S1 but has hardBuddy=Carol
+    // - Carol: interested in S2 only (not S1)
+    // - Dave: minBuddies=1, interested in S1
+    //
+    // Pre-filter: Bob's hard buddy Carol has {S2} → Bob's S1 filtered out.
+    //   Alice's hard buddy Bob has {} (S1 filtered) → Alice's S1 filtered.
+    //   Dave: S1 interest count = Alice+Bob+Dave = 3 → 3-1=2 ≥ 1 ✓ (pre-filter passes)
+    //   But after filtering, only Dave actually has S1.
+    //
+    // Post-validation: Dave's primary has S1. minBuddies check: count other members
+    // with S1 in ANY combo (P/B1/B2). Alice/Bob have no combos with S1 (filtered out).
+    // Carol has no S1. Only Dave → 0 others < minBuddies=1 → violation!
+    //
+    // This triggers convergence: S1 pruned from Dave. Next iteration Dave has
+    // no candidates → membersWithNoCombos.
+
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      hardBuddies: ["Bob"],
+      candidateSessions: [
+        realSession(
+          "S1",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    const bob = makeMember("Bob", {
+      sportRankings: ["Swimming"],
+      hardBuddies: ["Carol"],
+      candidateSessions: [
+        realSession(
+          "S1",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    const carol = makeMember("Carol", {
+      sportRankings: ["Artistic Gymnastics"],
+      candidateSessions: [
+        realSession(
+          "S2",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-22",
+          "14:00:00",
+          "16:00:00"
+        ),
+      ],
+    });
+
+    const dave = makeMember("Dave", {
+      sportRankings: ["Swimming"],
+      minBuddies: 1,
+      candidateSessions: [
+        realSession(
+          "S1",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration(
+      [alice, bob, carol, dave],
+      REAL_TRAVEL,
+      ["2028-07-22"]
+    );
+
+    // Alice's S1 is filtered by hard buddy (Bob doesn't have it after Bob's own filter)
+    expect(result.membersWithNoCombos).toContain("Alice");
+
+    // Bob's S1 is filtered by hard buddy (Carol doesn't have it)
+    expect(result.membersWithNoCombos).toContain("Bob");
+
+    // Dave initially passes pre-filter (interest count=3 for S1) but post-validation
+    // finds no other member has S1 in combos → violation → pruned → no combos
+    expect(result.membersWithNoCombos).toContain("Dave");
+
+    // Carol has S2, no constraints → fine
+    expect(result.membersWithNoCombos).not.toContain("Carol");
+  });
+});
+
+// ===========================================================================
+// Anaheim Zone travel: covers long-distance non-Trestles route
+// ===========================================================================
+
+describe("Anaheim Zone long-distance travel", () => {
+  // Anaheim → Exposition Park: 41.98 min → [30,45) bracket → 150 min gap
+  // Anaheim → Pasadena: 46.2 min → [45,60) bracket → 180 min gap
+  it("Anaheim→Expo Park (42 min) needs 150-min gap — boundary test", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Volleyball", "Athletics (Track & Field)"],
+      candidateSessions: [
+        realSession(
+          "VVO01",
+          "Volleyball",
+          "Anaheim Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "ATH01",
+          "Athletics (Track & Field)",
+          "Exposition Park Zone",
+          "2028-07-22",
+          "11:30:00",
+          "13:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 11:30 - 09:00 = 150 min = 150 required → feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Anaheim→Pasadena (46 min) needs 180-min gap — boundary test", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Volleyball", "Diving"],
+      candidateSessions: [
+        realSession(
+          "VVO01",
+          "Volleyball",
+          "Anaheim Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "12:00:00",
+          "14:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 12:00 - 09:00 = 180 min = 180 required → feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Anaheim→Pasadena (46 min) with 179-min gap is NOT feasible", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Volleyball", "Diving"],
+      candidateSessions: [
+        realSession(
+          "VVO01",
+          "Volleyball",
+          "Anaheim Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:01:00"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Pasadena Zone",
+          "2028-07-22",
+          "12:00:00",
+          "14:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Gap = 12:00 - 09:01 = 179 min < 180 required → NOT feasible
+    const twoSessionCombos = result.combos.filter(
+      (c) => c.sessionCodes.length === 2
+    );
+    expect(twoSessionCombos).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Sport not in sportRankings → defaults to last rank score
+// ===========================================================================
+
+describe("session sport not in sportRankings", () => {
+  it("unranked sport gets the same multiplier as the last-ranked sport", () => {
+    // Alice ranks Swimming and Gymnastics but has a Diving session (not ranked).
+    // Diving should be treated as rank = sportRankings.length = 2, which is the
+    // same rank as Artistic Gymnastics (the last-ranked sport).
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Artistic Gymnastics"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00",
+          "high"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Inglewood Zone",
+          "2028-07-22",
+          "14:00:00",
+          "16:00:00",
+          "high"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-23",
+          "10:00:00",
+          "12:00:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, [
+      "2028-07-22",
+      "2028-07-23",
+    ]);
+
+    expect(result.membersWithNoCombos).toHaveLength(0);
+
+    // DIV01 (unranked) and GYM01 (rank 2/2) should have the same score.
+    // Both: multiplier = 1.0 (last rank), high → 1.0, no buddies → 1.0 = 1.0
+    // Use separate days so each is a solo primary.
+    const divCombo = result.combos.find(
+      (c) =>
+        c.memberId === "Alice" &&
+        c.sessionCodes.length === 1 &&
+        c.sessionCodes[0] === "DIV01"
+    );
+    const gymCombo = result.combos.find(
+      (c) =>
+        c.memberId === "Alice" && c.rank === "primary" && c.day === "2028-07-23"
+    );
+
+    // GYM01: rank 2/2 → 1.0, high → 1.0 = 1.0
+    expect(gymCombo!.score).toBeCloseTo(1.0);
+
+    // DIV01 (unranked): rank defaults to 2 (sportRankings.length=2), same multiplier
+    if (divCombo) {
+      expect(divCombo.score).toBeCloseTo(1.0);
+    }
+  });
+
+  it("locked session with unranked sport still appears in primary", () => {
+    // Alice ranks only Swimming but has a locked Diving session.
+    // The locked session must appear even though Diving isn't ranked.
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      lockedSessionCodes: ["DIV01"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00",
+          "high"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Inglewood Zone",
+          "2028-07-22",
+          "14:00:00",
+          "16:00:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    const primary = result.combos.find(
+      (c) => c.memberId === "Alice" && c.rank === "primary"
+    )!;
+    // Locked session appears despite sport not being in rankings
+    expect(primary.sessionCodes).toContain("DIV01");
+    // Swimming also included (both fit in a 2-session combo)
+    expect(primary.sessionCodes).toContain("SWM01");
+
+    // DIV01 score: sportRankings.length=1, rank defaults to 1 → getSportMultiplier(1, 1) = 2.0
+    // (single sport → totalSports <= 1 → returns 2.0)
+    // Total: SWM01 (2.0 * 1.0 * 1.0) + DIV01 (2.0 * 1.0 * 1.0) = 4.0
+    expect(primary.score).toBeCloseTo(4.0);
+  });
+});
+
+// ===========================================================================
+// Sessions on days not in `days` parameter are silently ignored
+// ===========================================================================
+
+describe("sessions outside requested days are ignored", () => {
+  it("sessions on days not in the days array produce no combos for those days", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Artistic Gymnastics"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00"
+        ),
+        // This session is on Jul 25, which is NOT in the days array
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-25",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    // Only request Jul 22 — Jul 25 should be silently dropped
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    expect(result.membersWithNoCombos).toHaveLength(0);
+
+    // Only Jul 22 combos should exist
+    const allDays = new Set(result.combos.map((c) => c.day));
+    expect(allDays.size).toBe(1);
+    expect(allDays.has("2028-07-22")).toBe(true);
+    expect(allDays.has("2028-07-25")).toBe(false);
+
+    // GYM01 should not appear in any combo
+    const allCodes = result.combos.flatMap((c) => c.sessionCodes);
+    expect(allCodes).not.toContain("GYM01");
+  });
+
+  it("member with ALL sessions outside requested days ends up in membersWithNoCombos", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-25",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    // Request Jul 22 but Alice only has a Jul 25 session
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    expect(result.membersWithNoCombos).toContain("Alice");
+    expect(result.combos).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Mixed hard buddies: one exists, one doesn't
+// ===========================================================================
+
+describe("mixed hard buddies: one real, one non-existent", () => {
+  it("existing hard buddy's sessions intersect normally; non-existent buddy is skipped in filter but caught in validation", () => {
+    // Alice hardBuddies: ["Bob", "Ghost"]. Bob exists, Ghost doesn't.
+    // filter.ts: Ghost not found in allMembersData → skipped (not added to
+    //   hardBuddySessionSets). Only Bob's sessions used for intersection.
+    // Alice keeps sessions that Bob has: SWM01.
+    // Post-validation: Ghost doesn't have SWM01 in any combo → hardBuddies
+    //   violation → pruned. Alice ends up with no combos.
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      hardBuddies: ["Bob", "Ghost"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    const bob = makeMember("Bob", {
+      sportRankings: ["Swimming"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
+      "2028-07-22",
+    ]);
+
+    // Alice's sessions pass Bob's filter (Bob has SWM01) but fail Ghost validation
+    expect(result.membersWithNoCombos).toContain("Alice");
+    // Bob has no constraints → fine
+    expect(result.membersWithNoCombos).not.toContain("Bob");
+  });
+});
+
+// ===========================================================================
+// Input mutation safety: original member objects not modified
+// ===========================================================================
+
+describe("input mutation safety", () => {
+  it("original member candidateSessions array is not mutated after running", () => {
+    const originalSessions = [
+      realSession(
+        "SWM01",
+        "Swimming",
+        "Inglewood Zone",
+        "2028-07-22",
+        "09:00:00",
+        "11:00:00"
+      ),
+      realSession(
+        "GYM01",
+        "Artistic Gymnastics",
+        "DTLA Zone",
+        "2028-07-22",
+        "14:00:00",
+        "16:00:00"
+      ),
+    ];
+
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Artistic Gymnastics"],
+      hardBuddies: ["Bob"],
+      candidateSessions: originalSessions,
+    });
+
+    const bob = makeMember("Bob", {
+      sportRankings: ["Swimming"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "09:00:00",
+          "11:00:00"
+        ),
+      ],
+    });
+
+    // Running should trigger convergence pruning (GYM01 violates hard buddy)
+    runScheduleGeneration([alice, bob], REAL_TRAVEL, ["2028-07-22"]);
+
+    // Original array should still have both sessions
+    expect(alice.candidateSessions).toHaveLength(2);
+    expect(alice.candidateSessions.map((s) => s.sessionCode)).toEqual([
+      "SWM01",
+      "GYM01",
+    ]);
+  });
+});
+
+// ===========================================================================
+// Backup combo attendance satisfies another member's minBuddies
+// ===========================================================================
+
+describe("backup combo attendance counts toward minBuddies validation", () => {
+  it("session in backup1 of member X counts as attendance for member Y's minBuddies check", () => {
+    // Alice has minBuddies=1, interested in SWM01.
+    // Bob is interested in SWM01 AND GYM01 (same time, overlapping).
+    //   Bob's primary = SWM01 (higher rank), backup1 = GYM01 (new session vs P).
+    //   Wait, these overlap — only solo combos. Bob's primary = GYM01 (rank 1)
+    //   if Bob ranks Gymnastics first.
+    //
+    // Actually let me make it simpler:
+    // Alice: minBuddies=1, only session SWM01.
+    // Bob: has SWM01 (low interest) and GYM01 (high interest), different times.
+    //   Bob's primary = [SWM01, GYM01] (both fit). SWM01 is in Bob's primary → counts.
+    // This is trivially satisfied. Let me make Bob have SWM01 only in backup.
+    //
+    // Bob: has SWM01 (low, rank 2), GYM01 (high, rank 1), TRK01 (high, rank 1).
+    //   GYM01 and TRK01 overlap with SWM01 timing-wise.
+    //   Actually let me just use overlapping to force it into backup:
+    //
+    // Bob: SWM01 at 10-12 (low, rank 2), GYM01 at 10-12 (high, rank 1).
+    //   Solo combos only (overlap). P = GYM01 (higher score), B1 = SWM01.
+    //   SWM01 is in B1, not P.
+    //
+    // Alice's minBuddies check on SWM01: attendance for SWM01 includes ALL
+    // of Bob's ranks → Bob has SWM01 in B1 → counts → 1 other ≥ 1 ✓.
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      minBuddies: 1,
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00",
+          "high"
+        ),
+      ],
+    });
+
+    const bob = makeMember("Bob", {
+      sportRankings: ["Artistic Gymnastics", "Swimming"],
+      candidateSessions: [
+        // GYM01: rank 1 → 2.0, high → 1.0 = 2.0 (will be primary)
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00",
+          "high"
+        ),
+        // SWM01: rank 2 → 1.0, low → 0.4 = 0.4 (will be backup1)
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00",
+          "low"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice, bob], REAL_TRAVEL, [
+      "2028-07-22",
+    ]);
+
+    // Bob's primary should be GYM01 (higher score), SWM01 in backup1
+    const bobPrimary = result.combos.find(
+      (c) => c.memberId === "Bob" && c.rank === "primary"
+    );
+    expect(bobPrimary!.sessionCodes).toEqual(["GYM01"]);
+    const bobBackup = result.combos.find(
+      (c) => c.memberId === "Bob" && c.rank === "backup1"
+    );
+    expect(bobBackup!.sessionCodes).toEqual(["SWM01"]);
+
+    // Alice's minBuddies=1 on SWM01: Bob has SWM01 in backup1 → counts as attendance
+    // → Alice should NOT be in membersWithNoCombos and should converge
+    expect(result.membersWithNoCombos).not.toContain("Alice");
+    expect(result.convergence.converged).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Pruned session penalty: verify exact 0.1x score in backup combo
+// ===========================================================================
+
+describe("pruned session 0.1x penalty numerical verification", () => {
+  it("backup combo with pruned session has exactly 0.1x the normal score", () => {
+    // A has hardBuddy B. B has hardBuddy C. C only has S2.
+    // A has S1 and S2 (different days to avoid subset issues).
+    // S1 is on Jul 22, S2 is on Jul 22 (same day, well-spaced).
+    //
+    // Iteration 1: B's S1 filtered (C doesn't have it).
+    //   A's primary on Jul 22: [S1, S2]. S1 fails (B has no S1 combo) → prune S1.
+    // Iteration 2: A has only S2. Primary = [S2]. Converges.
+    // Backup enhancement: S1 re-included with pruned=true.
+    //   S1 score: 2.0 (single sport) × 1.0 (high) × 1.0 (no buddies) × 0.1 (pruned) = 0.2
+    //   S2 score: 2.0 × 1.0 × 1.0 = 2.0
+    const members = [
+      makeMember("A", {
+        sportRankings: ["Swimming"],
+        hardBuddies: ["B"],
+        candidateSessions: [
+          realSession(
+            "S1",
+            "Swimming",
+            "Inglewood Zone",
+            "2028-07-22",
+            "09:00:00",
+            "11:00:00",
+            "high"
+          ),
+          realSession(
+            "S2",
+            "Swimming",
+            "Inglewood Zone",
+            "2028-07-22",
+            "14:00:00",
+            "16:00:00",
+            "high"
+          ),
+        ],
+      }),
+      makeMember("B", {
+        sportRankings: ["Swimming"],
+        hardBuddies: ["C"],
+        candidateSessions: [
+          realSession(
+            "S1",
+            "Swimming",
+            "Inglewood Zone",
+            "2028-07-22",
+            "09:00:00",
+            "11:00:00"
+          ),
+          realSession(
+            "S2",
+            "Swimming",
+            "Inglewood Zone",
+            "2028-07-22",
+            "14:00:00",
+            "16:00:00"
+          ),
+        ],
+      }),
+      makeMember("C", {
+        sportRankings: ["Swimming"],
+        candidateSessions: [
+          realSession(
+            "S2",
+            "Swimming",
+            "Inglewood Zone",
+            "2028-07-22",
+            "14:00:00",
+            "16:00:00"
+          ),
+        ],
+      }),
+    ];
+
+    const result = runScheduleGeneration(members, REAL_TRAVEL, DAYS);
+
+    // A's primary should have S2 (converged result)
+    const aPrimary = result.combos.find(
+      (c) =>
+        c.memberId === "A" && c.rank === "primary" && c.day === "2028-07-22"
+    )!;
+    expect(aPrimary.sessionCodes).toContain("S2");
+    expect(aPrimary.score).toBeCloseTo(2.0);
+
+    // A's backup should include S1 (pruned, re-included with 0.1× penalty)
+    const aBackup = result.combos.find(
+      (c) =>
+        c.memberId === "A" &&
+        c.rank !== "primary" &&
+        c.day === "2028-07-22" &&
+        c.sessionCodes.includes("S1")
+    );
+    expect(aBackup).toBeDefined();
+
+    // If backup has both S1 (pruned) and S2 (normal):
+    //   S1: 2.0 × 1.0 × 1.0 × 0.1 = 0.2
+    //   S2: 2.0 × 1.0 × 1.0 = 2.0
+    //   Total = 2.2
+    if (aBackup!.sessionCodes.includes("S2")) {
+      expect(aBackup!.score).toBeCloseTo(2.2);
+    }
+    // If backup is just [S1]: score = 0.2
+    if (
+      aBackup!.sessionCodes.length === 1 &&
+      aBackup!.sessionCodes[0] === "S1"
+    ) {
+      expect(aBackup!.score).toBeCloseTo(0.2);
+    }
+  });
+});
+
+// ===========================================================================
+// Empty days array
+// ===========================================================================
+
+describe("empty days array", () => {
+  it("produces no combos and all members in membersWithNoCombos", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:00:00",
+          "12:00:00"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, []);
+
+    // No days requested → no combos generated → member has no combos
+    expect(result.combos).toHaveLength(0);
+    expect(result.membersWithNoCombos).toContain("Alice");
+  });
+});
+
+// ===========================================================================
+// Mixed interest levels in multi-session combo — exact score verification
+// ===========================================================================
+
+describe("mixed interest levels in multi-session combo scoring", () => {
+  it("3-session combo with high/medium/low interests produces correct total score", () => {
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming", "Artistic Gymnastics", "Diving"],
+      candidateSessions: [
+        realSession(
+          "SWM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00",
+          "high"
+        ),
+        realSession(
+          "GYM01",
+          "Artistic Gymnastics",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:30:00",
+          "11:30:00",
+          "medium"
+        ),
+        realSession(
+          "DIV01",
+          "Diving",
+          "Inglewood Zone",
+          "2028-07-22",
+          "13:00:00",
+          "14:00:00",
+          "low"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    // All 3 sessions fit (same zone, 90 min gaps: 10:30-09:00=90, 13:00-11:30=90)
+    const primary = result.combos.find(
+      (c) => c.memberId === "Alice" && c.rank === "primary"
+    )!;
+    expect(primary.sessionCodes).toHaveLength(3);
+
+    // Score calculation:
+    //   SWM01: rank 1/3 → 2.0, high → 1.0, no buddies → 1.0 = 2.0
+    //   GYM01: rank 2/3 → 1.5, medium → 0.7, no buddies → 1.0 = 1.05
+    //   DIV01: rank 3/3 → 1.0, low → 0.4, no buddies → 1.0 = 0.4
+    //   Total = 2.0 + 1.05 + 0.4 = 3.45
+    expect(primary.score).toBeCloseTo(3.45);
+  });
+});
+
+// ===========================================================================
+// Tiebreaker: multi-session combos with equal score differ by session code
+// ===========================================================================
+
+describe("tiebreaker on multi-session combos by lexicographic session codes", () => {
+  it("equal-score 2-session combos are ordered by first sorted session code", () => {
+    // Two pairs of sessions, all same sport, same interest, same zone.
+    // Pair 1: [AAA, BBB], Pair 2: [CCC, DDD]. Both pairs score identically.
+    // Because they all overlap, we need them on separate time slots but with
+    // the same gap structure.
+    //
+    // Actually, for tiebreaking to matter, we need 2+ combos with the same
+    // score AND same session count AND same sportMultiplierSum. The simplest
+    // setup: two non-overlapping pairs where each pair has the same total score.
+    //
+    // Use 4 sessions at the same time (overlapping) so only solo combos exist.
+    // But solos are simpler. Let me make 2 feasible pairs:
+    //   Pair [AAA01, ZZZ01] at 08:00-09:00 and 10:30-11:30
+    //   Pair [MMM01, NNN01] at 08:00-09:00 and 10:30-11:30
+    // But sessions can't share the same time unless they're different sessions.
+    //
+    // Simpler: 4 sessions, 2 morning + 2 afternoon. All same sport/interest.
+    //   AAA at 08-09, ZZZ at 08-09 (overlap), MMM at 10:30-11:30, NNN at 10:30-11:30 (overlap)
+    //   Feasible pairs: [AAA, MMM], [AAA, NNN], [ZZZ, MMM], [ZZZ, NNN]
+    //   All pairs score identically: same sport, same interest, same count.
+    //   Tiebreaker: first sorted session code → AAA < MMM < NNN < ZZZ
+    //   [AAA, MMM] → first sorted = "AAA01" → best
+    //   [AAA, NNN] → first sorted = "AAA01" → tie with above, then compare...
+    //   Actually with sort on the combo's sessions, both [AAA, MMM] and [AAA, NNN]
+    //   have first sorted code "AAA01". Need to check if there's a secondary.
+    //
+    // Let me simplify: just use overlapping sessions to produce solo combos.
+    // Same sport, same interest → identical scores → alphabetical order.
+    // This is already tested in "tiebreak 3" above.
+    //
+    // For multi-session: make 2 pairs with different first-sorted codes.
+    const alice = makeMember("Alice", {
+      sportRankings: ["Swimming"],
+      candidateSessions: [
+        realSession(
+          "ZZZ01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00",
+          "high"
+        ),
+        realSession(
+          "AAA01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "08:00:00",
+          "09:00:00",
+          "high"
+        ),
+        realSession(
+          "MMM01",
+          "Swimming",
+          "Inglewood Zone",
+          "2028-07-22",
+          "10:30:00",
+          "11:30:00",
+          "high"
+        ),
+      ],
+    });
+
+    const result = runScheduleGeneration([alice], REAL_TRAVEL, ["2028-07-22"]);
+
+    const dayCombos = result.combos.filter(
+      (c) => c.memberId === "Alice" && c.day === "2028-07-22"
+    );
+
+    // Feasible pairs: [AAA01, MMM01] and [ZZZ01, MMM01] (same scores)
+    // Solo combos: [AAA01], [ZZZ01], [MMM01]
+    // Primary should be a pair (higher score from 2 sessions).
+    // Between [AAA01, MMM01] and [ZZZ01, MMM01]: first sorted code "AAA01" < "MMM01"
+    // Wait, for [AAA01, MMM01]: sorted codes = ["AAA01", "MMM01"], first = "AAA01"
+    //       for [ZZZ01, MMM01]: sorted codes = ["MMM01", "ZZZ01"], first = "MMM01"
+    // "AAA01" < "MMM01" → [AAA01, MMM01] is primary
+    const primary = dayCombos.find((c) => c.rank === "primary")!;
+    expect(primary.sessionCodes.sort()).toEqual(["AAA01", "MMM01"]);
   });
 });

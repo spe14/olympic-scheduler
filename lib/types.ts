@@ -90,7 +90,9 @@ export type GroupDetail = {
     name: string;
     departedAt: string;
     rejoinedAt?: string;
+    wasPartOfSchedule?: boolean;
   }[];
   affectedBuddyMembers: Record<string, string[]>;
   windowRankings: WindowRanking[];
+  purchasedDatesOutsideRange: string[];
 };

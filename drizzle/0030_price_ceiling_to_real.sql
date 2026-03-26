@@ -1,0 +1,1 @@
+ALTER TABLE "purchase_plan_entry" ALTER COLUMN "price_ceiling" SET DATA TYPE real;

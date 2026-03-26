@@ -447,6 +447,50 @@ describe("getMySchedule", () => {
     expect(result.data![0].combos).toHaveLength(2);
   });
 
+  it("defaults primaryScore to 0 when day has no primary combo", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+
+    // Query 1: combos — only backup combos, no primary for this day
+    const combos = [
+      { comboId: "combo-1", day: "2026-08-01", rank: "backup1", score: 75 },
+      { comboId: "combo-2", day: "2026-08-01", rank: "backup2", score: 60 },
+    ];
+
+    // Query 2: comboSessions
+    const comboSessions = [
+      makeSession({ comboId: "combo-1", sessionCode: "SES-B1" }),
+      makeSession({ comboId: "combo-2", sessionCode: "SES-B2" }),
+    ];
+
+    // Query 3: prefs — empty
+    const prefs: unknown[] = [];
+
+    // Query 4: interestedRows — empty
+    const interestedRows: unknown[] = [];
+
+    // Query 5: scheduledRows — empty
+    const scheduledRows: unknown[] = [];
+
+    queryResults = [
+      combos,
+      comboSessions,
+      prefs,
+      interestedRows,
+      scheduledRows,
+      [], // purchaseTimeslot query
+    ];
+
+    const result = await getMySchedule("group-1");
+
+    expect(result.data).toBeDefined();
+    expect(result.data!.length).toBe(1);
+    // No primary combo exists, so primaryScore should default to 0
+    expect(result.data![0].primaryScore).toBe(0);
+    expect(result.data![0].combos).toHaveLength(2);
+    expect(result.data![0].combos[0].rank).toBe("backup1");
+    expect(result.data![0].combos[1].rank).toBe("backup2");
+  });
+
   it("handles combos with no associated sessions", async () => {
     mockGetMembership.mockResolvedValue(membership);
 

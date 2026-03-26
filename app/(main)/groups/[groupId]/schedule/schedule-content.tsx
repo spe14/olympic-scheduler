@@ -13,6 +13,7 @@ import {
   RANK_SHORT_LABELS,
   RANK_TAG_COLORS,
   RANK_FILTER_STYLES,
+  RANK_TAG_STYLES_LIGHT,
   HOUR_START,
   HOUR_END,
   TOTAL_HOURS,
@@ -25,6 +26,7 @@ import {
   matchesSearch,
   computeOverlapLayout,
   type LayoutInfo,
+  sortRanks,
 } from "@/lib/schedule-utils";
 import { Maximize2 } from "lucide-react";
 import { PageError, PageEmpty } from "@/components/page-state";
@@ -32,6 +34,7 @@ import SidebarSearch from "@/components/sidebar-search";
 import FilterPill, { FilterGroup } from "@/components/filter-pill";
 import { formatSessionTime, formatSessionDateHeader } from "@/lib/utils";
 import SessionDetailModal from "./_components/session-detail-modal";
+import Tooltip from "@/components/tooltip";
 
 // ── Merged session: deduplicate across combos, tag with ranks ─────────────────
 type MergedSession = {
@@ -53,6 +56,7 @@ function mergeSessions(combos: ScheduleCombo[]): MergedSession[] {
       }
     }
   }
+  for (const ms of map.values()) sortRanks(ms.ranks);
   return [...map.values()];
 }
 
@@ -103,7 +107,7 @@ export default function ScheduleContent() {
   }, [schedule]);
 
   const shouldFetch =
-    group.phase !== "preferences" && group.membersWithNoCombos.length === 0;
+    !!group.scheduleGeneratedAt && group.membersWithNoCombos.length === 0;
   const loading = shouldFetch && schedule === null && !error;
 
   const fetchSchedule = () => {
@@ -124,14 +128,35 @@ export default function ScheduleContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group.id, shouldFetch]);
 
-  // List view: group sessions by day, sorted by primary combo score descending
+  // Re-fetch when the user clicks the same nav tab
+  useEffect(() => {
+    const handler = () => fetchSchedule();
+    window.addEventListener("tab-refetch", handler);
+    return () => window.removeEventListener("tab-refetch", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Open calendar to the week containing the first scheduled session
+  const initialWeekSet = useRef(false);
+  useEffect(() => {
+    if (!schedule || schedule.length === 0 || initialWeekSet.current) return;
+    const firstDay = schedule.find((d) => d.combos.length > 0);
+    if (!firstDay) return;
+    for (let i = 0; i < weeks.length; i++) {
+      if (weeks[i].includes(firstDay.day)) {
+        setWeekIndex(i);
+        initialWeekSet.current = true;
+        break;
+      }
+    }
+  }, [schedule, weeks]);
+
+  // List view: group sessions by day, sorted chronologically
   // Must be declared here (before early returns) to satisfy Rules of Hooks
   const listGroups = useMemo(() => {
     if (displayMode !== "list" || !schedule) return [];
-    // Sort days by primary score descending
-    const sorted = [...schedule].sort(
-      (a, b) => b.primaryScore - a.primaryScore
-    );
+    // Sort days chronologically
+    const sorted = [...schedule].sort((a, b) => a.day.localeCompare(b.day));
     return sorted
       .map((day) => {
         // Merge sessions across combos and filter by active ranks
@@ -157,7 +182,10 @@ export default function ScheduleContent() {
         const sessionsSorted = [...filtered].sort(
           (a, b) =>
             timeToMinutes(a.session.startTime) -
-            timeToMinutes(b.session.startTime)
+              timeToMinutes(b.session.startTime) ||
+            timeToMinutes(a.session.endTime) -
+              timeToMinutes(b.session.endTime) ||
+            a.session.sessionCode.localeCompare(b.session.sessionCode)
         );
         const hdr = formatSessionDateHeader(day.day);
         return {
@@ -225,7 +253,7 @@ export default function ScheduleContent() {
     );
   }
 
-  if (group.phase === "preferences") {
+  if (!group.scheduleGeneratedAt) {
     return (
       <PageEmpty title="My Schedule">
         <p className="text-base text-slate-500">
@@ -251,7 +279,10 @@ export default function ScheduleContent() {
   if (!schedule || schedule.length === 0) {
     return (
       <PageEmpty title="My Schedule">
-        <p className="text-base text-slate-500">No schedule data available.</p>
+        <p className="text-base text-slate-500">
+          Schedules need to be regenerated due to status changes. Check the
+          Overview page.
+        </p>
       </PageEmpty>
     );
   }
@@ -274,17 +305,6 @@ export default function ScheduleContent() {
 
   return (
     <section>
-      {isAffectedByNonConvergence && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-600">
-          <p>
-            The algorithm was not able to meet all of your requirements during
-            schedule generation. The generated schedule is the best-effort
-            output. You can adjust preferences as needed in the{" "}
-            <span className="font-semibold">Preferences</span> tab if you are
-            unsatisfied with your schedule.
-          </p>
-        </div>
-      )}
       {/* Top bar */}
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-slate-900">My Schedule</h2>
@@ -300,9 +320,24 @@ export default function ScheduleContent() {
             })}
           </p>
         )}
+        <p className="mt-1 text-sm text-slate-500">
+          Click on a session to view the full session details and list of other
+          interested/attending members.
+        </p>
         <p className="mt-1 text-xs text-slate-400">
           All session times are displayed in Pacific Time.
         </p>
+        {isAffectedByNonConvergence && (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-600">
+            <p>
+              The algorithm was not able to meet all of your requirements during
+              schedule generation. The generated schedule is the best-effort
+              output. You can adjust preferences as needed in the{" "}
+              <span className="font-semibold">Preferences</span> tab if you are
+              unsatisfied with your schedule.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* List view */}
@@ -321,9 +356,15 @@ export default function ScheduleContent() {
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                     {dayGroup.label}
                   </h4>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                    Score: {dayGroup.primaryScore.toFixed(1)}
-                  </span>
+                  <Tooltip
+                    label="This score is calculated based on your interest level in this day's sessions. A higher priority score indicates you had more interest in this day's sessions."
+                    width="w-64"
+                  >
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                      Score:{" "}
+                      {dayGroup.primaryScore.toFixed(2).replace(/0$/, "")}
+                    </span>
+                  </Tooltip>
                 </div>
                 <div className="space-y-1.5">
                   {dayGroup.sessions.map((ms) => {
@@ -586,11 +627,14 @@ export default function ScheduleContent() {
                       const totalCols = layout?.totalCols ?? 1;
                       const widthPct = `calc(${100 / totalCols}% - ${3 + 3 / totalCols}px)`;
                       const leftPct = `calc(${(colIndex * 100) / totalCols}% + 3px)`;
+                      // Available height for text content:
+                      // total block height minus padding (6+6), rank tags row (16+2)
+                      const contentH = Math.max(heightPx, 24) - 30;
 
                       return (
                         <button
                           key={session.sessionCode}
-                          className="absolute cursor-pointer rounded-lg px-2 py-1.5 text-left transition-shadow hover:shadow-md"
+                          className="absolute flex cursor-pointer flex-col rounded-lg px-2 py-1.5 text-left transition-shadow hover:shadow-md"
                           style={{
                             top: `${topPx}px`,
                             height: `${Math.max(heightPx, 24)}px`,
@@ -615,13 +659,8 @@ export default function ScheduleContent() {
                             style={{ color: color.text }}
                           />
 
-                          {/* Scrollable content area */}
-                          <div
-                            className="overflow-hidden pr-4"
-                            style={{
-                              height: `${Math.max(heightPx, 24) - 24}px`,
-                            }}
-                          >
+                          {/* Content area — shrinks so rank tags stay visible */}
+                          <div className="min-h-0 flex-1 overflow-hidden pr-4">
                             {/* Session code */}
                             <p
                               className="truncate text-sm font-semibold leading-tight"
@@ -639,7 +678,7 @@ export default function ScheduleContent() {
                             </p>
 
                             {/* Time */}
-                            {heightPx >= 44 && (
+                            {contentH >= 50 && (
                               <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {formatSessionTime(session.startTime)} -{" "}
                                 {formatSessionTime(session.endTime)}
@@ -647,21 +686,21 @@ export default function ScheduleContent() {
                             )}
 
                             {/* Description */}
-                            {heightPx >= 64 && session.sessionDescription && (
+                            {contentH >= 68 && session.sessionDescription && (
                               <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {session.sessionDescription}
                               </p>
                             )}
 
                             {/* Venue */}
-                            {heightPx >= 82 && (
+                            {contentH >= 86 && (
                               <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {session.venue}
                               </p>
                             )}
 
                             {/* Zone */}
-                            {heightPx >= 96 && session.zone && (
+                            {contentH >= 104 && session.zone && (
                               <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
                                 {session.zone}
                               </p>
@@ -669,7 +708,7 @@ export default function ScheduleContent() {
                           </div>
 
                           {/* Rank tags — always visible, pinned to bottom */}
-                          <div className="flex gap-1">
+                          <div className="flex flex-shrink-0 gap-1">
                             {ranks.map((r) => (
                               <span
                                 key={r}
@@ -801,9 +840,19 @@ function MyScheduleSidebar({
               className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                 activeFilters.has(rank) &&
                 activeFilters.size < ALL_RANKS_CONST.length
-                  ? `${RANK_FILTER_STYLES[rank].bg} ${RANK_FILTER_STYLES[rank].text} ring-1 ${RANK_FILTER_STYLES[rank].ring}`
+                  ? ""
                   : "bg-slate-100 text-slate-400 hover:text-slate-600"
               }`}
+              style={
+                activeFilters.has(rank) &&
+                activeFilters.size < ALL_RANKS_CONST.length
+                  ? {
+                      backgroundColor: RANK_TAG_STYLES_LIGHT[rank].bg,
+                      color: RANK_TAG_STYLES_LIGHT[rank].text,
+                      boxShadow: `inset 0 0 0 1px ${RANK_TAG_STYLES_LIGHT[rank].text}30`,
+                    }
+                  : undefined
+              }
             >
               {RANK_LABELS[rank]}
             </button>

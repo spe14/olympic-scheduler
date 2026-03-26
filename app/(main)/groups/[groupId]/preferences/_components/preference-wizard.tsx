@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGroup } from "../../_components/group-context";
 import BuddiesStep from "./buddies-step";
@@ -139,20 +139,29 @@ export default function PreferenceWizard({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  // Track sessions loading: stores the sessions.length at the time loading
-  // started. When sessions prop changes (server re-fetch after sport ranking
-  // save), the length will differ and loading clears. A monotonic counter is
-  // bumped on each load-start so that even if sessions.length stays the same,
-  // loading clears once the counter advances past the snapshot.
-  const [sessionsLoadingSnapshot, setSessionsLoadingSnapshot] = useState<{
-    length: number;
-    counter: number;
-  } | null>(null);
-  const [sessionsCounter, setSessionsCounter] = useState(0);
-  const sessionsLoading =
-    sessionsLoadingSnapshot !== null &&
-    sessionsLoadingSnapshot.length === sessions.length &&
-    sessionsLoadingSnapshot.counter === sessionsCounter;
+  // Track sessions loading after sport ranking changes. When the set of ranked
+  // sports changes, sessions are re-fetched from the server. We mark loading
+  // and clear it once the sessions prop content actually changes.
+  const [sessionsLoadingFlag, setSessionsLoadingFlag] = useState(false);
+  const sessionsKey = useMemo(
+    () =>
+      sessions
+        .map((s) => s.sessionCode)
+        .sort()
+        .join(","),
+    [sessions]
+  );
+  const [prevSessionsKey, setPrevSessionsKey] = useState(sessionsKey);
+  // Clear the loading flag when sessions content changes (detected by key diff).
+  // Uses state (not a ref) so comparison is safe during render per React guidelines.
+  let sessionsLoading = sessionsLoadingFlag;
+  if (sessionsKey !== prevSessionsKey) {
+    setPrevSessionsKey(sessionsKey);
+    if (sessionsLoadingFlag) {
+      setSessionsLoadingFlag(false);
+    }
+    sessionsLoading = false;
+  }
 
   const navigateToStep = useCallback((stepIndex: number) => {
     setCurrentStep(stepIndex);
@@ -404,18 +413,23 @@ export default function PreferenceWizard({
   // Pure save-then-advance, no phase warning concern.
   // Returns true if save succeeded and step advanced.
   async function saveAndAdvance(): Promise<boolean> {
-    // Mark sessions as loading if sport rankings changed — the server will
-    // re-fetch sessions for the updated sports after the save action
+    // Mark sessions as loading only if the set of ranked sports changed (not a
+    // pure reorder). A reorder doesn't change which sessions are available.
     if (currentStep === 1 && isCurrentStepDirty()) {
-      setSessionsCounter((c) => c + 1);
-      setSessionsLoadingSnapshot({
-        length: sessions.length,
-        counter: sessionsCounter + 1,
-      });
+      const prevRankings: string[] =
+        savedSnapshots[1] !== undefined ? JSON.parse(savedSnapshots[1]) : [];
+      const prevSet = new Set(prevRankings);
+      const currSet = new Set(sportRankings);
+      const sportsSetChanged =
+        prevSet.size !== currSet.size ||
+        [...currSet].some((s) => !prevSet.has(s));
+      if (sportsSetChanged) {
+        setSessionsLoadingFlag(true);
+      }
     }
     const saved = await saveCurrentStep();
     if (!saved) {
-      setSessionsLoadingSnapshot(null);
+      setSessionsLoadingFlag(false);
       return false;
     }
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
@@ -451,7 +465,7 @@ export default function PreferenceWizard({
     // Only ack after successful save to avoid clearing the warning when
     // the user's preferences weren't actually persisted
     if (saved) {
-      ackScheduleWarning(group.id);
+      await ackScheduleWarning(group.id);
     }
   }
 

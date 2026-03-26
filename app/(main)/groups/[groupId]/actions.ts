@@ -147,6 +147,7 @@ export async function approveMember(
             name: string;
             departedAt: string;
             rejoinedAt?: string;
+            wasPartOfSchedule?: boolean;
           }[]) ?? [];
         const departedIdx = departed.findIndex(
           (d) => d.userId === approvedUser.userId
@@ -300,18 +301,21 @@ export async function removeMemberTransaction(
       departingUser.joinedAt &&
       new Date(departingUser.joinedAt) <= new Date(grpData.scheduleGeneratedAt);
 
-    if (wasPartOfSchedule) {
-      // Record departed member with timestamp
-      const existingDeparted =
-        (grpData?.departedMembers as {
-          userId: string;
-          name: string;
-          departedAt: string;
-          rejoinedAt?: string;
-        }[]) ?? [];
-      const name = `${departingUser.firstName} ${departingUser.lastName}`;
-      const departedAt = new Date().toISOString();
+    // Always record departed member with timestamp
+    const existingDeparted =
+      (grpData?.departedMembers as {
+        userId: string;
+        name: string;
+        departedAt: string;
+        rejoinedAt?: string;
+        wasPartOfSchedule?: boolean;
+      }[]) ?? [];
+    const name = departingUser
+      ? `${departingUser.firstName} ${departingUser.lastName}`
+      : "Unknown";
+    const departedAt = new Date().toISOString();
 
+    if (wasPartOfSchedule) {
       // 7. Delete algorithm outputs in dependency order
       const comboIds = tx
         .select({ id: combo.id })
@@ -324,20 +328,13 @@ export async function removeMemberTransaction(
 
       await tx.delete(windowRanking).where(eq(windowRanking.groupId, groupId));
 
-      // 8. Reset remaining members who had completed preferences —
-      //    only bump statusChangedAt for members already at "preferences_set".
-      //    Members still at "joined" (haven't entered preferences) must stay
-      //    at "joined" so the UI correctly shows them as not ready.
-      await tx
-        .update(member)
-        .set({ status: "preferences_set", statusChangedAt: new Date() })
-        .where(
-          and(
-            eq(member.groupId, groupId),
-            eq(member.status, "preferences_set"),
-            notInArray(member.id, [departingMemberId])
-          )
-        );
+      // 8. No status or statusChangedAt changes for remaining members.
+      //    Members at "joined" stay at "joined" (not ready).
+      //    Members at "preferences_set" keep their original statusChangedAt.
+      //    We intentionally do NOT bump statusChangedAt here — doing so would
+      //    trigger a false "updated preferences" notification for all members.
+      //    The departure is already signaled via departedMembers,
+      //    affectedBuddyMembers, and the phase change to "preferences".
 
       // Update group: record departed name, regress phase to preferences,
       // and persist affected buddy map.
@@ -347,24 +344,64 @@ export async function removeMemberTransaction(
           phase: "preferences",
           departedMembers: [
             ...existingDeparted,
-            { userId: departingUser.userId, name, departedAt },
+            {
+              userId: departingUser!.userId,
+              name,
+              departedAt,
+              wasPartOfSchedule: true,
+            },
           ],
           affectedBuddyMembers: updatedAffected,
           membersWithNoCombos: [],
         })
         .where(eq(group.id, groupId));
     } else {
-      // Not part of schedule — still persist affected buddy changes
+      // Not part of schedule — record departure and persist affected buddy changes
       await tx
         .update(group)
-        .set({ affectedBuddyMembers: updatedAffected })
+        .set({
+          departedMembers: [
+            ...existingDeparted,
+            {
+              userId: departingUser?.userId ?? "",
+              name,
+              departedAt,
+              wasPartOfSchedule: false,
+            },
+          ],
+          affectedBuddyMembers: updatedAffected,
+        })
         .where(eq(group.id, groupId));
     }
-  } else if (affectedMemberIds.length > 0) {
-    // No schedule generated — persist affectedBuddyMembers for buddy departures
+  } else {
+    // No schedule generated — still record departure and persist affected buddy changes
+    const existingDeparted =
+      (grpData?.departedMembers as {
+        userId: string;
+        name: string;
+        departedAt: string;
+        rejoinedAt?: string;
+        wasPartOfSchedule?: boolean;
+      }[]) ?? [];
+    const name = departingUser
+      ? `${departingUser.firstName} ${departingUser.lastName}`
+      : "Unknown";
+    const departedAt = new Date().toISOString();
+
     await tx
       .update(group)
-      .set({ affectedBuddyMembers: updatedAffected })
+      .set({
+        departedMembers: [
+          ...existingDeparted,
+          {
+            userId: departingUser?.userId ?? "",
+            name,
+            departedAt,
+            wasPartOfSchedule: false,
+          },
+        ],
+        affectedBuddyMembers: updatedAffected,
+      })
       .where(eq(group.id, groupId));
   }
 
@@ -541,12 +578,28 @@ export async function updateDateConfig(
         if (allCombos.length > 0) {
           const memberScores = buildMemberScores(allCombos);
 
+          // Collect unique dates from purchased sessions for window filtering
+          const purchasedRows = await tx
+            .selectDistinct({ sessionDate: session.sessionDate })
+            .from(ticketPurchaseAssignee)
+            .innerJoin(
+              ticketPurchase,
+              eq(ticketPurchaseAssignee.ticketPurchaseId, ticketPurchase.id)
+            )
+            .innerJoin(
+              session,
+              eq(ticketPurchase.sessionId, session.sessionCode)
+            )
+            .where(eq(ticketPurchase.groupId, groupId));
+          const purchasedDays = purchasedRows.map((r) => r.sessionDate);
+
           const rankings = computeWindowRankings({
             memberScores,
             dateMode: newDateMode,
             consecutiveDays: newConsecutiveDays ?? undefined,
             startDate: newStartDate ?? undefined,
             endDate: newEndDate ?? undefined,
+            requiredDays: purchasedDays.length > 0 ? purchasedDays : undefined,
           });
 
           if (rankings.length > 0) {
@@ -568,7 +621,7 @@ export async function updateDateConfig(
     };
   }
 
-  revalidatePath(`/groups/${groupId}`);
+  revalidatePath(`/groups/${groupId}`, "layout");
   return { success: true };
 }
 
@@ -834,7 +887,7 @@ export async function generateSchedules(
       {
         sessionCode: string;
         sport: string;
-        zone: string;
+        zone: (typeof session.zone.enumValues)[number];
         sessionDate: string;
         startTime: string;
         endTime: string;
@@ -1067,6 +1120,7 @@ export async function generateSchedules(
           phase: newPhase,
           scheduleGeneratedAt: generationTimestamp,
           purchaseDataChangedAt: null,
+          soldOutCodesAtGeneration: [...soldOutCodes],
           departedMembers: [],
           affectedBuddyMembers: {},
           membersWithNoCombos: result.membersWithNoCombos,
@@ -1098,12 +1152,23 @@ export async function generateSchedules(
         if (dateConfig?.dateMode) {
           const memberScores = buildMemberScores(result.combos);
 
+          // Collect unique dates from purchased sessions for window filtering
+          const purchasedDays = new Set<string>();
+          for (const [, codes] of lockedByMember) {
+            for (const code of codes) {
+              const meta = sessionMetadataMap.get(code);
+              if (meta) purchasedDays.add(meta.sessionDate);
+            }
+          }
+
           const rankings = computeWindowRankings({
             memberScores,
             dateMode: dateConfig.dateMode,
             consecutiveDays: dateConfig.consecutiveDays ?? undefined,
             startDate: dateConfig.startDate ?? undefined,
             endDate: dateConfig.endDate ?? undefined,
+            requiredDays:
+              purchasedDays.size > 0 ? [...purchasedDays] : undefined,
           });
 
           if (rankings.length > 0) {

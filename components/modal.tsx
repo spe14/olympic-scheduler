@@ -1,9 +1,12 @@
 "use client";
 
+import { useScrollLock } from "@/lib/use-scroll-lock";
+
 const sizeClasses = {
   default: "max-w-md",
   lg: "max-w-lg",
   xl: "max-w-xl",
+  "2xl": "max-w-2xl",
 };
 
 export default function Modal({
@@ -15,14 +18,15 @@ export default function Modal({
   title: string;
   onClose: () => void;
   children: React.ReactNode;
-  size?: "default" | "lg" | "xl";
+  size?: "default" | "lg" | "xl" | "2xl";
 }) {
+  useScrollLock();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div
-        className={`w-full ${sizeClasses[size]} max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-7 shadow-xl`}
+        className={`w-full ${sizeClasses[size]} flex max-h-[85vh] flex-col rounded-2xl bg-white shadow-xl`}
       >
-        <div className="mb-5 flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between px-7 pb-5 pt-7">
           <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
           <button
             type="button"
@@ -45,7 +49,7 @@ export default function Modal({
             </svg>
           </button>
         </div>
-        {children}
+        <div className="overflow-y-auto px-7 pb-7">{children}</div>
       </div>
     </div>
   );

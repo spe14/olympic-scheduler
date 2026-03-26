@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { statusLabels } from "@/lib/constants";
+import { useScrollLock } from "@/lib/use-scroll-lock";
 import UserAvatar from "@/components/user-avatar";
 import { Group } from "@/lib/types";
 import { removeMembership } from "@/app/(main)/actions";
@@ -18,9 +19,13 @@ export default function GroupCard({
   const isDenied = g.myStatus === "denied";
   const isInactive = isPending || isDenied;
   const [copied, setCopied] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
   const [showConfirm, setShowConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState("");
+  useScrollLock(showConfirm);
 
   function handleCopyInviteCode(e: React.MouseEvent) {
     e.preventDefault();
@@ -56,6 +61,12 @@ export default function GroupCard({
             : "border-slate-200 bg-white shadow-sm hover:border-[#009de5]/30 hover:shadow-md"
         }`}
         onClick={isInactive ? (e) => e.preventDefault() : undefined}
+        onMouseMove={
+          !isInactive
+            ? (e) => setTooltipPos({ x: e.clientX, y: e.clientY })
+            : undefined
+        }
+        onMouseLeave={!isInactive ? () => setTooltipPos(null) : undefined}
       >
         <div className="mb-3 flex items-start justify-between">
           <h3
@@ -139,7 +150,7 @@ export default function GroupCard({
 
         {!isInactive && g.members.length > 0 && (
           <div className="mt-4 flex items-center gap-1.5">
-            {g.members.map((m, i) => (
+            {g.members.slice(0, 8).map((m, i) => (
               <div key={i} className="group/avatar relative">
                 <UserAvatar
                   firstName={m.firstName}
@@ -151,6 +162,11 @@ export default function GroupCard({
                 </div>
               </div>
             ))}
+            {g.members.length > 8 && (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-medium text-slate-600">
+                +{g.members.length - 8}
+              </div>
+            )}
           </div>
         )}
 
@@ -193,6 +209,15 @@ export default function GroupCard({
           </p>
         )}
       </Link>
+
+      {tooltipPos && (
+        <div
+          className="pointer-events-none fixed z-50 whitespace-nowrap rounded-lg bg-slate-800 px-3.5 py-2 text-sm text-white shadow-lg"
+          style={{ left: tooltipPos.x + 12, top: tooltipPos.y + 12 }}
+        >
+          Click to view the group page.
+        </div>
+      )}
 
       {showConfirm && (
         <div

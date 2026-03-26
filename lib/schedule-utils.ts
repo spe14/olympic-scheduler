@@ -42,6 +42,19 @@ export function buildSportColorMap(sports: string[]): Map<string, SportColor> {
   return map;
 }
 
+// ── Rank ordering & helpers ─────────────────────────────────────────────────
+
+const RANK_ORDER: Record<string, number> = {
+  primary: 0,
+  backup1: 1,
+  backup2: 2,
+};
+
+/** Sort rank strings in canonical order: primary → backup1 → backup2. */
+export function sortRanks(ranks: string[]): string[] {
+  return ranks.sort((a, b) => (RANK_ORDER[a] ?? 99) - (RANK_ORDER[b] ?? 99));
+}
+
 // ── Rank styling constants ──────────────────────────────────────────────────
 
 export const RANK_LABELS: Record<string, string> = {

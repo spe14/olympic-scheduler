@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildSportColorMap,
   FALLBACK_SPORT_COLOR,
+  sortRanks,
   timeToMinutes,
   formatHourLabel,
   addDays,
@@ -98,6 +99,31 @@ describe("rank styling constants", () => {
       expect(RANK_TAG_COLORS[rank]).toHaveProperty("bg");
       expect(RANK_TAG_COLORS[rank]).toHaveProperty("text");
     }
+  });
+});
+
+// ── sortRanks ──────────────────────────────────────────────────────────────
+
+describe("sortRanks", () => {
+  it("sorts known ranks in canonical order", () => {
+    expect(sortRanks(["backup2", "primary", "backup1"])).toEqual([
+      "primary",
+      "backup1",
+      "backup2",
+    ]);
+  });
+
+  it("places unknown ranks at the end (default 99)", () => {
+    const result = sortRanks(["unknown", "backup1", "primary", "wildcard"]);
+    expect(result).toEqual(["primary", "backup1", "unknown", "wildcard"]);
+  });
+
+  it("sorts multiple unknown ranks after all known ranks", () => {
+    const result = sortRanks(["zzz", "backup2", "aaa", "primary"]);
+    expect(result[0]).toBe("primary");
+    expect(result[1]).toBe("backup2");
+    // Both unknown ranks come after known ranks
+    expect(result.slice(2).sort()).toEqual(["aaa", "zzz"]);
   });
 });
 
@@ -371,6 +397,42 @@ describe("computeOverlapLayout", () => {
     expect(result.get("A")!.totalCols).toBe(3);
     expect(result.get("B")!.totalCols).toBe(3);
     expect(result.get("C")!.totalCols).toBe(3);
+  });
+
+  it("forms separate groups for fully non-overlapping sessions", () => {
+    // Three sessions with no overlap at all — each forms its own group
+    const result = computeOverlapLayout([
+      { code: "A", startTime: "08:00", endTime: "09:00" },
+      { code: "B", startTime: "10:00", endTime: "11:00" },
+      { code: "C", startTime: "13:00", endTime: "14:00" },
+    ]);
+    // Each session is in its own group with totalCols 1
+    expect(result.get("A")!.colIndex).toBe(0);
+    expect(result.get("A")!.totalCols).toBe(1);
+    expect(result.get("B")!.colIndex).toBe(0);
+    expect(result.get("B")!.totalCols).toBe(1);
+    expect(result.get("C")!.colIndex).toBe(0);
+    expect(result.get("C")!.totalCols).toBe(1);
+  });
+
+  it("handles mix of overlapping and non-overlapping sessions across groups", () => {
+    // A and B overlap (group 1), C is alone (group 2), D and E overlap (group 3)
+    const result = computeOverlapLayout([
+      { code: "A", startTime: "08:00", endTime: "10:00" },
+      { code: "B", startTime: "09:00", endTime: "11:00" },
+      { code: "C", startTime: "12:00", endTime: "13:00" },
+      { code: "D", startTime: "15:00", endTime: "17:00" },
+      { code: "E", startTime: "16:00", endTime: "18:00" },
+    ]);
+    // Group 1: A, B overlap
+    expect(result.get("A")!.totalCols).toBe(2);
+    expect(result.get("B")!.totalCols).toBe(2);
+    // Group 2: C alone — separate group via else branch
+    expect(result.get("C")!.totalCols).toBe(1);
+    expect(result.get("C")!.colIndex).toBe(0);
+    // Group 3: D, E overlap
+    expect(result.get("D")!.totalCols).toBe(2);
+    expect(result.get("E")!.totalCols).toBe(2);
   });
 
   it("separates independent overlap groups", () => {

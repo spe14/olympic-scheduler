@@ -14,6 +14,8 @@ import {
   markAsOutOfBudget,
   unmarkOutOfBudget,
   reportSessionPrice,
+  updateReportedPrice,
+  deleteReportedPrice,
   deleteOffScheduleSessionData,
   getPurchaseDataForSessions,
 } from "@/app/(main)/groups/[groupId]/schedule/purchase-actions";
@@ -444,6 +446,28 @@ describe("savePurchasePlanEntry", () => {
       error: "Price ceiling must be a non-negative number.",
     });
   });
+
+  it("accepts decimal price ceiling", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ id: "member-1" }, { id: "member-2" }]];
+    const result = await savePurchasePlanEntry("group-1", {
+      sessionId: "SES-001",
+      assigneeMemberId: "member-2",
+      priceCeiling: 150.75,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("accepts zero price ceiling", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    queryResults = [[{ id: "member-1" }, { id: "member-2" }]];
+    const result = await savePurchasePlanEntry("group-1", {
+      sessionId: "SES-001",
+      assigneeMemberId: "member-2",
+      priceCeiling: 0,
+    });
+    expect(result).toEqual({ success: true });
+  });
 });
 
 describe("removePurchasePlanEntry", () => {
@@ -569,6 +593,42 @@ describe("batchSavePurchasePlan", () => {
     });
     expect(result.error).toContain("save purchase plan");
   });
+
+  it("accepts decimal price ceilings in batch", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [
+      [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
+    ];
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [
+        { assigneeMemberId: "member-2", priceCeiling: 150.5 },
+        { assigneeMemberId: "member-3", priceCeiling: 99.99 },
+      ],
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("accepts mix of null, zero, whole, and decimal ceilings", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [
+      [
+        { id: "member-1" },
+        { id: "member-2" },
+        { id: "member-3" },
+        { id: "member-4" },
+      ],
+    ];
+    const result = await batchSavePurchasePlan("group-1", {
+      sessionId: "SES-001",
+      entries: [
+        { assigneeMemberId: "member-2", priceCeiling: null },
+        { assigneeMemberId: "member-3", priceCeiling: 0 },
+        { assigneeMemberId: "member-4", priceCeiling: 200.25 },
+      ],
+    });
+    expect(result).toEqual({ success: true });
+  });
 });
 
 describe("markAsPurchased", () => {
@@ -642,6 +702,118 @@ describe("markAsPurchased", () => {
       assignees: [{ memberId: "member-2" }],
     });
     expect(result.error).toContain("record purchase");
+  });
+
+  it("returns error for negative pricePerTicket", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      pricePerTicket: -10,
+      assignees: [{ memberId: "member-2" }],
+    });
+    expect(result).toEqual({
+      error: "Price per ticket must be a non-negative number.",
+    });
+  });
+
+  it("returns error for NaN pricePerTicket", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      pricePerTicket: NaN,
+      assignees: [{ memberId: "member-2" }],
+    });
+    expect(result).toEqual({
+      error: "Price per ticket must be a non-negative number.",
+    });
+  });
+
+  it("returns error for negative pricePaid on assignee", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      assignees: [{ memberId: "member-2", pricePaid: -5 }],
+    });
+    expect(result).toEqual({
+      error: "Price paid must be a non-negative number.",
+    });
+  });
+
+  it("returns error when session is sold out", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // First tx query (sold-out check) returns a row, meaning session is sold out
+    txQueryResults = [[{ id: "so-1" }]];
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      assignees: [{ memberId: "member-2" }],
+    });
+    expect(result).toEqual({
+      error: "This session has been marked as sold out.",
+    });
+  });
+
+  it("returns error when all assignees already have purchases", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // sold-out check empty, active members, existing assignees = all of them
+    txQueryResults = [
+      [],
+      [{ id: "member-1" }, { id: "member-2" }],
+      [{ memberId: "member-2" }], // member-2 already has a purchase
+    ];
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      assignees: [{ memberId: "member-2" }],
+    });
+    expect(result).toEqual({
+      error: "All selected members already have a purchase for this session.",
+    });
+  });
+
+  it("accepts zero as valid pricePerTicket", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[], [{ id: "member-1" }, { id: "member-2" }], []];
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      pricePerTicket: 0,
+      assignees: [{ memberId: "member-2", pricePaid: 0 }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts decimal pricePerTicket and pricePaid", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [
+      [],
+      [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
+      [],
+    ];
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      pricePerTicket: 88.5,
+      assignees: [
+        { memberId: "member-2", pricePaid: 88.5 },
+        { memberId: "member-3", pricePaid: 99.99 },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts null pricePerTicket with mixed null/decimal pricePaid", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [
+      [],
+      [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
+      [],
+    ];
+    const result = await markAsPurchased("group-1", {
+      sessionId: "SES-001",
+      pricePerTicket: null,
+      assignees: [
+        { memberId: "member-2", pricePaid: 75.25 },
+        { memberId: "member-3", pricePaid: null },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 });
 
@@ -847,6 +1019,28 @@ describe("updatePurchaseAssigneePrice", () => {
       purchaseId: "p-1",
       memberId: "member-2",
       pricePaid: null,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("accepts decimal pricePaid", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[{ id: "p-1", purchasedByMemberId: "member-1" }]];
+    const result = await updatePurchaseAssigneePrice("group-1", {
+      purchaseId: "p-1",
+      memberId: "member-2",
+      pricePaid: 88.5,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("accepts small decimal pricePaid", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[{ id: "p-1", purchasedByMemberId: "member-1" }]];
+    const result = await updatePurchaseAssigneePrice("group-1", {
+      purchaseId: "p-1",
+      memberId: "member-2",
+      pricePaid: 0.01,
     });
     expect(result).toEqual({ success: true });
   });
@@ -1083,7 +1277,10 @@ describe("reportSessionPrice", () => {
       maxPrice: 200,
       comments: "Good seats",
     });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({
+      success: true,
+      data: { reportedPriceId: "new-id" },
+    });
     expect(mockInsert).toHaveBeenCalled();
   });
 
@@ -1095,7 +1292,10 @@ describe("reportSessionPrice", () => {
       maxPrice: null,
       comments: "Check back tomorrow",
     });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({
+      success: true,
+      data: { reportedPriceId: "new-id" },
+    });
   });
 
   it("allows equal min and max prices", async () => {
@@ -1106,7 +1306,52 @@ describe("reportSessionPrice", () => {
       maxPrice: 150,
       comments: null,
     });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({
+      success: true,
+      data: { reportedPriceId: "new-id" },
+    });
+  });
+
+  it("accepts decimal min and max prices", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await reportSessionPrice("group-1", {
+      sessionId: "SES-001",
+      minPrice: 40.5,
+      maxPrice: 80.75,
+      comments: null,
+    });
+    expect(result).toEqual({
+      success: true,
+      data: { reportedPriceId: "new-id" },
+    });
+  });
+
+  it("accepts decimal min with null max", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await reportSessionPrice("group-1", {
+      sessionId: "SES-001",
+      minPrice: 99.99,
+      maxPrice: null,
+      comments: null,
+    });
+    expect(result).toEqual({
+      success: true,
+      data: { reportedPriceId: "new-id" },
+    });
+  });
+
+  it("accepts null min with decimal max", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await reportSessionPrice("group-1", {
+      sessionId: "SES-001",
+      minPrice: null,
+      maxPrice: 0.5,
+      comments: null,
+    });
+    expect(result).toEqual({
+      success: true,
+      data: { reportedPriceId: "new-id" },
+    });
   });
 
   it("returns error when db insert fails", async () => {
@@ -1125,6 +1370,218 @@ describe("reportSessionPrice", () => {
       comments: null,
     });
     expect(result.error).toContain("report session price");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// updateReportedPrice
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("updateReportedPrice", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryResults = [];
+    txQueryResults = [];
+  });
+
+  it("returns error when not a member", async () => {
+    mockGetMembership.mockResolvedValue(null);
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: 150,
+      maxPrice: 250,
+      comments: null,
+    });
+    expect(result).toEqual({
+      error: "You are not an active member of this group.",
+    });
+  });
+
+  it("returns error when no price or comment provided", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: null,
+      maxPrice: null,
+      comments: null,
+    });
+    expect(result).toEqual({
+      error: "At least one price or a comment is required.",
+    });
+  });
+
+  it("returns error for negative min price", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: -5,
+      maxPrice: 200,
+      comments: null,
+    });
+    expect(result).toEqual({
+      error: "Min price must be a positive number.",
+    });
+  });
+
+  it("returns error for negative max price", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: 100,
+      maxPrice: -5,
+      comments: null,
+    });
+    expect(result).toEqual({
+      error: "Max price must be a positive number.",
+    });
+  });
+
+  it("returns error when min exceeds max", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: 300,
+      maxPrice: 100,
+      comments: null,
+    });
+    expect(result).toEqual({
+      error: "Min price cannot exceed max price.",
+    });
+  });
+
+  it("updates reported price when caller is the reporter", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // tx.select query returns the reported price row owned by the caller
+    txQueryResults = [[{ reportedByMemberId: "member-1" }]];
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: 150,
+      maxPrice: 250,
+      comments: "Updated comment",
+    });
+    expect(result).toEqual({ success: true });
+    expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("accepts decimal prices in update", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[{ reportedByMemberId: "member-1" }]];
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: 49.99,
+      maxPrice: 120.5,
+      comments: null,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("returns not-found error when reported price does not exist", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // tx.select returns empty → row is undefined
+    txQueryResults = [[]];
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-nonexistent",
+      minPrice: 150,
+      maxPrice: 250,
+      comments: null,
+    });
+    expect(result.error).toContain("not found");
+  });
+
+  it("returns not-authorized error when caller is not the reporter", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    // tx.select returns a row owned by someone else
+    txQueryResults = [[{ reportedByMemberId: "member-other" }]];
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: 150,
+      maxPrice: 250,
+      comments: null,
+    });
+    expect(result.error).toContain("only edit your own");
+  });
+
+  it("returns generic error when transaction fails unexpectedly", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: 150,
+      maxPrice: 250,
+      comments: null,
+    });
+    expect(result.error).toContain("update reported price");
+  });
+
+  it("trims and caps comments at 200 characters", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[{ reportedByMemberId: "member-1" }]];
+    const result = await updateReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+      minPrice: null,
+      maxPrice: null,
+      comments: "  " + "x".repeat(250) + "  ",
+    });
+    expect(result).toEqual({ success: true });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deleteReportedPrice
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("deleteReportedPrice", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryResults = [];
+    txQueryResults = [];
+  });
+
+  it("returns error when not a member", async () => {
+    mockGetMembership.mockResolvedValue(null);
+    const result = await deleteReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+    });
+    expect(result).toEqual({
+      error: "You are not an active member of this group.",
+    });
+  });
+
+  it("deletes reported price when caller is the reporter", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[{ reportedByMemberId: "member-1" }]];
+    const result = await deleteReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+    });
+    expect(result).toEqual({ success: true });
+    expect(mockTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("returns not-found error when reported price does not exist", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[]];
+    const result = await deleteReportedPrice("group-1", {
+      reportedPriceId: "rp-nonexistent",
+    });
+    expect(result.error).toContain("not found");
+  });
+
+  it("returns not-authorized error when caller is not the reporter", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    txQueryResults = [[{ reportedByMemberId: "member-other" }]];
+    const result = await deleteReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+    });
+    expect(result.error).toContain("only delete your own");
+  });
+
+  it("returns generic error when transaction fails unexpectedly", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockTransaction.mockRejectedValueOnce(new Error("DB error"));
+    const result = await deleteReportedPrice("group-1", {
+      reportedPriceId: "rp-1",
+    });
+    expect(result.error).toContain("delete reported price");
   });
 });
 
@@ -1222,7 +1679,9 @@ describe("getPurchaseDataForSessions", () => {
     // Query 6: priceRows
     const priceRows = [
       {
+        id: "rp-001",
         sessionId: "SES-001",
+        reportedByMemberId: "member-carol",
         minPrice: 100,
         maxPrice: 200,
         comments: null,

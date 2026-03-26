@@ -538,6 +538,7 @@ describe("GroupShell — sidebar nav statuses", () => {
       const group = makeGroup({
         phase: "schedule_review",
         myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       });
       render(
         <GroupShell group={group}>
@@ -548,7 +549,7 @@ describe("GroupShell — sidebar nav statuses", () => {
       expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(false);
     });
 
-    it("shows 'not generated' warning in preferences phase even when membersWithNoCombos is non-empty", () => {
+    it("shows no-combos warning when scheduleGeneratedAt is set and membersWithNoCombos is non-empty", () => {
       const group = makeGroup({
         phase: "preferences",
         myStatus: "preferences_set",
@@ -560,10 +561,10 @@ describe("GroupShell — sidebar nav statuses", () => {
           <div />
         </GroupShell>
       );
-      // "not generated" takes precedence over no-combos warning in preferences phase
+      // No-combos warning when schedules were generated but had no-combos issues
       expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
       expect(getTooltipText(getNavItem("My Schedule"))).toBe(
-        "Schedules have not been generated yet."
+        "Schedules unavailable — some members didn't receive any sessions."
       );
     });
 
@@ -670,6 +671,65 @@ describe("GroupShell — sidebar nav statuses", () => {
       );
       // Overview: warning (departed member)
       expect(hasWarningIcon(getNavItem("Overview"))).toBe(true);
+    });
+
+    it("shows getScheduleWarning tooltip when membersWithNoCombos is non-empty on My Schedule tab", () => {
+      const group = makeGroup({
+        phase: "schedule_review",
+        myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
+        dateMode: "all",
+        membersWithNoCombos: ["member-2"],
+        members: [
+          {
+            id: "owner-1",
+            userId: "user-1",
+            firstName: "Alice",
+            lastName: "Smith",
+            username: "alice",
+            avatarColor: "blue",
+            role: "owner",
+            status: "preferences_set",
+            joinedAt: "2027-12-01T00:00:00Z",
+            statusChangedAt: null,
+            createdAt: "2027-12-01T00:00:00Z",
+          },
+          {
+            id: "member-2",
+            userId: "user-2",
+            firstName: "Bob",
+            lastName: "Jones",
+            username: "bob",
+            avatarColor: "red",
+            role: "member",
+            status: "preferences_set",
+            joinedAt: "2027-12-02T00:00:00Z",
+            statusChangedAt: null,
+            createdAt: "2027-12-02T00:00:00Z",
+          },
+        ],
+      });
+      render(
+        <GroupShell group={group}>
+          <div />
+        </GroupShell>
+      );
+      // getScheduleWarning() returns a warning string when membersWithNoCombos > 0
+      expect(hasWarningIcon(getNavItem("My Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("My Schedule"))).toBe(
+        "Schedules unavailable \u2014 some members didn't receive any sessions."
+      );
+      // Group Schedule and Purchase Planner should also reflect the no-combos warning
+      expect(hasWarningIcon(getNavItem("Group Schedule"))).toBe(true);
+      expect(getTooltipText(getNavItem("Group Schedule"))).toBe(
+        "Schedules unavailable \u2014 some members didn't receive any sessions."
+      );
+      expect(hasWarningIcon(getNavItem("Purchase Planner & Tracker"))).toBe(
+        true
+      );
+      expect(getTooltipText(getNavItem("Purchase Planner & Tracker"))).toBe(
+        "Schedules unavailable \u2014 some members didn't receive any sessions."
+      );
     });
 
     it("shows 'not generated' warning in preferences phase even if status is preferences_set", () => {
@@ -792,6 +852,7 @@ describe("GroupShell — sidebar nav statuses", () => {
       const group = makeGroup({
         phase: "schedule_review",
         myTimeslot: null,
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       });
       render(
         <GroupShell group={group}>
@@ -813,6 +874,7 @@ describe("GroupShell — sidebar nav statuses", () => {
           timeslotStart: "2028-07-01T10:00:00Z",
           timeslotEnd: "2028-07-01T12:00:00Z",
         },
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       });
       render(
         <GroupShell group={group}>
@@ -848,6 +910,7 @@ describe("GroupShell — sidebar nav statuses", () => {
       const layoutGroup = makeGroup({
         phase: "schedule_review",
         myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
         members: [
           {
             id: "owner-1",
@@ -954,6 +1017,7 @@ describe("GroupShell — sidebar nav statuses", () => {
       const staleGroup = makeGroup({
         phase: "schedule_review",
         myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
         members: [
           {
             id: "owner-1",
@@ -974,6 +1038,7 @@ describe("GroupShell — sidebar nav statuses", () => {
       const freshGroup = makeGroup({
         phase: "schedule_review",
         myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
         members: [
           {
             id: "owner-1",
@@ -1032,6 +1097,7 @@ describe("GroupShell — sidebar nav statuses", () => {
       const group = makeGroup({
         phase: "schedule_review",
         myStatus: "preferences_set",
+        scheduleGeneratedAt: "2028-01-01T00:00:00Z",
       });
       render(
         <GroupShell group={group}>

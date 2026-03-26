@@ -33,6 +33,8 @@ import {
   markAsSoldOut,
   unmarkSoldOut,
   reportSessionPrice,
+  updateReportedPrice,
+  deleteReportedPrice,
   removePurchaseAssignee,
   updatePurchaseAssigneePrice,
   markAsOutOfBudget,
@@ -54,6 +56,7 @@ import {
   formatSessionTime,
   formatSessionDate,
   formatActionTimestamp,
+  formatPrice,
 } from "@/lib/utils";
 import type { AvatarColor } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
@@ -70,6 +73,7 @@ import {
   Trash2,
   Ban,
 } from "lucide-react";
+import { useScrollLock } from "@/lib/use-scroll-lock";
 
 // ── Sport color helper ───────────────────────────────────────────────────────
 const OFF_SCHEDULE_COLOR: SportColor = {
@@ -169,7 +173,9 @@ export default function PurchaseTrackerContent() {
   const [data, setData] = useState<PurchaseTrackerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
+  const [activeWindowId, setActiveWindowId] = useState<string | null>(
+    group.dateMode === "specific" ? "specific-range" : null
+  );
   // Shared overrides keyed by session code — applies to all combos containing this session
   const [sessionOverrides, setSessionOverrides] = useState<
     Map<string, SessionOverrides>
@@ -187,6 +193,8 @@ export default function PurchaseTrackerContent() {
   const [soldOutFilter, setSoldOutFilter] = useState<
     "all" | "sold_out" | "available"
   >("all");
+  // Search within on-schedule sessions
+  const [scheduledSearch, setScheduledSearch] = useState("");
 
   // Navigation guard — warn if editing in progress
   const { setDirtyChecker } = useNavigationGuard();
@@ -240,6 +248,8 @@ export default function PurchaseTrackerContent() {
         setError(result.error);
       } else {
         setData(result.data ?? null);
+        // Clear stale optimistic overrides — fresh server data is authoritative
+        setSessionOverrides(new Map());
         if (result.data) {
           setActiveWindowId((prev) => {
             if (prev !== null) return prev; // already set
@@ -251,10 +261,26 @@ export default function PurchaseTrackerContent() {
     });
   };
 
+  const hasSchedules = !!group.scheduleGeneratedAt;
+  const hasTimeslotKey = !!group.myTimeslot;
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group.id]);
+  }, [
+    group.id,
+    hasSchedules,
+    group.membersWithNoCombos.length,
+    group.dateMode,
+    hasTimeslotKey,
+  ]);
+
+  // Re-fetch when the user clicks the same nav tab
+  useEffect(() => {
+    const handler = () => fetchData();
+    window.addEventListener("tab-refetch", handler);
+    return () => window.removeEventListener("tab-refetch", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sportColorMap = useMemo(() => {
     if (!data) return new Map<string, SportColor>();
@@ -283,16 +309,10 @@ export default function PurchaseTrackerContent() {
     return codes;
   }, [data]);
 
-  if (group.phase === "preferences") {
-    return (
-      <PageEmpty title="Purchase Planner & Tracker">
-        <p className="text-base text-slate-500">
-          The purchase planner & tracker will be available once the owner has
-          generated schedules for the group.
-        </p>
-      </PageEmpty>
-    );
-  }
+  const excludedCodes = useMemo(() => {
+    if (!data) return new Set<string>();
+    return new Set(data.excludedSessions.map((s) => s.sessionCode));
+  }, [data]);
 
   if (loading) {
     return (
@@ -319,124 +339,204 @@ export default function PurchaseTrackerContent() {
         All session times are displayed in Pacific Time.
       </p>
 
-      {/* Schedule sessions by day */}
-      {(() => {
-        const activeWindow = data.windowRankings.find(
-          (w) => w.id === activeWindowId
-        );
-        // For specific mode, filter by the fixed date range
-        const specificStart =
-          group.dateMode === "specific" ? group.startDate : null;
-        const specificEnd =
-          group.dateMode === "specific" ? group.endDate : null;
-        const filteredDays = activeWindow
-          ? data.days.filter(
-              (d) =>
-                d.day >= activeWindow.startDate && d.day <= activeWindow.endDate
-            )
-          : specificStart && specificEnd
-            ? data.days.filter(
-                (d) => d.day >= specificStart && d.day <= specificEnd
-              )
-            : data.days;
-        // Check if any day has sessions matching the active filters
-        const hasMatchingSessions =
-          (statusFilter === "all" && soldOutFilter === "all") ||
-          filteredDays.some((day) => {
-            const allSessions = [
-              ...day.primary,
-              ...day.backup1,
-              ...day.backup2,
-            ];
-            return allSessions.some((s) => {
-              const overrides = sessionOverrides.get(s.sessionCode);
-              if (statusFilter !== "all") {
-                const purchases = overrides?.purchases ?? s.purchases;
-                const hasPurchases = purchases.length > 0;
-                if (statusFilter === "purchased" && !hasPurchases) return false;
-                if (statusFilter === "not_purchased" && hasPurchases)
-                  return false;
-              }
-              if (soldOutFilter !== "all") {
-                const isSoldOut = overrides?.soldOut ?? s.isSoldOut;
-                if (soldOutFilter === "sold_out" && !isSoldOut) return false;
-                if (soldOutFilter === "available" && isSoldOut) return false;
-              }
-              return true;
-            });
-          });
-
-        return filteredDays.length > 0 ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-500">
-                Expand each session accordion to plan or enter ticket purchase
-                information.
-              </p>
-              {globalExpanded ? (
-                <button
-                  onClick={() => setExpandCounter((c) => c + 1)}
-                  disabled={globalBusy}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50"
-                >
-                  <ChevronUp size={14} />
-                  Collapse All
-                </button>
-              ) : (
-                <button
-                  onClick={() => setExpandCounter((c) => c + 1)}
-                  disabled={globalBusy}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50"
-                >
-                  <ChevronDown size={14} />
-                  Expand All
-                </button>
-              )}
-            </div>
-            {hasMatchingSessions ? (
-              filteredDays.map((day) => (
-                <DayCard
-                  key={day.day}
-                  day={day}
-                  members={data.members}
-                  groupId={group.id}
-                  currentMemberId={group.myMemberId}
-                  statusFilter={statusFilter}
-                  soldOutFilter={soldOutFilter}
-                  sessionOverrides={sessionOverrides}
-                  onSessionOverride={(code, overrides) => {
-                    setSessionOverrides((prev) => {
-                      const next = new Map(prev);
-                      next.set(code, { ...prev.get(code), ...overrides });
-                      return next;
-                    });
-                  }}
-                  onRefresh={fetchData}
-                  globalBusy={globalBusy}
-                  onSetGlobalBusy={setGlobalBusy}
-                  expandCounter={expandCounter}
-                  sportColorMap={sportColorMap}
-                  hasTimeslot={data.hasTimeslot}
-                />
-              ))
-            ) : (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-10 text-center">
-                <p className="text-sm text-slate-500">
-                  No sessions match the current filters.
-                </p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-10 text-center">
+      {/* Scheduled sessions by day */}
+      {!group.scheduleGeneratedAt ? (
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Scheduled Sessions
+          </h3>
+          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 py-10 text-center">
             <p className="text-sm text-slate-500">
-              {activeWindow
-                ? "No sessions in this window."
-                : "No schedule data available. Generate schedules first."}
+              Scheduled sessions will appear here once the owner has generated
+              schedules for the group.
             </p>
           </div>
-        );
-      })()}
+        </div>
+      ) : group.membersWithNoCombos.length > 0 ? (
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Scheduled Sessions
+          </h3>
+          <div className="mt-4 rounded-xl border border-dashed border-red-200 bg-red-50/50 px-6 py-10 text-center">
+            <p className="text-sm font-bold text-red-600">
+              Some members received no sessions on their schedules.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              This may occur if there isn&apos;t enough session interest overlap
+              to fulfill buddy requirements. Wait for affected members to update
+              their preferences and then regenerate schedules.
+            </p>
+          </div>
+        </div>
+      ) : (
+        (() => {
+          const activeWindow = data.windowRankings.find(
+            (w) => w.id === activeWindowId
+          );
+          // For specific mode, "specific-range" sentinel filters by the fixed date range
+          const specificStart =
+            activeWindowId === "specific-range" && group.dateMode === "specific"
+              ? group.startDate
+              : null;
+          const specificEnd =
+            activeWindowId === "specific-range" && group.dateMode === "specific"
+              ? group.endDate
+              : null;
+          const filteredDays = activeWindow
+            ? data.days.filter(
+                (d) =>
+                  d.day >= activeWindow.startDate &&
+                  d.day <= activeWindow.endDate
+              )
+            : specificStart && specificEnd
+              ? data.days.filter(
+                  (d) => d.day >= specificStart && d.day <= specificEnd
+                )
+              : data.days;
+
+          // Apply search filter to sessions within each day
+          const searchQ = scheduledSearch.trim().toLowerCase();
+          const searchFilteredDays = searchQ
+            ? filteredDays
+                .map((day) => {
+                  const matchSession = (s: TrackerSession) => {
+                    const haystack =
+                      `${s.sport} ${s.sessionCode} ${s.sessionType} ${s.sessionDescription ?? ""} ${s.venue} ${s.zone}`.toLowerCase();
+                    return haystack.includes(searchQ);
+                  };
+                  return {
+                    ...day,
+                    primary: day.primary.filter(matchSession),
+                    backup1: day.backup1.filter(matchSession),
+                    backup2: day.backup2.filter(matchSession),
+                  };
+                })
+                .filter(
+                  (day) =>
+                    day.primary.length > 0 ||
+                    day.backup1.length > 0 ||
+                    day.backup2.length > 0
+                )
+            : filteredDays;
+
+          // Check if any day has sessions matching the active filters + search
+          const hasMatchingSessions =
+            searchFilteredDays.length > 0 &&
+            ((statusFilter === "all" && soldOutFilter === "all") ||
+              searchFilteredDays.some((day) => {
+                const allSessions = [
+                  ...day.primary,
+                  ...day.backup1,
+                  ...day.backup2,
+                ];
+                return allSessions.some((s) => {
+                  const overrides = sessionOverrides.get(s.sessionCode);
+                  if (statusFilter !== "all") {
+                    const purchases = overrides?.purchases ?? s.purchases;
+                    const hasPurchases = purchases.length > 0;
+                    if (statusFilter === "purchased" && !hasPurchases)
+                      return false;
+                    if (statusFilter === "not_purchased" && hasPurchases)
+                      return false;
+                  }
+                  if (soldOutFilter !== "all") {
+                    const isSoldOut = overrides?.soldOut ?? s.isSoldOut;
+                    if (soldOutFilter === "sold_out" && !isSoldOut)
+                      return false;
+                    if (soldOutFilter === "available" && isSoldOut)
+                      return false;
+                  }
+                  return true;
+                });
+              }));
+
+          return filteredDays.length > 0 ? (
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-900">
+                Scheduled Sessions
+              </h3>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-slate-500">
+                  Expand each session accordion to plan or enter ticket purchase
+                  information.
+                </p>
+                {globalExpanded ? (
+                  <button
+                    onClick={() => setExpandCounter((c) => c + 1)}
+                    disabled={globalBusy}
+                    className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    <ChevronUp size={14} />
+                    Collapse All
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setExpandCounter((c) => c + 1)}
+                    disabled={globalBusy}
+                    className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    <ChevronDown size={14} />
+                    Expand All
+                  </button>
+                )}
+              </div>
+              <SidebarSearch
+                value={scheduledSearch}
+                onChange={setScheduledSearch}
+                disabled={globalBusy}
+                placeholder="Search by code, sport, venue..."
+              />
+              {hasMatchingSessions ? (
+                searchFilteredDays.map((day) => (
+                  <DayCard
+                    key={day.day}
+                    day={day}
+                    members={data.members}
+                    groupId={group.id}
+                    currentMemberId={group.myMemberId}
+                    statusFilter={statusFilter}
+                    soldOutFilter={soldOutFilter}
+                    sessionOverrides={sessionOverrides}
+                    onSessionOverride={(code, overrides) => {
+                      setSessionOverrides((prev) => {
+                        const next = new Map(prev);
+                        next.set(code, { ...prev.get(code), ...overrides });
+                        return next;
+                      });
+                    }}
+                    onRefresh={fetchData}
+                    globalBusy={globalBusy}
+                    onSetGlobalBusy={setGlobalBusy}
+                    expandCounter={expandCounter}
+                    sportColorMap={sportColorMap}
+                    hasTimeslot={data.hasTimeslot}
+                  />
+                ))
+              ) : searchQ ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-10 text-center">
+                  <p className="text-sm text-slate-500">
+                    No scheduled sessions match your search.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-10 text-center">
+                  <p className="text-sm text-slate-500">
+                    No sessions match the current filters.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-10 text-center">
+              <p className="text-sm text-slate-500">
+                {activeWindow
+                  ? "No sessions in this window."
+                  : "Schedules need to be regenerated due to status changes. Check the Overview page."}
+              </p>
+            </div>
+          );
+        })()
+      )}
 
       {/* Off-schedule purchases */}
       <div className="mt-8">
@@ -449,18 +549,23 @@ export default function PurchaseTrackerContent() {
           disabled={globalBusy}
           hasTimeslot={data.hasTimeslot}
           onScheduleCodes={onScheduleCodes}
+          excludedCodes={excludedCodes}
+          onRefresh={fetchData}
+          onSetGlobalBusy={setGlobalBusy}
         />
       </div>
 
-      {/* Excluded sessions */}
-      <div className="mt-8">
-        <ExcludedSessions
-          groupId={group.id}
-          initialSessions={data.excludedSessions}
-          disabled={globalBusy}
-          hasTimeslot={data.hasTimeslot}
-        />
-      </div>
+      {/* Excluded sessions — only relevant after schedule generation */}
+      {group.scheduleGeneratedAt && (
+        <div className="mt-8">
+          <ExcludedSessions
+            groupId={group.id}
+            initialSessions={data.excludedSessions}
+            disabled={globalBusy}
+            hasTimeslot={data.hasTimeslot}
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -560,7 +665,9 @@ function DayCard({
           </h4>
           <p className="group/priority relative inline-flex items-center gap-1 text-sm text-slate-500">
             Priority Score:{" "}
-            <span className="font-semibold">{day.primaryScore.toFixed(1)}</span>
+            <span className="font-semibold">
+              {day.primaryScore.toFixed(2).replace(/0$/, "")}
+            </span>
             <svg
               className="h-4 w-4 text-slate-400"
               fill="none"
@@ -743,10 +850,19 @@ function SessionRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    "ceiling" | "soldout" | "price" | "purchase" | "outofbudget" | "info" | null
+    | "ceiling"
+    | "soldout"
+    | "price"
+    | "purchase"
+    | "outofbudget"
+    | "info"
+    | "edit-price"
+    | null
   >(null);
   const [editingAssignee, setEditingAssignee] = useState<string | null>(null);
   const [editPrice, setEditPrice] = useState("");
+  const [editingPriceData, setEditingPriceData] =
+    useState<ReportedPriceData | null>(null);
   const [editingCeiling, setEditingCeiling] = useState<string | null>(null);
   const [editCeilingValue, setEditCeilingValue] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -973,7 +1089,7 @@ function SessionRow({
                                                     assigneeMemberId: memberId,
                                                     priceCeiling:
                                                       price != null
-                                                        ? Math.round(price)
+                                                        ? price
                                                         : null,
                                                   }
                                                 );
@@ -986,9 +1102,7 @@ function SessionRow({
                                               );
                                               next.set(
                                                 memberId,
-                                                price != null
-                                                  ? Math.round(price)
-                                                  : null
+                                                price != null ? price : null
                                               );
                                               onOverride({ ceilings: next });
                                               setEditingCeiling(null);
@@ -1182,9 +1296,7 @@ function SessionRow({
                                                           memberId: a.memberId,
                                                           pricePaid:
                                                             price != null
-                                                              ? Math.round(
-                                                                  price
-                                                                )
+                                                              ? price
                                                               : null,
                                                         }
                                                       );
@@ -1212,9 +1324,7 @@ function SessionRow({
                                                                               pricePaid:
                                                                                 price !=
                                                                                 null
-                                                                                  ? Math.round(
-                                                                                      price
-                                                                                    )
+                                                                                  ? price
                                                                                   : null,
                                                                             }
                                                                           : aa
@@ -1250,9 +1360,7 @@ function SessionRow({
                                             </button>
                                           </div>
                                         ) : a.pricePaid != null ? (
-                                          `$${a.pricePaid}`
-                                        ) : p.pricePerTicket ? (
-                                          `$${p.pricePerTicket}`
+                                          formatPrice(a.pricePaid)
                                         ) : (
                                           "—"
                                         )}
@@ -1417,10 +1525,8 @@ function SessionRow({
                                     </td>
                                     <td className="py-1 pr-4 text-sm text-slate-500">
                                       {a.pricePaid != null
-                                        ? `$${a.pricePaid}`
-                                        : p.pricePerTicket
-                                          ? `$${p.pricePerTicket}`
-                                          : "—"}
+                                        ? formatPrice(a.pricePaid)
+                                        : "—"}
                                     </td>
                                     <td className="py-1 pr-4 text-sm text-slate-500">
                                       {`${p.buyerFirstName} ${p.buyerLastName}`}
@@ -1459,18 +1565,65 @@ function SessionRow({
               </button>
               {showPriceHistory && (
                 <div className="mt-2 space-y-2">
-                  {localReportedPrices.map((rp, i) => (
-                    <div key={i} className="text-sm text-slate-500">
+                  {localReportedPrices.map((rp) => (
+                    <div key={rp.id} className="text-sm text-slate-500">
                       <p>
                         {rp.minPrice != null && rp.maxPrice != null
-                          ? `$${rp.minPrice} – $${rp.maxPrice}`
+                          ? `${formatPrice(rp.minPrice!)} – ${formatPrice(rp.maxPrice!)}`
                           : rp.minPrice != null
-                            ? `From $${rp.minPrice}`
+                            ? `From ${formatPrice(rp.minPrice!)}`
                             : rp.maxPrice != null
-                              ? `Up to $${rp.maxPrice}`
+                              ? `Up to ${formatPrice(rp.maxPrice!)}`
                               : "Comment"}{" "}
                         by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
                         {formatActionTimestamp(rp.createdAt)}
+                        {rp.reporterMemberId === currentMemberId && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditingPriceData(rp);
+                                setActiveModal("edit-price");
+                              }}
+                              disabled={busy}
+                              className="ml-1.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+                              title="Edit reported price"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                onSetGlobalBusy(true);
+                                startTransition(async () => {
+                                  try {
+                                    const result = await deleteReportedPrice(
+                                      groupId,
+                                      { reportedPriceId: rp.id }
+                                    );
+                                    if (result.error) {
+                                      setActionError(result.error);
+                                      return;
+                                    }
+                                    onOverride({
+                                      reportedPrices:
+                                        localReportedPrices.filter(
+                                          (p) => p.id !== rp.id
+                                        ),
+                                    });
+                                  } catch {
+                                    setActionError(
+                                      "An unexpected error occurred. Please try again."
+                                    );
+                                  }
+                                });
+                              }}
+                              disabled={busy}
+                              className="ml-0.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                              title="Delete reported price"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </>
+                        )}
                       </p>
                       {rp.comments && (
                         <p className="mt-0.5 italic text-slate-400">
@@ -1564,14 +1717,10 @@ function SessionRow({
                 : "Mark as Out of Budget"}
             </button>
             {/* Mark as Sold Out */}
-            <span
-              className={
-                !hasTimeslot && !localSoldOut ? "group/nots relative" : ""
-              }
-            >
+            <span className={!hasTimeslot ? "group/nots relative" : ""}>
               <button
                 onClick={() => setActiveModal("soldout")}
-                disabled={busy || (!hasTimeslot && !localSoldOut)}
+                disabled={busy || !hasTimeslot}
                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
                   localSoldOut
                     ? "bg-red-100 text-red-700 hover:bg-red-200"
@@ -1581,7 +1730,7 @@ function SessionRow({
                 <X size={12} />
                 {localSoldOut ? "Undo Sold Out" : "Mark as Sold Out"}
               </button>
-              {!hasTimeslot && !localSoldOut && (
+              {!hasTimeslot && (
                 <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-56 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/nots:opacity-100">
                   Enter your purchase timeslot on the Overview page to use this
                   action.
@@ -1648,10 +1797,15 @@ function SessionRow({
                   comments,
                 });
                 if (result.error) return result.error;
+                const realId =
+                  (result.data?.reportedPriceId as string) ??
+                  crypto.randomUUID();
                 onOverride({
                   reportedPrices: [
                     ...localReportedPrices,
                     {
+                      id: realId,
+                      reporterMemberId: currentMemberId,
                       reporterFirstName: "You",
                       reporterLastName: "",
                       minPrice,
@@ -1667,6 +1821,38 @@ function SessionRow({
               onClose={() => setActiveModal(null)}
             />
           )}
+          {activeModal === "edit-price" && editingPriceData && (
+            <RecordPriceModal
+              sessionCode={s.sessionCode}
+              editMode
+              initialMin={editingPriceData.minPrice}
+              initialMax={editingPriceData.maxPrice}
+              initialComments={editingPriceData.comments}
+              onConfirm={async (minPrice, maxPrice, comments) => {
+                const result = await updateReportedPrice(groupId, {
+                  reportedPriceId: editingPriceData.id,
+                  minPrice,
+                  maxPrice,
+                  comments,
+                });
+                if (result.error) return result.error;
+                onOverride({
+                  reportedPrices: localReportedPrices.map((p) =>
+                    p.id === editingPriceData.id
+                      ? { ...p, minPrice, maxPrice, comments }
+                      : p
+                  ),
+                });
+                setEditingPriceData(null);
+                setActiveModal(null);
+                return null;
+              }}
+              onClose={() => {
+                setEditingPriceData(null);
+                setActiveModal(null);
+              }}
+            />
+          )}
           {activeModal === "purchase" && (
             <RecordPurchaseModal
               members={purchaseEligibleMembers}
@@ -1677,9 +1863,7 @@ function SessionRow({
                   .filter((p): p is number => p != null);
                 const avgPrice =
                   prices.length > 0
-                    ? Math.round(
-                        prices.reduce((sum, p) => sum + p, 0) / prices.length
-                      )
+                    ? prices.reduce((sum, p) => sum + p, 0) / prices.length
                     : undefined;
                 const result = await markAsPurchased(groupId, {
                   sessionId: s.sessionCode,
@@ -1753,7 +1937,7 @@ function SessionRow({
         <SessionInfoModal
           session={s}
           color={color}
-          neutral={isNeutral}
+          neutral={false}
           onClose={() => setActiveModal(null)}
         />
       )}
@@ -1771,6 +1955,7 @@ function ModalShell({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  useScrollLock();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
@@ -1913,7 +2098,7 @@ function PriceCeilingModal({
     setError(null);
     const result = new Map<string, number | null>();
     for (const [memberId, value] of draft) {
-      const price = value === "" ? null : parseInt(value);
+      const price = value === "" ? null : parseFloat(value);
       if (value !== "" && (isNaN(price!) || price! < 0)) continue;
       result.set(memberId, price);
     }
@@ -1994,7 +2179,7 @@ function PriceCeilingModal({
         </button>
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || sortedMembers.length === 0}
           className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
         >
           {saving ? "Saving..." : "Save"}
@@ -2147,6 +2332,10 @@ function RecordPriceModal({
   sessionCode,
   onConfirm,
   onClose,
+  initialMin,
+  initialMax,
+  initialComments,
+  editMode,
 }: {
   sessionCode: string;
   onConfirm: (
@@ -2155,12 +2344,20 @@ function RecordPriceModal({
     comments: string | null
   ) => Promise<string | null>;
   onClose: () => void;
+  initialMin?: number | null;
+  initialMax?: number | null;
+  initialComments?: string | null;
+  editMode?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [minValue, setMinValue] = useState("");
-  const [maxValue, setMaxValue] = useState("");
-  const [comments, setComments] = useState("");
+  const [minValue, setMinValue] = useState(
+    initialMin != null ? String(initialMin) : ""
+  );
+  const [maxValue, setMaxValue] = useState(
+    initialMax != null ? String(initialMax) : ""
+  );
+  const [comments, setComments] = useState(initialComments ?? "");
 
   const min = minValue === "" ? null : parseFloat(minValue);
   const max = maxValue === "" ? null : parseFloat(maxValue);
@@ -2174,8 +2371,8 @@ function RecordPriceModal({
     setSaving(true);
     setError(null);
     const err = await onConfirm(
-      min != null ? Math.round(min) : null,
-      max != null ? Math.round(max) : null,
+      min != null ? min : null,
+      max != null ? max : null,
       comments.trim() || null
     );
     setSaving(false);
@@ -2183,7 +2380,10 @@ function RecordPriceModal({
   }
 
   return (
-    <ModalShell title="Report Price" onClose={onClose}>
+    <ModalShell
+      title={editMode ? "Edit Reported Price" : "Report Price"}
+      onClose={onClose}
+    >
       <p className="mb-4 text-sm text-slate-500">
         Report the minimum and maximum prices that you saw for the session{" "}
         <span className="font-semibold text-slate-700">{sessionCode}</span>.
@@ -2253,7 +2453,7 @@ function RecordPriceModal({
           disabled={saving || !hasContent || maxLessThanMin}
           className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Submit"}
+          {saving ? "Saving..." : editMode ? "Update" : "Submit"}
         </button>
       </div>
     </ModalShell>
@@ -2304,7 +2504,7 @@ function RecordPurchaseModal({
     // At least one member must have a price
     const assignees = [...selected.entries()].map(([memberId, value]) => ({
       memberId,
-      price: value === "" ? null : parseInt(value),
+      price: value === "" ? null : parseFloat(value),
     }));
     setSaving(true);
     setError(null);
@@ -2387,6 +2587,9 @@ function OffSchedulePurchase({
   disabled: externalDisabled,
   hasTimeslot,
   onScheduleCodes,
+  excludedCodes,
+  onRefresh,
+  onSetGlobalBusy,
 }: {
   groupId: string;
   currentMemberId: string;
@@ -2396,6 +2599,9 @@ function OffSchedulePurchase({
   disabled: boolean;
   hasTimeslot: boolean;
   onScheduleCodes: Set<string>;
+  excludedCodes: Set<string>;
+  onRefresh: () => void;
+  onSetGlobalBusy: (busy: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [sessionCode, setSessionCode] = useState("");
@@ -2491,17 +2697,22 @@ function OffSchedulePurchase({
       setSessionCode("");
       return;
     }
+    // If in excluded sessions list
+    if (excludedCodes.has(code)) {
+      setLookupError(
+        `${code} is in the excluded sessions list. You can manage it from the Excluded Sessions section below.`
+      );
+      setSessionCode("");
+      return;
+    }
     setLookupError("");
     startTransition(async () => {
       try {
-        const result = await lookupSession(code);
+        const result = await lookupSession(code, groupId);
         if (result.error) {
           setLookupError(result.error);
         } else if (result.data) {
-          setSessions((prev) => [
-            ...prev,
-            { ...result.data!, purchases: [], reportedPrices: [] },
-          ]);
+          setSessions((prev) => [...prev, result.data!]);
           setSessionCode("");
         }
       } catch {
@@ -2631,6 +2842,8 @@ function OffSchedulePurchase({
               busy={isPending || externalDisabled}
               hasTimeslot={hasTimeslot}
               onOverride={(patch) => handleOverride(s.sessionCode, patch)}
+              onRefresh={onRefresh}
+              onSetGlobalBusy={onSetGlobalBusy}
               onDismiss={() => {
                 setSessions((prev) =>
                   prev.filter((ss) => ss.sessionCode !== s.sessionCode)
@@ -2660,7 +2873,9 @@ function OffScheduleSessionCard({
   busy: externalBusy,
   hasTimeslot,
   onOverride,
+  onRefresh,
   onDismiss,
+  onSetGlobalBusy,
 }: {
   session: OffScheduleSession;
   overrides:
@@ -2681,16 +2896,20 @@ function OffScheduleSessionCard({
     reportedPrices?: ReportedPriceData[];
     soldOut?: boolean;
   }) => void;
+  onRefresh: () => void;
   onDismiss: () => void;
+  onSetGlobalBusy: (busy: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [activeModal, setActiveModal] = useState<
-    "price" | "purchase" | "soldout" | "info" | null
+    "price" | "purchase" | "soldout" | "info" | "edit-price" | null
   >(null);
   const [showPriceHistory, setShowPriceHistory] = useState(false);
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false);
   const [editingAssignee, setEditingAssignee] = useState<string | null>(null);
   const [editPrice, setEditPrice] = useState("");
+  const [editingPriceData, setEditingPriceData] =
+    useState<ReportedPriceData | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{
     key: string;
@@ -2704,11 +2923,19 @@ function OffScheduleSessionCard({
     }
   }, [actionError]);
 
-  const busy = externalBusy || isPending || editingAssignee !== null;
+  // This row is actively editing/saving
+  const localBusy = isPending || editingAssignee !== null;
+  // Sync local busy state to global — when localBusy goes false, clear global
+  useEffect(() => {
+    if (!localBusy) onSetGlobalBusy(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localBusy]);
+
+  const busy = externalBusy || localBusy;
 
   const localPurchases = overrides?.purchases ?? s.purchases;
   const localReportedPrices = overrides?.reportedPrices ?? s.reportedPrices;
-  const localSoldOut = overrides?.soldOut ?? false;
+  const localSoldOut = overrides?.soldOut ?? s.isSoldOut;
   const hasPurchases = localPurchases.length > 0;
   const hasAnyData =
     hasPurchases || localReportedPrices.length > 0 || localSoldOut;
@@ -2864,7 +3091,7 @@ function OffScheduleSessionCard({
                                                     memberId: a.memberId,
                                                     pricePaid:
                                                       price != null
-                                                        ? Math.round(price)
+                                                        ? price
                                                         : null,
                                                   }
                                                 );
@@ -2889,9 +3116,7 @@ function OffScheduleSessionCard({
                                                                       pricePaid:
                                                                         price !=
                                                                         null
-                                                                          ? Math.round(
-                                                                              price
-                                                                            )
+                                                                          ? price
                                                                           : null,
                                                                     }
                                                                   : aa
@@ -2927,9 +3152,7 @@ function OffScheduleSessionCard({
                                       </button>
                                     </div>
                                   ) : a.pricePaid != null ? (
-                                    `$${a.pricePaid}`
-                                  ) : p.pricePerTicket ? (
-                                    `$${p.pricePerTicket}`
+                                    formatPrice(a.pricePaid)
                                   ) : (
                                     "—"
                                   )}
@@ -2942,6 +3165,7 @@ function OffScheduleSessionCard({
                                     <div className="flex items-center gap-1">
                                       <button
                                         onClick={() => {
+                                          onSetGlobalBusy(true);
                                           setEditingAssignee(
                                             `${p.purchaseId}-${a.memberId}`
                                           );
@@ -2959,6 +3183,7 @@ function OffScheduleSessionCard({
                                       </button>
                                       <button
                                         onClick={() => {
+                                          onSetGlobalBusy(true);
                                           startTransition(async () => {
                                             try {
                                               const result =
@@ -3085,10 +3310,8 @@ function OffScheduleSessionCard({
                               </td>
                               <td className="py-1 pr-4 text-sm text-slate-500">
                                 {a.pricePaid != null
-                                  ? `$${a.pricePaid}`
-                                  : p.pricePerTicket
-                                    ? `$${p.pricePerTicket}`
-                                    : "—"}
+                                  ? formatPrice(a.pricePaid)
+                                  : "—"}
                               </td>
                               <td className="py-1 pr-4 text-sm text-slate-500">{`${p.buyerFirstName} ${p.buyerLastName}`}</td>
                               <td className="py-1 text-sm text-slate-400">
@@ -3123,18 +3346,64 @@ function OffScheduleSessionCard({
           </button>
           {showPriceHistory && (
             <div className="mt-2 space-y-2">
-              {localReportedPrices.map((rp, i) => (
-                <div key={i} className="text-sm text-slate-500">
+              {localReportedPrices.map((rp) => (
+                <div key={rp.id} className="text-sm text-slate-500">
                   <p>
                     {rp.minPrice != null && rp.maxPrice != null
-                      ? `$${rp.minPrice} – $${rp.maxPrice}`
+                      ? `${formatPrice(rp.minPrice!)} – ${formatPrice(rp.maxPrice!)}`
                       : rp.minPrice != null
-                        ? `From $${rp.minPrice}`
+                        ? `From ${formatPrice(rp.minPrice!)}`
                         : rp.maxPrice != null
-                          ? `Up to $${rp.maxPrice}`
+                          ? `Up to ${formatPrice(rp.maxPrice!)}`
                           : "Comment"}{" "}
                     by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
                     {formatActionTimestamp(rp.createdAt)}
+                    {rp.reporterMemberId === currentMemberId && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditingPriceData(rp);
+                            setActiveModal("edit-price");
+                          }}
+                          disabled={busy}
+                          className="ml-1.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+                          title="Edit reported price"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            onSetGlobalBusy(true);
+                            startTransition(async () => {
+                              try {
+                                const result = await deleteReportedPrice(
+                                  groupId,
+                                  { reportedPriceId: rp.id }
+                                );
+                                if (result.error) {
+                                  setActionError(result.error);
+                                  return;
+                                }
+                                onOverride({
+                                  reportedPrices: localReportedPrices.filter(
+                                    (p) => p.id !== rp.id
+                                  ),
+                                });
+                              } catch {
+                                setActionError(
+                                  "An unexpected error occurred. Please try again."
+                                );
+                              }
+                            });
+                          }}
+                          disabled={busy}
+                          className="ml-0.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                          title="Delete reported price"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </>
+                    )}
                   </p>
                   {rp.comments && (
                     <p className="mt-0.5 italic text-slate-400">
@@ -3174,41 +3443,46 @@ function OffScheduleSessionCard({
         </span>
         <span
           className={
-            allMembersAttending
-              ? "group/allattend relative"
-              : !hasTimeslot
-                ? "group/notpr2 relative"
-                : ""
+            localSoldOut
+              ? "group/soldout2 relative"
+              : allMembersAttending
+                ? "group/allattend relative"
+                : !hasTimeslot
+                  ? "group/notpr2 relative"
+                  : ""
           }
         >
           <button
             onClick={() => setActiveModal("purchase")}
-            disabled={busy || allMembersAttending || !hasTimeslot}
+            disabled={
+              busy || allMembersAttending || !hasTimeslot || localSoldOut
+            }
             className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-600 transition-colors hover:bg-emerald-100 disabled:opacity-50"
           >
             <ShoppingCart size={12} />
             Record Purchases
           </button>
-          {allMembersAttending && (
+          {localSoldOut && (
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-52 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/soldout2:opacity-100">
+              This session has been marked as sold out.
+            </span>
+          )}
+          {!localSoldOut && allMembersAttending && (
             <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-52 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/allattend:opacity-100">
               All members have already purchased tickets for this session.
             </span>
           )}
-          {!hasTimeslot && !allMembersAttending && (
+          {!localSoldOut && !allMembersAttending && !hasTimeslot && (
             <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-56 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/notpr2:opacity-100">
               Enter your purchase timeslot on the Overview page to use this
               action.
             </span>
           )}
         </span>
-        <span
-          className={
-            !hasTimeslot && !localSoldOut ? "group/nots2 relative" : ""
-          }
-        >
+        <span className={!hasTimeslot ? "group/nots2 relative" : ""}>
           <button
             onClick={() => setActiveModal("soldout")}
-            disabled={busy || (!hasTimeslot && !localSoldOut)}
+            disabled={busy || !hasTimeslot}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
               localSoldOut
                 ? "bg-red-100 text-red-700 hover:bg-red-200"
@@ -3218,7 +3492,7 @@ function OffScheduleSessionCard({
             <X size={12} />
             {localSoldOut ? "Undo Sold Out" : "Mark as Sold Out"}
           </button>
-          {!hasTimeslot && !localSoldOut && (
+          {!hasTimeslot && (
             <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-56 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/nots2:opacity-100">
               Enter your purchase timeslot on the Overview page to use this
               action.
@@ -3263,10 +3537,14 @@ function OffScheduleSessionCard({
               comments,
             });
             if (result.error) return result.error;
+            const realId =
+              (result.data?.reportedPriceId as string) ?? crypto.randomUUID();
             onOverride({
               reportedPrices: [
                 ...localReportedPrices,
                 {
+                  id: realId,
+                  reporterMemberId: currentMemberId,
                   reporterFirstName: "You",
                   reporterLastName: "",
                   minPrice,
@@ -3283,6 +3561,38 @@ function OffScheduleSessionCard({
           onClose={() => setActiveModal(null)}
         />
       )}
+      {activeModal === "edit-price" && editingPriceData && (
+        <RecordPriceModal
+          sessionCode={s.sessionCode}
+          editMode
+          initialMin={editingPriceData.minPrice}
+          initialMax={editingPriceData.maxPrice}
+          initialComments={editingPriceData.comments}
+          onConfirm={async (minPrice, maxPrice, comments) => {
+            const result = await updateReportedPrice(groupId, {
+              reportedPriceId: editingPriceData.id,
+              minPrice,
+              maxPrice,
+              comments,
+            });
+            if (result.error) return result.error;
+            onOverride({
+              reportedPrices: localReportedPrices.map((p) =>
+                p.id === editingPriceData.id
+                  ? { ...p, minPrice, maxPrice, comments }
+                  : p
+              ),
+            });
+            setEditingPriceData(null);
+            setActiveModal(null);
+            return null;
+          }}
+          onClose={() => {
+            setEditingPriceData(null);
+            setActiveModal(null);
+          }}
+        />
+      )}
       {activeModal === "purchase" && (
         <RecordPurchaseModal
           members={purchaseEligibleMembers}
@@ -3293,9 +3603,7 @@ function OffScheduleSessionCard({
               .filter((p): p is number => p != null);
             const avgPrice =
               prices.length > 0
-                ? Math.round(
-                    prices.reduce((sum, p) => sum + p, 0) / prices.length
-                  )
+                ? prices.reduce((sum, p) => sum + p, 0) / prices.length
                 : undefined;
             const result = await markAsPurchased(groupId, {
               sessionId: s.sessionCode,
@@ -3355,8 +3663,10 @@ function PurchaseTrackerSidebar({
 }: {
   group: {
     dateMode: "consecutive" | "specific" | null;
+    consecutiveDays: number | null;
     startDate: string | null;
     endDate: string | null;
+    purchasedDatesOutsideRange: string[];
   };
   data: PurchaseTrackerData;
   activeWindowId: string | null;
@@ -3375,9 +3685,48 @@ function PurchaseTrackerSidebar({
           Filter by Attendance Window
         </h4>
         {group.dateMode === "specific" && group.startDate && group.endDate ? (
-          <div className="rounded-lg border border-[#009de5] bg-[#009de5]/5 px-3 py-2 text-sm text-[#009de5]">
-            {formatDateRange(group.startDate, group.endDate)}
-          </div>
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() =>
+                  onSetActiveWindowId(
+                    activeWindowId === "specific-range"
+                      ? null
+                      : "specific-range"
+                  )
+                }
+                disabled={disabled}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                  activeWindowId === "specific-range"
+                    ? "bg-[#009de5]/10 text-[#009de5] ring-1 ring-[#009de5]/30"
+                    : "bg-slate-100 text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                {formatDateRange(group.startDate, group.endDate)}
+              </button>
+              <span className="group/allwin relative">
+                <button
+                  onClick={() => onSetActiveWindowId(null)}
+                  disabled={disabled}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                    activeWindowId === null
+                      ? "bg-[#009de5]/10 text-[#009de5] ring-1 ring-[#009de5]/30"
+                      : "bg-slate-100 text-slate-400 hover:text-slate-600"
+                  }`}
+                >
+                  All
+                </button>
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-48 -translate-x-1/2 rounded-lg bg-slate-800 px-2.5 py-1.5 text-center text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/allwin:opacity-100">
+                  Display all sessions from your schedule.
+                </span>
+              </span>
+            </div>
+            {group.purchasedDatesOutsideRange.length > 0 && (
+              <p className="mt-2 text-xs text-red-600">
+                Some purchased sessions fall outside the selected date range.
+              </p>
+            )}
+          </>
         ) : data.windowRankings.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {data.windowRankings.map((w, i) => {
@@ -3414,6 +3763,12 @@ function PurchaseTrackerSidebar({
               </span>
             </span>
           </div>
+        ) : group.dateMode === "consecutive" && group.consecutiveDays ? (
+          <p className="text-sm text-red-600">
+            No feasible {group.consecutiveDays}-day windows. Purchased sessions
+            span more days than the window size allows. Displaying all sessions
+            from your schedule.
+          </p>
         ) : (
           <p className="text-sm text-amber-600">
             The owner has not set a date configuration yet. Displaying all
@@ -3633,7 +3988,8 @@ function ExcludedSessionRow({
                     {p.assignees.map((a) => (
                       <p key={a.memberId}>
                         {a.firstName} {a.lastName}
-                        {a.pricePaid != null && ` — $${a.pricePaid}`}
+                        {a.pricePaid != null &&
+                          ` — ${formatPrice(a.pricePaid)}`}
                       </p>
                     ))}
                     <p className="text-slate-400">
@@ -3655,11 +4011,11 @@ function ExcludedSessionRow({
                   <div key={i} className="text-xs text-slate-500">
                     <p>
                       {rp.minPrice != null && rp.maxPrice != null
-                        ? `$${rp.minPrice} – $${rp.maxPrice}`
+                        ? `${formatPrice(rp.minPrice!)} – ${formatPrice(rp.maxPrice!)}`
                         : rp.minPrice != null
-                          ? `From $${rp.minPrice}`
+                          ? `From ${formatPrice(rp.minPrice!)}`
                           : rp.maxPrice != null
-                            ? `Up to $${rp.maxPrice}`
+                            ? `Up to ${formatPrice(rp.maxPrice!)}`
                             : "Comment"}{" "}
                       by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
                       {formatActionTimestamp(rp.createdAt)}

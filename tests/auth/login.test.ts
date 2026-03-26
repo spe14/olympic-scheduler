@@ -11,9 +11,10 @@ vi.mock("next/navigation", () => ({
 
 // Mock Supabase client
 const mockSignInWithPassword = vi.fn();
+const mockSignOut = vi.fn().mockResolvedValue({});
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(() => ({
-    auth: { signInWithPassword: mockSignInWithPassword },
+    auth: { signInWithPassword: mockSignInWithPassword, signOut: mockSignOut },
   })),
 }));
 
@@ -117,6 +118,23 @@ describe("login", () => {
       await login(null, fd);
 
       expect(mockSignInWithPassword).not.toHaveBeenCalled();
+    });
+
+    it("signs out and returns error when Supabase login succeeds but no local DB user row", async () => {
+      mockSignInWithPassword.mockResolvedValue({
+        error: null,
+        data: { user: { id: "auth-orphaned" } },
+      });
+      // DB query returns empty array — no local user row
+      mockDbLimit.mockResolvedValue([]);
+
+      const fd = makeFormData(validFields);
+      const result = await login(null, fd);
+
+      expect(result?.error).toBe("Invalid email or password.");
+      expect(result?.values?.email).toBe(validFields.email);
+      // Should have signed out the orphaned Supabase session
+      expect(mockSignOut).toHaveBeenCalled();
     });
   });
 });

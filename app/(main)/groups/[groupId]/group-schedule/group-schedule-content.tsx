@@ -27,6 +27,7 @@ import {
   matchesSearch,
   computeOverlapLayout,
   type LayoutInfo,
+  sortRanks,
 } from "@/lib/schedule-utils";
 import { Maximize2, User } from "lucide-react";
 import Modal from "@/components/modal";
@@ -43,6 +44,7 @@ import {
   formatSessionTime,
   formatSessionDate,
   formatSessionDateHeader,
+  formatPrice,
 } from "@/lib/utils";
 
 // ── Rank helpers ─────────────────────────────────────────────────────────────
@@ -90,7 +92,9 @@ export default function GroupScheduleContent() {
   const [schedule, setSchedule] = useState<GroupScheduleMemberCombo[] | null>(
     null
   );
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(
+    !!group.scheduleGeneratedAt && group.membersWithNoCombos.length === 0
+  );
   const [error, setError] = useState("");
   const fetchCounterRef = useRef(0);
   const [selectedSession, setSelectedSession] = useState<{
@@ -194,6 +198,14 @@ export default function GroupScheduleContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group.id, hasSchedules, group.membersWithNoCombos.length]);
 
+  // Re-fetch when the user clicks the same nav tab
+  useEffect(() => {
+    const handler = () => fetchSchedule();
+    window.addEventListener("tab-refetch", handler);
+    return () => window.removeEventListener("tab-refetch", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Build sport color map from all sessions
   const sportColorMap = useMemo(() => {
     if (!schedule) return new Map<string, SportColor>();
@@ -279,7 +291,11 @@ export default function GroupScheduleContent() {
           }
         }
       }
-      map.set(day, [...sessionsForDay.values()]);
+      const sessions = [...sessionsForDay.values()];
+      for (const s of sessions) {
+        for (const m of s.members) sortRanks(m.ranks);
+      }
+      map.set(day, sessions);
     }
     return map;
   }, [schedule]);
@@ -374,6 +390,8 @@ export default function GroupScheduleContent() {
         windowRankings={windowRankings.slice(0, 3)}
         activeWindowId={activeWindowId}
         onSelectWindow={handleSelectWindow}
+        purchasedDatesOutsideRange={group.purchasedDatesOutsideRange}
+        hasPurchases={group.membersPurchased.length > 0}
         members={members}
         selectedMembers={selectedMemberSet}
         isAllSelected={isAllSelected}
@@ -403,6 +421,8 @@ export default function GroupScheduleContent() {
     group.endDate,
     windowRankings,
     activeWindowId,
+    group.purchasedDatesOutsideRange.length,
+    group.membersPurchased.length,
     members,
     selectedMembers,
     isAllSelected,
@@ -423,7 +443,10 @@ export default function GroupScheduleContent() {
       const filtered = filterSessions(daySessionMap.get(day) ?? []);
       if (filtered.length === 0) continue;
       const sorted = [...filtered].sort(
-        (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+        (a, b) =>
+          timeToMinutes(a.startTime) - timeToMinutes(b.startTime) ||
+          timeToMinutes(a.endTime) - timeToMinutes(b.endTime) ||
+          a.sessionCode.localeCompare(b.sessionCode)
       );
       const hdr = formatSessionDateHeader(day);
       groups.push({
@@ -503,7 +526,10 @@ export default function GroupScheduleContent() {
   if (!schedule || schedule.length === 0) {
     return (
       <PageEmpty title="Group Schedule">
-        <p className="text-base text-slate-500">No schedule data available.</p>
+        <p className="text-base text-slate-500">
+          Schedules need to be regenerated due to status changes. Check the
+          Overview page.
+        </p>
       </PageEmpty>
     );
   }
@@ -650,6 +676,12 @@ export default function GroupScheduleContent() {
             })}
           </p>
         )}
+        <p className="mt-1 text-sm text-slate-500">
+          Click a session to view the full session details and list of other
+          interested/attending members. If the group selected consecutive days
+          mode for attendance, the top ranked attendance windows are displayed
+          on the right.
+        </p>
         <p className="mt-1 text-xs text-slate-400">
           All session times are displayed in Pacific Time.
         </p>
@@ -1126,6 +1158,8 @@ function GroupScheduleSidebar({
   windowRankings,
   activeWindowId,
   onSelectWindow,
+  purchasedDatesOutsideRange,
+  hasPurchases,
   members,
   selectedMembers,
   isAllSelected,
@@ -1156,6 +1190,8 @@ function GroupScheduleSidebar({
   }[];
   activeWindowId: string | null;
   onSelectWindow: (id: string) => void;
+  purchasedDatesOutsideRange: string[];
+  hasPurchases: boolean;
   members: MemberInfo[];
   selectedMembers: Set<string>;
   isAllSelected: boolean;
@@ -1201,10 +1237,17 @@ function GroupScheduleSidebar({
           Selected Dates
         </h4>
         {dateConfig.dateMode === "specific" ? (
-          <p className="text-xs text-slate-600">
-            {formatSessionDateHeader(dateConfig.startDate!).monthDay} –{" "}
-            {formatSessionDateHeader(dateConfig.endDate!).monthDay}
-          </p>
+          <>
+            <p className="text-xs text-slate-600">
+              {formatSessionDateHeader(dateConfig.startDate!).monthDay} –{" "}
+              {formatSessionDateHeader(dateConfig.endDate!).monthDay}
+            </p>
+            {purchasedDatesOutsideRange.length > 0 && (
+              <p className="mt-2 text-xs text-red-600">
+                Some purchased sessions fall outside the selected date range.
+              </p>
+            )}
+          </>
         ) : (
           <p className="text-xs text-slate-600">
             {dateConfig.consecutiveDays} consecutive day
@@ -1214,83 +1257,97 @@ function GroupScheduleSidebar({
       </div>
 
       {/* Window rankings (consecutive mode only) */}
-      {dateConfig.dateMode === "consecutive" && windowRankings.length > 0 && (
+      {dateConfig.dateMode === "consecutive" && (
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <h4 className="mb-1 text-sm font-semibold text-slate-900">
-            Top Windows
+            Top {dateConfig.consecutiveDays}-Day Windows
           </h4>
-          <p className="group/score relative mb-3 inline-flex items-center gap-1 text-xs text-slate-600">
-            Ranked by Group Score
-            <svg
-              className="h-4 w-4 text-slate-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
-              />
-            </svg>
-            <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1.5 w-56 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/score:opacity-100">
-              Scores reflect how well each window matches the group&apos;s
-              combined session preferences, weighted by interest level and
-              schedule fit.
-            </span>
-          </p>
-          <div className="space-y-2">
-            {windowRankings.map((w, i) => {
-              const wStart = formatSessionDateHeader(w.startDate);
-              const wEnd = formatSessionDateHeader(w.endDate);
-              const isActive = w.id === activeWindowId;
-              const isClickable = displayMode === "calendar";
-              return (
-                <div
-                  key={w.id}
-                  role={isClickable ? "button" : undefined}
-                  tabIndex={isClickable ? 0 : undefined}
-                  onClick={() => isClickable && onSelectWindow(w.id)}
-                  onKeyDown={
-                    isClickable
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            onSelectWindow(w.id);
-                          }
-                        }
-                      : undefined
-                  }
-                  className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
-                    isActive
-                      ? "border-[#009de5] bg-[#009de5]/5 text-[#009de5]"
-                      : `border-slate-200 text-slate-500 ${isClickable ? "hover:bg-slate-50" : ""}`
-                  }`}
+          {windowRankings.length === 0 ? (
+            <p className="text-xs text-red-600">
+              No feasible {dateConfig.consecutiveDays}-day windows. Purchased
+              sessions span more days than the window size allows.
+            </p>
+          ) : (
+            <>
+              <p className="group/score relative mb-3 inline-flex items-center gap-1 text-xs text-slate-600">
+                Ranked by Group Score
+                <svg
+                  className="h-4 w-4 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+                  />
+                </svg>
+                <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1.5 w-56 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity group-hover/score:opacity-100">
+                  Scores reflect how well each window matches the group&apos;s
+                  combined session preferences, weighted by interest level and
+                  schedule fit.
+                </span>
+              </p>
+              <div className="space-y-2">
+                {windowRankings.map((w, i) => {
+                  const wStart = formatSessionDateHeader(w.startDate);
+                  const wEnd = formatSessionDateHeader(w.endDate);
+                  const isActive = w.id === activeWindowId;
+                  const isClickable = displayMode === "calendar";
+                  return (
+                    <div
+                      key={w.id}
+                      role={isClickable ? "button" : undefined}
+                      tabIndex={isClickable ? 0 : undefined}
+                      onClick={() => isClickable && onSelectWindow(w.id)}
+                      onKeyDown={
+                        isClickable
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSelectWindow(w.id);
+                              }
+                            }
+                          : undefined
+                      }
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                         isActive
-                          ? "bg-[#009de5] text-white"
-                          : "bg-slate-100 text-slate-400"
+                          ? "border-[#009de5] bg-[#009de5]/5 text-[#009de5]"
+                          : `border-slate-200 text-slate-500 ${isClickable ? "hover:bg-slate-50" : ""}`
                       }`}
                     >
-                      {i + 1}
-                    </span>
-                    <span className="font-medium">
-                      {wStart.monthDay} - {wEnd.monthDay}
-                    </span>
-                  </div>
-                  <span
-                    className={`text-xs font-medium ${isActive ? "text-[#009de5]" : "text-slate-600"}`}
-                  >
-                    {w.score.toFixed(1)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
+                            isActive
+                              ? "bg-[#009de5] text-white"
+                              : "bg-slate-100 text-slate-400"
+                          }`}
+                        >
+                          {i + 1}
+                        </span>
+                        <span className="font-medium">
+                          {wStart.monthDay} - {wEnd.monthDay}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-xs font-medium ${isActive ? "text-[#009de5]" : "text-slate-600"}`}
+                      >
+                        {w.score.toFixed(2).replace(/0$/, "")}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {hasPurchases && (
+                <p className="mt-2 text-xs text-slate-400">
+                  Only showing windows that include all purchased session dates.
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -1508,9 +1565,9 @@ function GroupSessionDetailModal({
                     <span className="text-sm font-medium text-slate-800">
                       {a.firstName} {a.lastName}
                     </span>
-                    {(a.pricePaid != null || p.pricePerTicket > 0) && (
+                    {a.pricePaid != null && (
                       <span className="text-xs text-emerald-600">
-                        ${a.pricePaid ?? p.pricePerTicket} / ticket
+                        {formatPrice(a.pricePaid)} / ticket
                       </span>
                     )}
                   </div>

@@ -28,11 +28,6 @@ function toDateInputPT(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-/** Returns today's date string "YYYY-MM-DD" in Pacific Time. */
-function todayStr(): string {
-  return toDateInputPT(new Date());
-}
-
 /** Extracts HH, MM, AM/PM from a UTC Date interpreted in Pacific Time. */
 function extractTimePT(date: Date): {
   hh: string;
@@ -114,14 +109,6 @@ function TimePicker({
     }
 
     if (raw.length === 1) {
-      const n = parseInt(raw, 10);
-      if (n >= 2) {
-        onHHChange(String(n));
-        mmRef.current?.focus();
-        mmRef.current?.select();
-        return;
-      }
-      // 1 — wait for second digit
       onHHChange(raw);
       return;
     }
@@ -186,6 +173,7 @@ function TimePicker({
         maxLength={2}
         value={hh}
         onChange={handleHHChange}
+        onFocus={(e) => e.target.select()}
         onBlur={handleHHBlur}
         placeholder="HH"
         className={fieldClass}
@@ -198,6 +186,7 @@ function TimePicker({
         maxLength={2}
         value={mm}
         onChange={handleMMChange}
+        onFocus={(e) => e.target.select()}
         onBlur={handleMMBlur}
         placeholder="MM"
         className={fieldClass}
@@ -256,22 +245,18 @@ export default function TimeslotForm({ groupId, timeslot, onSaved }: Props) {
 
   const [error, setError] = useState("");
 
-  const minDate = todayStr();
   const parsedStart = buildDatePT(startDate, startHH, startMM, startAmPm);
   const parsedEnd = buildDatePT(endDate, endHH, endMM, endAmPm);
-  const now = new Date();
 
   // Date-only check (for showing errors before time is filled in)
-  const startDateInPast = startDate !== "" && startDate < minDate;
   const endDateBeforeStart =
     startDate !== "" && endDate !== "" && endDate < startDate;
 
   // Full datetime checks
-  const startInPast = !!parsedStart && parsedStart < now;
   const endBeforeStart =
     !!parsedEnd && !!parsedStart && parsedEnd <= parsedStart;
 
-  const startValid = !!parsedStart && parsedStart >= now;
+  const startValid = !!parsedStart;
   const endValid = !!parsedEnd && !!parsedStart && parsedEnd > parsedStart;
   const canSave = startValid && endValid && !isPending;
 
@@ -313,7 +298,6 @@ export default function TimeslotForm({ groupId, timeslot, onSaved }: Props) {
             <input
               type="date"
               value={startDate}
-              min={minDate}
               onChange={(e) => setStartDate(e.target.value)}
               className={dateInputClass}
             />
@@ -326,11 +310,6 @@ export default function TimeslotForm({ groupId, timeslot, onSaved }: Props) {
               onAmPmChange={setStartAmPm}
             />
           </div>
-          {(startDateInPast || startInPast) && (
-            <p className="mt-1 text-xs text-red-500">
-              Start must be in the future.
-            </p>
-          )}
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-600">
@@ -340,7 +319,6 @@ export default function TimeslotForm({ groupId, timeslot, onSaved }: Props) {
             <input
               type="date"
               value={endDate}
-              min={minDate}
               onChange={(e) => setEndDate(e.target.value)}
               className={dateInputClass}
             />
