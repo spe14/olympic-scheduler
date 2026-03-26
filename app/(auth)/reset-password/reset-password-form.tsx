@@ -65,26 +65,6 @@ export default function ResetPasswordForm() {
                 strokeWidth="0.4"
               />
               <circle cx="16" cy="16" r="10.5" fill="url(#rGoldLight)" />
-              <path
-                d="M10,16 Q11.5,11 16,10 Q12.5,12.5 12,16"
-                fill="#e5a100"
-                opacity="0.5"
-              />
-              <path
-                d="M10.5,18 Q12,13 16,12 Q13,14.5 12.5,18"
-                fill="#e5a100"
-                opacity="0.4"
-              />
-              <path
-                d="M22,16 Q20.5,11 16,10 Q19.5,12.5 20,16"
-                fill="#e5a100"
-                opacity="0.5"
-              />
-              <path
-                d="M21.5,18 Q20,13 16,12 Q19,14.5 19.5,18"
-                fill="#e5a100"
-                opacity="0.4"
-              />
               <text
                 x="16"
                 y="20.5"

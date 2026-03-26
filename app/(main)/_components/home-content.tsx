@@ -97,8 +97,43 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-16 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500 shadow-md shadow-yellow-500/20">
-        <span className="text-lg font-bold text-white">28</span>
+      <div className="mb-4">
+        <svg viewBox="0 0 32 32" className="h-14 w-14">
+          <defs>
+            <linearGradient id="esGold" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#ffe14d" />
+              <stop offset="50%" stopColor="#ffc107" />
+              <stop offset="100%" stopColor="#e5a100" />
+            </linearGradient>
+            <linearGradient id="esGoldLight" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#fff176" />
+              <stop offset="50%" stopColor="#ffd54f" />
+              <stop offset="100%" stopColor="#ffca28" />
+            </linearGradient>
+          </defs>
+          <circle cx="16" cy="16" r="15" fill="url(#esGold)" />
+          <circle cx="16" cy="16" r="13.5" fill="url(#esGoldLight)" />
+          <circle
+            cx="16"
+            cy="16"
+            r="11.5"
+            fill="url(#esGold)"
+            stroke="#e5a100"
+            strokeWidth="0.4"
+          />
+          <circle cx="16" cy="16" r="10.5" fill="url(#esGoldLight)" />
+          <text
+            x="16"
+            y="20.5"
+            textAnchor="middle"
+            fontFamily="system-ui, sans-serif"
+            fontSize="11"
+            fontWeight="bold"
+            fill="#c8960a"
+          >
+            28
+          </text>
+        </svg>
       </div>
       <h2 className="mb-2 text-xl font-semibold text-slate-900">
         You&apos;re not in any groups yet
