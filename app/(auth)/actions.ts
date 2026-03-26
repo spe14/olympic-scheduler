@@ -244,7 +244,7 @@ export async function forgotPassword(
 
   return {
     message:
-      "If an account exists with this email, you will receive a password reset link.",
+      "If an account exists with this email, you will receive a password reset link. Please check your spam folder if you don't see it.",
     values: { email },
   };
 }
@@ -286,7 +286,7 @@ export async function resetPassword(
     return { error: "Failed to reset password. Please try again." };
   }
 
-  cookieStore.delete("password_reset");
+  cookieStore.delete({ name: "password_reset", path: "/reset-password" });
   cookieStore.delete("session_start_at");
   cookieStore.delete("last_active_at");
   await supabase.auth.signOut();

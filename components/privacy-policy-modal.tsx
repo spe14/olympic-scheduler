@@ -9,7 +9,9 @@ export default function PrivacyPolicyModal({
 }) {
   return (
     <Modal title="Privacy Policy" onClose={onClose} size="2xl">
-      <p className="mb-6 text-xs text-slate-400">Last updated: March 2026</p>
+      <p className="mb-6 text-xs text-slate-400">
+        Last updated: March 26, 2026
+      </p>
 
       <div className="space-y-6 text-sm leading-relaxed text-slate-600">
         <section>
@@ -109,7 +111,10 @@ export default function PrivacyPolicyModal({
             >
               Sentry&apos;s Privacy Policy
             </a>{" "}
-            for details on how they handle data.
+            for details on how they handle data. Your data may be transferred to
+            and processed in the United States by our service providers, who
+            operate under Standard Contractual Clauses approved by the European
+            Commission.
           </p>
         </section>
 
@@ -170,12 +175,54 @@ export default function PrivacyPolicyModal({
 
         <section>
           <h3 className="mb-2 text-sm font-semibold capitalize text-slate-900">
+            Password storage
+          </h3>
+          <p>
+            Passwords are managed entirely by our authentication provider,
+            Supabase. We never store, access, or log your password directly.
+            Supabase hashes passwords using industry-standard algorithms before
+            storage.
+          </p>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold capitalize text-slate-900">
+            Minimum age
+          </h3>
+          <p>
+            This service is intended for users aged 13 and older. We do not
+            knowingly collect personal data from children under 13. If you
+            believe a child under 13 has created an account, please contact us
+            at{" "}
+            <a
+              href="mailto:collaboly@gmail.com"
+              className="text-[#009de5] hover:underline"
+            >
+              collaboly@gmail.com
+            </a>{" "}
+            so we can delete it.
+          </p>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold capitalize text-slate-900">
             Data retention
           </h3>
           <p>
             Your data is retained for as long as your account exists. You can
             permanently delete your account and all associated data at any time
             from the Profile page.
+          </p>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold capitalize text-slate-900">
+            Data breach notification
+          </h3>
+          <p>
+            In the event of a data breach affecting your personal data, we will
+            notify you and the relevant supervisory authority as required by
+            applicable law.
           </p>
         </section>
 

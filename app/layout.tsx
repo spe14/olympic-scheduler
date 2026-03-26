@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Sans, Pacifico } from "next/font/google";
 import "./globals.css";
 
@@ -9,9 +9,14 @@ const pacifico = Pacifico({
   variable: "--font-pacifico",
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export const metadata: Metadata = {
-  title: "Olympic Scheduler",
-  description: "Plan your LA 2028 Olympics attendance with friends",
+  title: "Collaboly",
+  description: "Collaboratively plan your LA 2028 Olympic experience!",
 };
 
 export default function RootLayout({

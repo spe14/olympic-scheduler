@@ -20,9 +20,62 @@ export default function ForgotPasswordPage() {
         {/* Header */}
         <div className="mb-8 text-center">
           <div className="mb-4 inline-flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500">
-              <span className="text-sm font-bold text-white">28</span>
-            </div>
+            <svg viewBox="0 0 32 32" className="h-8 w-8">
+              <defs>
+                <linearGradient id="fGold" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#ffe14d" />
+                  <stop offset="50%" stopColor="#ffc107" />
+                  <stop offset="100%" stopColor="#e5a100" />
+                </linearGradient>
+                <linearGradient id="fGoldLight" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#fff176" />
+                  <stop offset="50%" stopColor="#ffd54f" />
+                  <stop offset="100%" stopColor="#ffca28" />
+                </linearGradient>
+              </defs>
+              <circle cx="16" cy="16" r="15" fill="url(#fGold)" />
+              <circle cx="16" cy="16" r="13.5" fill="url(#fGoldLight)" />
+              <circle
+                cx="16"
+                cy="16"
+                r="11.5"
+                fill="url(#fGold)"
+                stroke="#e5a100"
+                strokeWidth="0.4"
+              />
+              <circle cx="16" cy="16" r="10.5" fill="url(#fGoldLight)" />
+              <path
+                d="M10,16 Q11.5,11 16,10 Q12.5,12.5 12,16"
+                fill="#e5a100"
+                opacity="0.5"
+              />
+              <path
+                d="M10.5,18 Q12,13 16,12 Q13,14.5 12.5,18"
+                fill="#e5a100"
+                opacity="0.4"
+              />
+              <path
+                d="M22,16 Q20.5,11 16,10 Q19.5,12.5 20,16"
+                fill="#e5a100"
+                opacity="0.5"
+              />
+              <path
+                d="M21.5,18 Q20,13 16,12 Q19,14.5 19.5,18"
+                fill="#e5a100"
+                opacity="0.4"
+              />
+              <text
+                x="16"
+                y="20.5"
+                textAnchor="middle"
+                fontFamily="system-ui, sans-serif"
+                fontSize="11"
+                fontWeight="bold"
+                fill="#c8960a"
+              >
+                28
+              </text>
+            </svg>
             <span className="font-[family-name:var(--font-pacifico)] text-xl text-[#009de5]">
               collaboly
             </span>

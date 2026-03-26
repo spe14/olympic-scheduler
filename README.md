@@ -1,3 +1,3 @@
-# olympic-scheduler
+# Collaboly
 
-A web application to help groups collaboratively plan their LA 2028 Olympics attendance.
+A web application to help groups collaboratively plan their LA 2028 Olympic experience.

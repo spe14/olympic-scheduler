@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: "lax",
+          path: "/reset-password",
           maxAge: 5 * 60, // 5 minutes
         });
       }

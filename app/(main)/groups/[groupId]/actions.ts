@@ -47,6 +47,26 @@ import {
 } from "@/lib/messages";
 import * as Sentry from "@sentry/nextjs";
 
+type DepartedMember = {
+  userId: string;
+  name: string;
+  departedAt: string;
+  rejoinedAt?: string;
+  wasPartOfSchedule?: boolean;
+};
+
+type AffectedBuddyMembers = Record<string, string[]>;
+
+function parseDepartedMembers(raw: unknown): DepartedMember[] {
+  if (!Array.isArray(raw)) return [];
+  return raw as DepartedMember[];
+}
+
+function parseAffectedBuddyMembers(raw: unknown): AffectedBuddyMembers {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return raw as AffectedBuddyMembers;
+}
+
 export async function updateGroupName(
   groupId: string,
   formData: FormData
@@ -145,14 +165,7 @@ export async function approveMember(
           .from(group)
           .where(eq(group.id, groupId));
 
-        const departed =
-          (grpData?.departedMembers as {
-            userId: string;
-            name: string;
-            departedAt: string;
-            rejoinedAt?: string;
-            wasPartOfSchedule?: boolean;
-          }[]) ?? [];
+        const departed = parseDepartedMembers(grpData?.departedMembers);
         const departedIdx = departed.findIndex(
           (d) => d.userId === approvedUser.userId
         );
@@ -289,8 +302,9 @@ export async function removeMemberTransaction(
 
   // Record affected buddy members (regardless of whether departing member was part of schedule).
   // Each affected member maps to an array of departed buddy names (supports multiple departures).
-  const existingAffected =
-    (grpData?.affectedBuddyMembers as Record<string, string[]>) ?? {};
+  const existingAffected = parseAffectedBuddyMembers(
+    grpData?.affectedBuddyMembers
+  );
   // Clean up entries for the departing member themselves (they can't be "affected" if they're leaving)
   const { [departingMemberId]: _removed, ...cleanedAffected } =
     existingAffected;
@@ -312,14 +326,7 @@ export async function removeMemberTransaction(
       new Date(departingUser.joinedAt) <= new Date(grpData.scheduleGeneratedAt);
 
     // Always record departed member with timestamp
-    const existingDeparted =
-      (grpData?.departedMembers as {
-        userId: string;
-        name: string;
-        departedAt: string;
-        rejoinedAt?: string;
-        wasPartOfSchedule?: boolean;
-      }[]) ?? [];
+    const existingDeparted = parseDepartedMembers(grpData?.departedMembers);
     const name = departingUser
       ? `${departingUser.firstName} ${departingUser.lastName}`
       : "Unknown";
@@ -385,14 +392,7 @@ export async function removeMemberTransaction(
     }
   } else {
     // No schedule generated — still record departure and persist affected buddy changes
-    const existingDeparted =
-      (grpData?.departedMembers as {
-        userId: string;
-        name: string;
-        departedAt: string;
-        rejoinedAt?: string;
-        wasPartOfSchedule?: boolean;
-      }[]) ?? [];
+    const existingDeparted = parseDepartedMembers(grpData?.departedMembers);
     const name = departingUser
       ? `${departingUser.firstName} ${departingUser.lastName}`
       : "Unknown";
@@ -771,8 +771,7 @@ export async function generateSchedules(
   }
 
   if (
-    Object.keys((grp.affectedBuddyMembers as Record<string, string[]>) ?? {})
-      .length > 0
+    Object.keys(parseAffectedBuddyMembers(grp.affectedBuddyMembers)).length > 0
   ) {
     return {
       error:

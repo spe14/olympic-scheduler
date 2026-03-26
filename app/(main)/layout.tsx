@@ -23,7 +23,13 @@ export default async function MainLayout({
         username={user.username}
         avatarColor={user.avatarColor}
       />
-      {children}
+      <div className="flex min-h-[60vh] items-center justify-center px-6 md:hidden">
+        <p className="text-center text-sm text-slate-500">
+          Collaboly is designed for desktop use. Please open this page on a
+          computer for the best experience.
+        </p>
+      </div>
+      <div className="hidden md:block">{children}</div>
     </>
   );
 }

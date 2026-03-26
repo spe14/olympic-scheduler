@@ -173,7 +173,7 @@ export const member = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     userId: uuid("user_id")
       .notNull()
-      .references(() => user.id),
+      .references(() => user.id, { onDelete: "cascade" }),
     groupId: uuid("group_id")
       .notNull()
       .references(() => group.id, { onDelete: "cascade" }),

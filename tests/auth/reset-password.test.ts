@@ -147,7 +147,10 @@ describe("resetPassword", () => {
       });
 
       await expect(resetPassword(null, fd)).rejects.toThrow("NEXT_REDIRECT");
-      expect(mockDelete).toHaveBeenCalledWith("password_reset");
+      expect(mockDelete).toHaveBeenCalledWith({
+        name: "password_reset",
+        path: "/reset-password",
+      });
       expect(mockDelete).toHaveBeenCalledWith("session_start_at");
       expect(mockDelete).toHaveBeenCalledWith("last_active_at");
     });

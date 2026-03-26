@@ -73,9 +73,9 @@ Each section lists the **happy path**, **validation errors**, **edge cases**, an
 
 ### 1.4 Session Timeout
 
-**Inactivity timeout (30 minutes):**
+**Inactivity timeout (60 minutes):**
 
-- Leave browser idle for 30+ minutes → next interaction should redirect to `/login`
+- Leave browser idle for 60+ minutes → next interaction should redirect to `/login`
 - Client-side `InactivityGuard` fires logout on idle
 - Server-side proxy checks `last_active_at` cookie
 
@@ -1152,7 +1152,7 @@ For systematic browser testing, follow this order to build up state progressivel
 | MAX_GROUP_MEMBERS          | 12                          | `lib/constants.ts`                  |
 | MAX_GROUPS_PER_USER        | 10                          | `lib/constants.ts`                  |
 | MAX_SESSION_DURATION       | 7 days (604,800s)           | `lib/constants.ts`                  |
-| INACTIVITY_TIMEOUT         | 30 min (1,800s)             | `lib/constants.ts`                  |
+| INACTIVITY_TIMEOUT         | 60 min (3,600s)             | `lib/constants.ts`                  |
 | OLYMPIC_START              | 2028-07-12                  | `lib/schedule-utils.ts`             |
 | OLYMPIC_END                | 2028-07-30                  | `lib/schedule-utils.ts`             |
 | OLYMPIC_DAYS_COUNT         | 19                          | `lib/schedule-utils.ts`             |

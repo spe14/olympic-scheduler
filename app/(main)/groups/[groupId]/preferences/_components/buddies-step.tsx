@@ -5,6 +5,8 @@ import { useGroup } from "../../_components/group-context";
 import { inputClass } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
 import type { AvatarColor } from "@/lib/constants";
+import Tooltip from "@/components/tooltip";
+import { Info } from "lucide-react";
 
 type BuddySelection = { memberId: string; type: "hard" | "soft" };
 
@@ -140,8 +142,14 @@ export default function BuddiesStep({
       </div>
 
       <div>
-        <h3 className="mb-1 text-base font-semibold text-slate-900">
+        <h3 className="mb-1 flex items-center gap-1.5 text-base font-semibold text-slate-900">
           Buddy Preferences
+          <Tooltip
+            label="Your buddy preferences will not be visible to any other group members."
+            width="w-64"
+          >
+            <Info className="h-4 w-4 cursor-default text-slate-400" />
+          </Tooltip>
         </h3>
         <p className="mb-1 text-sm text-slate-500">
           Click a member to cycle: None → Required → Preferred → None.
