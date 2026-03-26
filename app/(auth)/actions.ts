@@ -245,6 +245,11 @@ export async function resetPassword(
   });
 
   if (error) {
+    if (error.message.toLowerCase().includes("different")) {
+      return {
+        error: "New password must be different from your current password.",
+      };
+    }
     Sentry.captureException(
       new Error(`Password reset failed: ${error.message}`)
     );
