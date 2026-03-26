@@ -6,16 +6,55 @@ const LAST_ACTIVE_COOKIE = "last_active_at";
 const SESSION_START_COOKIE = "session_start_at";
 
 export async function updateSession(request: NextRequest) {
-  // PKCE flow: Supabase redirects to the Site URL (root) with a `code` param
-  // instead of the redirectTo path. Forward to the auth callback route.
-  if (
-    request.nextUrl.searchParams.has("code") &&
-    request.nextUrl.pathname === "/"
-  ) {
-    const callbackUrl = request.nextUrl.clone();
-    callbackUrl.pathname = "/api/auth/callback";
-    callbackUrl.searchParams.set("next", "/reset-password");
-    return NextResponse.redirect(callbackUrl);
+  // PKCE flow: Supabase redirects to the Site URL with a `code` param.
+  // Exchange the code here and redirect to the reset-password page.
+  const authCode = request.nextUrl.searchParams.get("code");
+  if (authCode && request.nextUrl.pathname === "/") {
+    let pkceResponse = NextResponse.next({ request });
+    const pkceSupabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) =>
+              request.cookies.set(name, value)
+            );
+            pkceResponse = NextResponse.next({ request });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              pkceResponse.cookies.set(name, value, options)
+            );
+          },
+        },
+      }
+    );
+
+    const { error } = await pkceSupabase.auth.exchangeCodeForSession(authCode);
+    if (!error) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/reset-password";
+      redirectUrl.searchParams.delete("code");
+      const response = NextResponse.redirect(redirectUrl);
+
+      // Copy auth cookies from the exchange onto the redirect response
+      for (const cookie of pkceResponse.cookies.getAll()) {
+        response.cookies.set(cookie);
+      }
+
+      // Set the password_reset gate cookie
+      response.cookies.set("password_reset", "1", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 5 * 60,
+      });
+
+      return response;
+    }
+    // If exchange failed, fall through to normal proxy flow
   }
 
   // Start with a default "pass-through" response
