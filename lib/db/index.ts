@@ -7,7 +7,8 @@ const globalForDb = globalThis as unknown as {
   pgClient: postgres.Sql | undefined;
 };
 
-const client = globalForDb.pgClient ?? postgres(connectionString);
+const client =
+  globalForDb.pgClient ?? postgres(connectionString, { prepare: false });
 
 if (process.env.NODE_ENV !== "production") {
   globalForDb.pgClient = client;
