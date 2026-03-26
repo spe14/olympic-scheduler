@@ -133,9 +133,9 @@ export async function updatePassword(
   });
 
   if (updateError) {
-    Sentry.captureException(new Error("Password update failed"), {
-      extra: { context: "updatePassword", supabaseError: updateError.message },
-    });
+    Sentry.captureException(
+      new Error(`Password update failed: ${updateError.message}`)
+    );
     return { error: failedAction("update password") };
   }
 

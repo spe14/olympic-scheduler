@@ -5,6 +5,7 @@ import Link from "next/link";
 import { emailSchema } from "@/lib/validations";
 import { inputClass } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
+import * as Sentry from "@sentry/nextjs";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -28,10 +29,16 @@ export default function ForgotPasswordPage() {
 
     setPending(true);
     const supabase = createClient();
-    await supabase.auth.resetPasswordForEmail(result.data, {
+    const { error } = await supabase.auth.resetPasswordForEmail(result.data, {
       redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/api/auth/callback?next=/reset-password`,
     });
     setPending(false);
+
+    if (error) {
+      Sentry.captureException(
+        new Error(`Password reset email failed: ${error.message}`)
+      );
+    }
 
     setState({
       message:

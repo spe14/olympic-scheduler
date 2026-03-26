@@ -10,7 +10,6 @@ import {
   signUpSchema,
   loginSchema,
   resetPasswordSchema,
-  emailSchema,
 } from "@/lib/validations";
 import { parseFieldErrors } from "@/lib/utils";
 import { MSG_USERNAME_TAKEN } from "@/lib/messages";
@@ -126,9 +125,9 @@ export async function signUp(
       redirect("/about");
     }
 
-    Sentry.captureException(new Error("Supabase signUp failed"), {
-      extra: { context: "signUp", supabaseError: error.message },
-    });
+    Sentry.captureException(
+      new Error(`Supabase signUp failed: ${error.message}`)
+    );
     return { error: "Sign up failed. Please try again.", values: safeValues };
   }
 
@@ -215,40 +214,6 @@ export async function login(
   redirect("/");
 }
 
-export async function forgotPassword(
-  _prevState: AuthResult | null,
-  formData: FormData
-): Promise<AuthResult | null> {
-  const email = (formData.get("email") as string) ?? "";
-
-  const result = emailSchema.safeParse(email);
-
-  if (!result.success) {
-    return {
-      fieldErrors: { email: result.error.issues.map((i) => i.message) },
-      values: { email },
-    };
-  }
-
-  const supabase = await createClient();
-
-  const { error } = await supabase.auth.resetPasswordForEmail(result.data, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/api/auth/callback?next=/reset-password`,
-  });
-
-  if (error) {
-    Sentry.captureException(new Error("Password reset email failed"), {
-      extra: { supabaseError: error.message },
-    });
-  }
-
-  return {
-    message:
-      "If an account exists with this email, you will receive a password reset link. Please check your spam folder if you don't see it.",
-    values: { email },
-  };
-}
-
 export async function resetPassword(
   _prevState: AuthResult | null,
   formData: FormData
@@ -280,9 +245,9 @@ export async function resetPassword(
   });
 
   if (error) {
-    Sentry.captureException(new Error("Password reset failed"), {
-      extra: { context: "resetPassword", supabaseError: error.message },
-    });
+    Sentry.captureException(
+      new Error(`Password reset failed: ${error.message}`)
+    );
     return { error: "Failed to reset password. Please try again." };
   }
 

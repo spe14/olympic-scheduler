@@ -15,9 +15,10 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-      Sentry.captureException(new Error("Auth code exchange failed"), {
-        extra: { supabaseError: error.message, safePath },
-      });
+      Sentry.captureException(
+        new Error(`Auth code exchange failed: ${error.message}`),
+        { extra: { safePath } }
+      );
     } else {
       const response = NextResponse.redirect(new URL(safePath, request.url));
 
