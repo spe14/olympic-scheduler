@@ -71,7 +71,11 @@ function makeRequest(cookies: Record<string, string> = {}) {
         cookieStore.set(name, value);
       }),
     },
-    nextUrl: { clone: () => ({ pathname: "/" }) },
+    nextUrl: {
+      pathname: "/",
+      searchParams: new URLSearchParams(),
+      clone: () => ({ pathname: "/" }),
+    },
   };
 }
 

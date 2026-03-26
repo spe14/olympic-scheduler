@@ -286,7 +286,7 @@ export async function resetPassword(
     return { error: "Failed to reset password. Please try again." };
   }
 
-  cookieStore.delete({ name: "password_reset", path: "/reset-password" });
+  cookieStore.delete("password_reset");
   cookieStore.delete("session_start_at");
   cookieStore.delete("last_active_at");
   await supabase.auth.signOut();

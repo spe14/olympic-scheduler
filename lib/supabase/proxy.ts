@@ -6,6 +6,18 @@ const LAST_ACTIVE_COOKIE = "last_active_at";
 const SESSION_START_COOKIE = "session_start_at";
 
 export async function updateSession(request: NextRequest) {
+  // PKCE flow: Supabase redirects to the Site URL (root) with a `code` param
+  // instead of the redirectTo path. Forward to the auth callback route.
+  if (
+    request.nextUrl.searchParams.has("code") &&
+    request.nextUrl.pathname === "/"
+  ) {
+    const callbackUrl = request.nextUrl.clone();
+    callbackUrl.pathname = "/api/auth/callback";
+    callbackUrl.searchParams.set("next", "/reset-password");
+    return NextResponse.redirect(callbackUrl);
+  }
+
   // Start with a default "pass-through" response
   let supabaseResponse = NextResponse.next({
     request,
