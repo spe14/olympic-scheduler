@@ -14,6 +14,7 @@ import {
 } from "@/lib/validations";
 import { parseFieldErrors } from "@/lib/utils";
 import { MSG_USERNAME_TAKEN } from "@/lib/messages";
+import * as Sentry from "@sentry/nextjs";
 
 export type AuthResult = {
   error?: string;
@@ -114,13 +115,21 @@ export async function signUp(
           recoverErr instanceof Error && recoverErr.message.includes("username")
             ? MSG_USERNAME_TAKEN
             : "Sign up failed. Please try again.";
+        if (recoverMessage !== MSG_USERNAME_TAKEN) {
+          Sentry.captureException(recoverErr, {
+            extra: { context: "signUp orphaned account recovery" },
+          });
+        }
         return { error: recoverMessage, values: safeValues };
       }
 
       redirect("/about");
     }
 
-    return { error: error.message, values: safeValues };
+    Sentry.captureException(new Error("Supabase signUp failed"), {
+      extra: { context: "signUp", supabaseError: error.message },
+    });
+    return { error: "Sign up failed. Please try again.", values: safeValues };
   }
 
   if (!data.user) {
@@ -148,6 +157,9 @@ export async function signUp(
       err instanceof Error && err.message.includes("username")
         ? MSG_USERNAME_TAKEN
         : "Sign up failed. Please try again.";
+    if (message !== MSG_USERNAME_TAKEN) {
+      Sentry.captureException(err, { extra: { context: "signUp DB insert" } });
+    }
     return { error: message, values: safeValues };
   }
 
@@ -225,7 +237,9 @@ export async function forgotPassword(
   });
 
   if (error) {
-    console.error("Password reset email failed:", error.message);
+    Sentry.captureException(new Error("Password reset email failed"), {
+      extra: { supabaseError: error.message },
+    });
   }
 
   return {
@@ -266,7 +280,10 @@ export async function resetPassword(
   });
 
   if (error) {
-    return { error: error.message };
+    Sentry.captureException(new Error("Password reset failed"), {
+      extra: { context: "resetPassword", supabaseError: error.message },
+    });
+    return { error: "Failed to reset password. Please try again." };
   }
 
   cookieStore.delete("password_reset");

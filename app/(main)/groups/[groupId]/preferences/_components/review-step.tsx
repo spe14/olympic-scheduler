@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { useGroup } from "../../_components/group-context";
 import UserAvatar from "@/components/user-avatar";
 import Modal from "@/components/modal";
@@ -40,6 +41,7 @@ export default function ReviewStep({
 }: Props) {
   const group = useGroup();
   const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
 
   const memberMap = new Map(group.members.map((m) => [m.id, m]));
 
@@ -104,10 +106,14 @@ export default function ReviewStep({
                   type="button"
                   onClick={async () => {
                     setConfirming(true);
+                    setConfirmError("");
                     try {
                       await onConfirmReview();
-                    } catch {
-                      // Error handled by parent
+                    } catch (err) {
+                      Sentry.captureException(err, {
+                        extra: { context: "confirmReview" },
+                      });
+                      setConfirmError("Failed to confirm. Please try again.");
                     } finally {
                       setConfirming(false);
                     }
@@ -117,6 +123,9 @@ export default function ReviewStep({
                 >
                   {confirming ? "Confirming..." : "Confirm"}
                 </button>
+              )}
+              {confirmError && (
+                <p className="mt-2 text-xs text-red-600">{confirmError}</p>
               )}
             </div>
           )}

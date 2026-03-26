@@ -11,8 +11,13 @@ import { redirect } from "next/navigation";
 import { profileFieldSchemas, updatePasswordSchema } from "@/lib/validations";
 import { parseFieldErrors } from "@/lib/utils";
 import { avatarColors, type AvatarColor } from "@/lib/constants";
-import { MSG_NOT_LOGGED_IN, MSG_USERNAME_TAKEN } from "@/lib/messages";
+import {
+  MSG_NOT_LOGGED_IN,
+  MSG_USERNAME_TAKEN,
+  failedAction,
+} from "@/lib/messages";
 import { removeMemberTransaction } from "@/app/(main)/groups/[groupId]/actions";
+import * as Sentry from "@sentry/nextjs";
 
 export type ProfileResult = {
   success?: boolean;
@@ -54,26 +59,33 @@ export async function updateProfileField(
     return { error: result.error.issues[0].message };
   }
 
-  // Check username uniqueness
-  if (field === "username") {
-    const existing = await db
-      .select({ id: user.id })
-      .from(user)
-      .where(and(eq(user.username, result.data), ne(user.id, currentUser.id)))
-      .limit(1);
+  try {
+    // Check username uniqueness
+    if (field === "username") {
+      const existing = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(and(eq(user.username, result.data), ne(user.id, currentUser.id)))
+        .limit(1);
 
-    if (existing.length > 0) {
-      return { error: MSG_USERNAME_TAKEN };
+      if (existing.length > 0) {
+        return { error: MSG_USERNAME_TAKEN };
+      }
     }
+
+    const column = dbColumnMap[field as EditableField];
+    await db
+      .update(user)
+      .set({ [column]: result.data })
+      .where(eq(user.id, currentUser.id));
+
+    return { success: true, updatedValue: result.data };
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "updateProfileField", field },
+    });
+    return { error: failedAction("update profile") };
   }
-
-  const column = dbColumnMap[field as EditableField];
-  await db
-    .update(user)
-    .set({ [column]: result.data })
-    .where(eq(user.id, currentUser.id));
-
-  return { success: true, updatedValue: result.data };
 }
 
 export type PasswordResult = {
@@ -121,7 +133,10 @@ export async function updatePassword(
   });
 
   if (updateError) {
-    return { error: updateError.message };
+    Sentry.captureException(new Error("Password update failed"), {
+      extra: { context: "updatePassword", supabaseError: updateError.message },
+    });
+    return { error: failedAction("update password") };
   }
 
   return { success: true };
@@ -141,12 +156,19 @@ export async function updateAvatarColor(
     return { error: "Invalid color." };
   }
 
-  await db
-    .update(user)
-    .set({ avatarColor: color })
-    .where(eq(user.id, currentUser.id));
+  try {
+    await db
+      .update(user)
+      .set({ avatarColor: color })
+      .where(eq(user.id, currentUser.id));
 
-  return { success: true };
+    return { success: true };
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "updateAvatarColor" },
+    });
+    return { error: failedAction("update avatar color") };
+  }
 }
 
 export type DeleteAccountResult = {
@@ -172,40 +194,47 @@ export async function deleteAccount(
     return { error: "Incorrect password." };
   }
 
-  // Fetch all memberships for this user
-  const memberships = await db
-    .select({ id: member.id, groupId: member.groupId, role: member.role })
-    .from(member)
-    .where(eq(member.userId, currentUser.id));
+  try {
+    // Fetch all memberships for this user
+    const memberships = await db
+      .select({ id: member.id, groupId: member.groupId, role: member.role })
+      .from(member)
+      .where(eq(member.userId, currentUser.id));
 
-  // Block deletion if the user owns any groups
-  const ownedGroup = memberships.find((m) => m.role === "owner");
-  if (ownedGroup) {
-    return {
-      error:
-        "You must transfer ownership or delete all groups you own before deleting your account.",
-    };
-  }
+    // Block deletion if the user owns any groups
+    const ownedGroup = memberships.find((m) => m.role === "owner");
+    if (ownedGroup) {
+      return {
+        error:
+          "You must transfer ownership or delete all groups you own before deleting your account.",
+      };
+    }
 
-  // Leave each group properly (departure tracking, algorithm cleanup, buddy notifications)
-  for (const m of memberships) {
-    await db.transaction(async (tx) => {
-      await removeMemberTransaction(tx, m.groupId, m.id);
+    // Leave each group properly (departure tracking, algorithm cleanup, buddy notifications)
+    for (const m of memberships) {
+      await db.transaction(async (tx) => {
+        await removeMemberTransaction(tx, m.groupId, m.id);
+      });
+    }
+
+    // Delete user row from local DB
+    await db.delete(user).where(eq(user.id, currentUser.id));
+
+    // Delete auth user from Supabase
+    const admin = createAdminClient();
+    await admin.auth.admin.deleteUser(currentUser.authId);
+
+    // Sign out and clear session cookies
+    await supabase.auth.signOut();
+    const cookieStore = await cookies();
+    cookieStore.delete("session_start_at");
+    cookieStore.delete("last_active_at");
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "deleteAccount" },
     });
+    return { error: failedAction("delete account") };
   }
-
-  // Delete user row from local DB
-  await db.delete(user).where(eq(user.id, currentUser.id));
-
-  // Delete auth user from Supabase
-  const admin = createAdminClient();
-  await admin.auth.admin.deleteUser(currentUser.authId);
-
-  // Sign out and clear session cookies
-  await supabase.auth.signOut();
-  const cookieStore = await cookies();
-  cookieStore.delete("session_start_at");
-  cookieStore.delete("last_active_at");
 
   redirect("/login");
 }

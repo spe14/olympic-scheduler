@@ -251,6 +251,20 @@ describe("getGroupSchedule", () => {
     expect(second.sessions[0].sessionCode).toBe("S003");
   });
 
+  it("returns generic error when DB query throws", async () => {
+    mockGetMembership.mockResolvedValue({ id: "m-1", role: "member" });
+    mockFrom.mockImplementationOnce(() => {
+      throw new Error("connection reset");
+    });
+
+    const result = await getGroupSchedule("group-1");
+
+    expect(result.error).toBe(
+      "Failed to load group schedule. Please try again."
+    );
+    expect(result.data).toBeUndefined();
+  });
+
   it("handles member without user details gracefully", async () => {
     mockGetMembership.mockResolvedValue({ id: "m-1", role: "member" });
 

@@ -21,6 +21,7 @@ import {
   INTEREST_COLORS,
 } from "@/lib/constants";
 import ConfirmModal from "@/components/confirm-modal";
+import * as Sentry from "@sentry/nextjs";
 
 type BuddySelection = { memberId: string; type: "hard" | "soft" };
 
@@ -338,7 +339,10 @@ export default function PreferenceWizard({
           preferences: prefs,
         });
       }
-    } catch {
+    } catch (err) {
+      Sentry.captureException(err, {
+        extra: { context: "preference-wizard saveStep", groupId: group.id },
+      });
       setError("An unexpected error occurred. Please try again.");
       setSaving(false);
       return false;
@@ -489,16 +493,11 @@ export default function PreferenceWizard({
   }
 
   async function handleConfirmReview() {
-    try {
-      const result = await confirmAffectedBuddyReview(group.id);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      router.refresh();
-    } catch {
-      setError("Failed to confirm review. Please try again.");
+    const result = await confirmAffectedBuddyReview(group.id);
+    if (result.error) {
+      throw new Error(result.error);
     }
+    router.refresh();
   }
 
   function handleBack() {

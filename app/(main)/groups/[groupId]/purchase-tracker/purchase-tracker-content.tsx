@@ -60,6 +60,7 @@ import {
 } from "@/lib/utils";
 import type { AvatarColor } from "@/lib/constants";
 import UserAvatar from "@/components/user-avatar";
+import * as Sentry from "@sentry/nextjs";
 import {
   ChevronDown,
   ChevronUp,
@@ -1107,7 +1108,14 @@ function SessionRow({
                                               onOverride({ ceilings: next });
                                               setEditingCeiling(null);
                                               setRowError(null);
-                                            } catch {
+                                            } catch (err) {
+                                              Sentry.captureException(err, {
+                                                extra: {
+                                                  context:
+                                                    "savePurchasePlanEntry ceiling",
+                                                  groupId,
+                                                },
+                                              });
                                               setRowError({
                                                 key: `ceiling-${memberId}`,
                                                 message:
@@ -1178,7 +1186,14 @@ function SessionRow({
                                               next.delete(memberId);
                                               onOverride({ ceilings: next });
                                               setRowError(null);
-                                            } catch {
+                                            } catch (err) {
+                                              Sentry.captureException(err, {
+                                                extra: {
+                                                  context:
+                                                    "removePurchasePlanEntry ceiling",
+                                                  groupId,
+                                                },
+                                              });
                                               setRowError({
                                                 key: `ceiling-${memberId}`,
                                                 message:
@@ -1335,7 +1350,17 @@ function SessionRow({
                                                     });
                                                     setEditingAssignee(null);
                                                     setRowError(null);
-                                                  } catch {
+                                                  } catch (err) {
+                                                    Sentry.captureException(
+                                                      err,
+                                                      {
+                                                        extra: {
+                                                          context:
+                                                            "updatePurchaseAssigneePrice",
+                                                          groupId,
+                                                        },
+                                                      }
+                                                    );
                                                     setRowError({
                                                       key: purchaseRowKey,
                                                       message:
@@ -1431,7 +1456,17 @@ function SessionRow({
                                                         ),
                                                     });
                                                     setRowError(null);
-                                                  } catch {
+                                                  } catch (err) {
+                                                    Sentry.captureException(
+                                                      err,
+                                                      {
+                                                        extra: {
+                                                          context:
+                                                            "removePurchaseAssignee",
+                                                          groupId,
+                                                        },
+                                                      }
+                                                    );
                                                     setRowError({
                                                       key: purchaseRowKey,
                                                       message:
@@ -1609,7 +1644,14 @@ function SessionRow({
                                           (p) => p.id !== rp.id
                                         ),
                                     });
-                                  } catch {
+                                  } catch (err) {
+                                    Sentry.captureException(err, {
+                                      extra: {
+                                        context:
+                                          "deleteReportedPrice (on-schedule)",
+                                        groupId,
+                                      },
+                                    });
                                     setActionError(
                                       "An unexpected error occurred. Please try again."
                                     );
@@ -2662,9 +2704,15 @@ function OffSchedulePurchase({
       return;
     }
     debounceRef.current = setTimeout(async () => {
-      const results = await searchSessionCodes(trimmed.toUpperCase());
-      setSuggestions(results);
-      setShowSuggestions(results.length > 0);
+      const { data, error } = await searchSessionCodes(trimmed.toUpperCase());
+      if (error) {
+        setLookupError(error);
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+      setSuggestions(data);
+      setShowSuggestions(data.length > 0);
     }, 200);
   }
 
@@ -2715,7 +2763,10 @@ function OffSchedulePurchase({
           setSessions((prev) => [...prev, result.data!]);
           setSessionCode("");
         }
-      } catch {
+      } catch (err) {
+        Sentry.captureException(err, {
+          extra: { context: "lookupSession", groupId },
+        });
         setLookupError("An unexpected error occurred. Please try again.");
       }
     });
@@ -3127,7 +3178,14 @@ function OffScheduleSessionCard({
                                               });
                                               setEditingAssignee(null);
                                               setRowError(null);
-                                            } catch {
+                                            } catch (err) {
+                                              Sentry.captureException(err, {
+                                                extra: {
+                                                  context:
+                                                    "updatePurchaseAssigneePrice (off-schedule)",
+                                                  groupId,
+                                                },
+                                              });
                                               setRowError({
                                                 key: offPurchaseRowKey,
                                                 message:
@@ -3220,7 +3278,14 @@ function OffScheduleSessionCard({
                                                   ),
                                               });
                                               setRowError(null);
-                                            } catch {
+                                            } catch (err) {
+                                              Sentry.captureException(err, {
+                                                extra: {
+                                                  context:
+                                                    "removePurchaseAssignee (off-schedule)",
+                                                  groupId,
+                                                },
+                                              });
                                               setRowError({
                                                 key: offPurchaseRowKey,
                                                 message:
@@ -3389,7 +3454,14 @@ function OffScheduleSessionCard({
                                     (p) => p.id !== rp.id
                                   ),
                                 });
-                              } catch {
+                              } catch (err) {
+                                Sentry.captureException(err, {
+                                  extra: {
+                                    context:
+                                      "deleteReportedPrice (off-schedule)",
+                                    groupId,
+                                  },
+                                });
                                 setActionError(
                                   "An unexpected error occurred. Please try again."
                                 );
@@ -4125,7 +4197,10 @@ function ExcludedSessions({
           return next;
         });
         setConfirmTarget(null);
-      } catch {
+      } catch (err) {
+        Sentry.captureException(err, {
+          extra: { context: "handleUnmark", groupId },
+        });
         setActionError("An unexpected error occurred. Please try again.");
         setConfirmTarget(null);
       }
@@ -4155,7 +4230,10 @@ function ExcludedSessions({
           next.delete(key);
           return next;
         });
-      } catch {
+      } catch (err) {
+        Sentry.captureException(err, {
+          extra: { context: "handleRemark", groupId },
+        });
         setActionError("An unexpected error occurred. Please try again.");
       }
     });

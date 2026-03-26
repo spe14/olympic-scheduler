@@ -21,6 +21,7 @@ import {
   MSG_TOO_MANY_GROUPS,
   failedAction,
 } from "@/lib/messages";
+import * as Sentry from "@sentry/nextjs";
 
 export type GroupActionResult = ActionResult & {
   code?: string;
@@ -104,7 +105,8 @@ export async function createGroup(
     if (result.limitReached) {
       return { error: MSG_TOO_MANY_GROUPS };
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: "createGroup" } });
     return { error: failedAction("create group") };
   }
 
@@ -226,7 +228,8 @@ export async function joinGroup(
     if (result.full) {
       return { error: MSG_GROUP_FULL };
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: "joinGroup" } });
     return { error: failedAction("join group") };
   }
 
@@ -268,7 +271,8 @@ export async function removeMembership(
           inArray(member.status, ["pending_approval", "denied"])
         )
       );
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: "removeMembership" } });
     return { error: failedAction("remove membership") };
   }
 

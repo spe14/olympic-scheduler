@@ -1,6 +1,17 @@
 "use client";
 
-export default function GroupError() {
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
+
+export default function GroupError({
+  error,
+}: {
+  error: Error & { digest?: string };
+}) {
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <div className="mx-auto max-w-lg px-4 py-24 text-center">
       <h2 className="mb-2 text-lg font-semibold text-red-600">

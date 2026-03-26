@@ -20,6 +20,7 @@ import type { ActionResult } from "@/lib/types";
 import type { AvatarColor } from "@/lib/constants";
 import { groupBy } from "@/lib/utils";
 import { failedAction } from "@/lib/messages";
+import * as Sentry from "@sentry/nextjs";
 
 // ── Timeslot actions ────────────────────────────────────────────────────────
 
@@ -91,7 +92,10 @@ export async function saveTimeslot(
           updatedAt: new Date(),
         },
       });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "saveTimeslot", groupId },
+    });
     return { error: failedAction("save timeslot") };
   }
 
@@ -164,7 +168,10 @@ export async function savePurchasePlanEntry(
           updatedAt: new Date(),
         },
       });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "savePurchasePlanEntry", groupId },
+    });
     return { error: failedAction("save purchase plan entry") };
   }
 
@@ -190,7 +197,10 @@ export async function removePurchasePlanEntry(
           eq(purchasePlanEntry.assigneeMemberId, data.assigneeMemberId)
         )
       );
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "removePurchasePlanEntry", groupId },
+    });
     return { error: failedAction("remove purchase plan entry") };
   }
 
@@ -260,7 +270,10 @@ export async function batchSavePurchasePlan(
     if (result && "error" in result) {
       return { error: result.error };
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "batchSavePurchasePlan", groupId },
+    });
     return { error: failedAction("save purchase plan") };
   }
 
@@ -387,7 +400,10 @@ export async function markAsPurchased(
       return { error: result.error };
     }
     purchaseId = result.purchaseId;
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "markAsPurchased", groupId },
+    });
     return { error: failedAction("record purchase") };
   }
 
@@ -436,7 +452,10 @@ export async function deletePurchase(
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "deletePurchase", groupId, purchaseId },
+    });
     return { error: failedAction("delete purchase") };
   }
 
@@ -501,7 +520,10 @@ export async function removePurchaseAssignee(
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "removePurchaseAssignee", groupId },
+    });
     return { error: failedAction("remove purchase assignee") };
   }
 
@@ -561,6 +583,9 @@ export async function updatePurchaseAssigneePrice(
     ) {
       return { error: msg };
     }
+    Sentry.captureException(e, {
+      extra: { context: "updatePurchaseAssigneePrice", groupId },
+    });
     return { error: failedAction("update assignee price") };
   }
 
@@ -593,7 +618,10 @@ export async function markAsSoldOut(
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "markAsSoldOut", groupId },
+    });
     return { error: failedAction("mark session as sold out") };
   }
 
@@ -625,7 +653,10 @@ export async function unmarkSoldOut(
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "unmarkSoldOut", groupId },
+    });
     return { error: failedAction("unmark session as sold out") };
   }
 
@@ -659,7 +690,10 @@ export async function markAsOutOfBudget(
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "markAsOutOfBudget", groupId },
+    });
     return { error: failedAction("mark session as out of budget") };
   }
 
@@ -692,7 +726,10 @@ export async function unmarkOutOfBudget(
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "unmarkOutOfBudget", groupId },
+    });
     return { error: failedAction("unmark session as out of budget") };
   }
 
@@ -747,7 +784,10 @@ export async function reportSessionPrice(
     revalidatePath(`/groups/${groupId}/schedule`);
     revalidatePath(`/groups/${groupId}/group-schedule`);
     return { success: true, data: { reportedPriceId: inserted.id } };
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "reportSessionPrice", groupId },
+    });
     return { error: failedAction("report session price") };
   }
 }
@@ -813,6 +853,9 @@ export async function updateReportedPrice(
     if (e instanceof Error && e.message === "Not authorized") {
       return { error: "You can only edit your own reported prices." };
     }
+    Sentry.captureException(e, {
+      extra: { context: "updateReportedPrice", groupId },
+    });
     return { error: failedAction("update reported price") };
   }
 
@@ -862,6 +905,9 @@ export async function deleteReportedPrice(
     if (e instanceof Error && e.message === "Not authorized") {
       return { error: "You can only delete your own reported prices." };
     }
+    Sentry.captureException(e, {
+      extra: { context: "deleteReportedPrice", groupId },
+    });
     return { error: failedAction("delete reported price") };
   }
 
@@ -906,7 +952,10 @@ export async function deleteOffScheduleSessionData(
         .set({ purchaseDataChangedAt: new Date() })
         .where(eq(group.id, groupId));
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "deleteOffScheduleSessionData", groupId, sessionId },
+    });
     return { error: failedAction("delete off-schedule session data") };
   }
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useGroup } from "./group-context";
 import { generateSchedules } from "../actions";
+import * as Sentry from "@sentry/nextjs";
 import GenerateScheduleModal from "./generate-schedule-modal";
 import Tooltip from "@/components/tooltip";
 
@@ -107,7 +108,13 @@ export default function GenerateScheduleSection() {
         setShowModal(false);
         router.refresh();
       }
-    } catch {
+    } catch (err) {
+      Sentry.captureException(err, {
+        extra: {
+          context: "generate-schedule-section generateSchedules",
+          groupId: group.id,
+        },
+      });
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);

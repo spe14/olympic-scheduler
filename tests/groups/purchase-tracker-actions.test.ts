@@ -254,6 +254,22 @@ describe("getPurchaseTrackerData", () => {
     expect(mockSelect).not.toHaveBeenCalled();
   });
 
+  it("returns generic error when DB query throws", async () => {
+    mockGetMembership.mockResolvedValue({ id: "member-1" });
+    mockSelect.mockImplementationOnce(() => ({
+      from: vi.fn(() => {
+        throw new Error("connection reset");
+      }),
+    }));
+
+    const result = await getPurchaseTrackerData("group-1");
+
+    expect(result.error).toBe(
+      "Failed to load purchase tracker. Please try again."
+    );
+    expect(result.data).toBeUndefined();
+  });
+
   // No-combos early return path query order:
   //  1. timeslotRow (purchaseTimeslot)
   //  2. combos (combo) — empty → enters early return
@@ -1032,6 +1048,20 @@ describe("lookupSession", () => {
     expect(result).toEqual({ error: "Session not found." });
   });
 
+  it("returns generic error when DB query throws", async () => {
+    mockGetMembership.mockResolvedValue({ id: "member-1" });
+    mockSelect.mockImplementationOnce(() => ({
+      from: vi.fn(() => {
+        throw new Error("connection reset");
+      }),
+    }));
+
+    const result = await lookupSession("SES-001", "group-1");
+
+    expect(result.error).toBe("Failed to look up session. Please try again.");
+    expect(result.data).toBeUndefined();
+  });
+
   it("returns session data with purchases and prices when found", async () => {
     mockGetMembership.mockResolvedValue({ id: "member-1" });
     const sessionData = {
@@ -1084,23 +1114,23 @@ describe("searchSessionCodes", () => {
     queryResults = [];
   });
 
-  it("returns empty array when not authenticated", async () => {
+  it("returns empty data when not authenticated", async () => {
     mockGetCurrentUser.mockResolvedValue(null);
     const result = await searchSessionCodes("SWM");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ data: [] });
   });
 
-  it("returns empty array for empty query", async () => {
+  it("returns empty data for empty query", async () => {
     mockGetCurrentUser.mockResolvedValue({ id: "user-1" });
     const result = await searchSessionCodes("");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ data: [] });
     expect(mockSelect).not.toHaveBeenCalled();
   });
 
-  it("returns empty array for whitespace-only query", async () => {
+  it("returns empty data for whitespace-only query", async () => {
     mockGetCurrentUser.mockResolvedValue({ id: "user-1" });
     const result = await searchSessionCodes("   ");
-    expect(result).toEqual([]);
+    expect(result).toEqual({ data: [] });
     expect(mockSelect).not.toHaveBeenCalled();
   });
 
@@ -1114,7 +1144,21 @@ describe("searchSessionCodes", () => {
 
     const result = await searchSessionCodes("SWM");
 
-    expect(result).toEqual(suggestions);
-    expect(result).toHaveLength(2);
+    expect(result).toEqual({ data: suggestions });
+    expect(result.data).toHaveLength(2);
+  });
+
+  it("returns error when DB query throws", async () => {
+    mockGetCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockSelect.mockImplementationOnce(() => ({
+      from: vi.fn(() => {
+        throw new Error("connection reset");
+      }),
+    }));
+
+    const result = await searchSessionCodes("SWM");
+
+    expect(result.data).toEqual([]);
+    expect(result.error).toBeDefined();
   });
 });

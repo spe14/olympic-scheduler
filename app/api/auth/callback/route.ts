@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -13,7 +14,11 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (!error) {
+    if (error) {
+      Sentry.captureException(new Error("Auth code exchange failed"), {
+        extra: { supabaseError: error.message, safePath },
+      });
+    } else {
       const response = NextResponse.redirect(new URL(safePath, request.url));
 
       // Mark recovery sessions so /reset-password can verify the flow

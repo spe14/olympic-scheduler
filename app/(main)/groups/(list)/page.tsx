@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { group, member, user as userTable } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import type { GroupMember } from "@/lib/types";
-import HomeContent from "../_components/home-content";
+import HomeContent from "../../_components/home-content";
 
 export default async function GroupsPage() {
   const user = await getCurrentUser();

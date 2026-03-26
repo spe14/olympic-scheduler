@@ -231,6 +231,18 @@ describe("updateProfileField", () => {
     expect(result.success).toBe(true);
     expect(result.updatedValue).toBe("Smith");
   });
+
+  it("returns generic error when DB update throws", async () => {
+    mockSet.mockImplementationOnce(() => ({
+      where: vi.fn(() => {
+        throw new Error("connection reset");
+      }),
+    }));
+    const fd = makeFormData({ field: "firstName", value: "NewName" });
+    const result = await updateProfileField(null, fd);
+
+    expect(result.error).toBe("Failed to update profile. Please try again.");
+  });
 });
 
 describe("updatePassword", () => {
@@ -313,7 +325,7 @@ describe("updatePassword", () => {
     expect(result.fieldErrors?.currentPassword?.[0]).toContain("incorrect");
   });
 
-  it("returns error when supabase updateUser fails", async () => {
+  it("returns generic error when supabase updateUser fails", async () => {
     mockSignInWithPassword.mockResolvedValue({ error: null });
     mockUpdateUser.mockResolvedValue({
       error: { message: "Password update failed" },
@@ -326,7 +338,7 @@ describe("updatePassword", () => {
     });
     const result = await updatePassword(null, fd);
 
-    expect(result.error).toBe("Password update failed");
+    expect(result.error).toBe("Failed to update password. Please try again.");
   });
 
   it("returns success on valid password update", async () => {
@@ -430,6 +442,19 @@ describe("updateAvatarColor", () => {
 
     expect(result.error).toBe("Invalid color.");
   });
+
+  it("returns generic error when DB update throws", async () => {
+    mockSet.mockImplementationOnce(() => ({
+      where: vi.fn(() => {
+        throw new Error("connection reset");
+      }),
+    }));
+    const result = await updateAvatarColor("blue");
+
+    expect(result.error).toBe(
+      "Failed to update avatar color. Please try again."
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -519,5 +544,18 @@ describe("deleteAccount", () => {
       email: mockUser.email,
       password: "mypassword",
     });
+  });
+
+  it("returns generic error when DB operation throws", async () => {
+    mockWhereDirectResult = [];
+    mockDbDelete.mockImplementationOnce(() => ({
+      where: vi.fn(() => {
+        throw new Error("connection reset");
+      }),
+    }));
+
+    const result = await deleteAccount("password123");
+
+    expect(result.error).toBe("Failed to delete account. Please try again.");
   });
 });

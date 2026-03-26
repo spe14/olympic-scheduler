@@ -3,6 +3,7 @@
 import { useState, useTransition, useRef } from "react";
 import { saveTimeslot } from "../purchase-actions";
 import type { TimeslotData } from "../purchase-actions";
+import * as Sentry from "@sentry/nextjs";
 
 type Props = {
   groupId: string;
@@ -274,7 +275,10 @@ export default function TimeslotForm({ groupId, timeslot, onSaved }: Props) {
         } else {
           onSaved();
         }
-      } catch {
+      } catch (err) {
+        Sentry.captureException(err, {
+          extra: { context: "timeslot-form saveTimeslot", groupId },
+        });
         setError("An unexpected error occurred. Please try again.");
       }
     });

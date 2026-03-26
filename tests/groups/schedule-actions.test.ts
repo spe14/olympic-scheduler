@@ -491,6 +491,20 @@ describe("getMySchedule", () => {
     expect(result.data![0].combos[1].rank).toBe("backup2");
   });
 
+  it("returns generic error when DB query throws", async () => {
+    mockGetMembership.mockResolvedValue(membership);
+    mockSelect.mockImplementationOnce(() => ({
+      from: vi.fn(() => {
+        throw new Error("connection reset");
+      }),
+    }));
+
+    const result = await getMySchedule("group-1");
+
+    expect(result.error).toBe("Failed to load schedule. Please try again.");
+    expect(result.data).toBeUndefined();
+  });
+
   it("handles combos with no associated sessions", async () => {
     mockGetMembership.mockResolvedValue(membership);
 

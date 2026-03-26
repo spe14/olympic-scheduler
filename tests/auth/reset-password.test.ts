@@ -152,7 +152,7 @@ describe("resetPassword", () => {
       expect(mockDelete).toHaveBeenCalledWith("last_active_at");
     });
 
-    it("returns error when Supabase update fails", async () => {
+    it("returns generic error when Supabase update fails", async () => {
       mockUpdateUser.mockResolvedValue({
         error: { message: "Session expired" },
       });
@@ -163,7 +163,7 @@ describe("resetPassword", () => {
       });
       const result = await resetPassword(null, fd);
 
-      expect(result?.error).toBe("Session expired");
+      expect(result?.error).toBe("Failed to reset password. Please try again.");
     });
   });
 });

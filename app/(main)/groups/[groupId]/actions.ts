@@ -45,6 +45,7 @@ import {
   MSG_MEMBER_NOT_PENDING,
   failedAction,
 } from "@/lib/messages";
+import * as Sentry from "@sentry/nextjs";
 
 export async function updateGroupName(
   groupId: string,
@@ -63,7 +64,10 @@ export async function updateGroupName(
       .update(group)
       .set({ name: parsed.data })
       .where(eq(group.id, groupId));
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "updateGroupName", groupId },
+    });
     return { error: failedAction("update group name") };
   }
 
@@ -172,7 +176,10 @@ export async function approveMember(
     if (result.full) {
       return { error: MSG_GROUP_FULL };
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "approveMember", groupId, memberId },
+    });
     return {
       error: failedAction("approve member's join request"),
     };
@@ -207,7 +214,10 @@ export async function denyMember(
       .where(
         and(eq(member.id, memberId), eq(member.status, "pending_approval"))
       );
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "denyMember", groupId, memberId },
+    });
     return { error: failedAction("deny member's join request") };
   }
 
@@ -440,6 +450,7 @@ export async function leaveGroup(groupId: string): Promise<ActionResult> {
           "You became the group owner while leaving. Please refresh the page.",
       };
     }
+    Sentry.captureException(e, { extra: { context: "leaveGroup", groupId } });
     return { error: failedAction("leave group") };
   }
 
@@ -498,6 +509,9 @@ export async function removeMember(
         error: "This member is now the group owner and cannot be removed.",
       };
     }
+    Sentry.captureException(e, {
+      extra: { context: "removeMember", groupId, targetMemberId },
+    });
     return { error: failedAction("remove member") };
   }
 
@@ -615,7 +629,10 @@ export async function updateDateConfig(
         }
       }
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "updateDateConfig", groupId },
+    });
     return {
       error: failedAction("update date configuration"),
     };
@@ -634,7 +651,10 @@ export async function deleteGroup(groupId: string): Promise<ActionResult> {
     // All related tables have onDelete: "cascade" referencing group.id,
     // so deleting the group row cascades to all dependent data.
     await db.delete(group).where(eq(group.id, groupId));
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "deleteGroup", groupId },
+    });
     return { error: failedAction("delete group") };
   }
 
@@ -714,7 +734,10 @@ export async function transferOwnership(
     if (result.gone) {
       return { error: MSG_MEMBER_NOT_FOUND };
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "transferOwnership", groupId, targetMemberId },
+    });
     return { error: failedAction("transfer ownership") };
   }
 
@@ -1197,6 +1220,9 @@ export async function generateSchedules(
     if (err instanceof Error && err.message.includes("changed during")) {
       return { error: err.message };
     }
+    Sentry.captureException(err, {
+      extra: { context: "generateSchedules", groupId },
+    });
     return { error: failedAction("generate schedules") };
   }
 }

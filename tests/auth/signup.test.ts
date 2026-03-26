@@ -329,7 +329,7 @@ describe("signUp", () => {
       expect(mockSignOut).toHaveBeenCalled();
     });
 
-    it("returns supabase error message for other auth errors", async () => {
+    it("returns generic error for other auth errors", async () => {
       mockSignUp.mockResolvedValue({
         data: { user: null },
         error: { message: "Rate limit exceeded" },
@@ -338,7 +338,7 @@ describe("signUp", () => {
       const fd = makeFormData(validFields);
       const result = await signUp(null, fd);
 
-      expect(result?.error).toBe("Rate limit exceeded");
+      expect(result?.error).toBe("Sign up failed. Please try again.");
     });
 
     it("returns error when signUp succeeds but no user is returned", async () => {

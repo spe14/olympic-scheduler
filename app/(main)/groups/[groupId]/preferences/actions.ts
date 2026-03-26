@@ -13,6 +13,7 @@ import { eq, and, notInArray, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types";
 import { MSG_GROUP_NOT_FOUND, failedAction } from "@/lib/messages";
+import * as Sentry from "@sentry/nextjs";
 
 const PREFERENCE_STEP_ORDER = [
   null,
@@ -154,7 +155,10 @@ export async function saveBuddies(
     if (result?.error) {
       return result;
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "saveBuddies", groupId },
+    });
     return { error: failedAction("save preferences") };
   }
 
@@ -245,7 +249,10 @@ export async function saveSportRankings(
         }
       }
     });
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "saveSportRankings", groupId },
+    });
     return { error: failedAction("save sport rankings") };
   }
 
@@ -371,7 +378,10 @@ export async function saveSessionPreferences(
     if (result?.error) {
       return result;
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, {
+      extra: { context: "saveSessionPreferences", groupId },
+    });
     return { error: failedAction("save session preferences") };
   }
 
