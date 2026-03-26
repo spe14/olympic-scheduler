@@ -88,10 +88,10 @@ export default function LoginPage() {
             </span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-[#009de5]">
-            Welcome Back
+            Welcome Back!
           </h1>
           <p className="mt-2 text-slate-500">
-            Sign in to continue planning your trip
+            Sign in to continue planning your Olympic experience
           </p>
         </div>
 
