@@ -94,6 +94,36 @@ export default function AboutPage() {
                   <span className="mt-0.5 shrink-0 text-slate-400">•</span>
                   <span>
                     <span className="font-medium text-slate-700">
+                      Groups of 1–12 members.
+                    </span>{" "}
+                    Each group can have between 1 and 12 members.
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-0.5 shrink-0 text-slate-400">•</span>
+                  <span>
+                    <span className="font-medium text-slate-700">
+                      Desktop only.
+                    </span>{" "}
+                    This app is designed for use on a computer and does not
+                    currently support mobile devices.
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-0.5 shrink-0 text-slate-400">•</span>
+                  <span>
+                    <span className="font-medium text-slate-700">
+                      No email notifications.
+                    </span>{" "}
+                    There are in-app notifications on each group page for your
+                    reference, but you may need to refresh the page to see the
+                    latest notifications.
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-0.5 shrink-0 text-slate-400">•</span>
+                  <span>
+                    <span className="font-medium text-slate-700">
                       Publicly available data.
                     </span>{" "}
                     Session data is sourced from the{" "}

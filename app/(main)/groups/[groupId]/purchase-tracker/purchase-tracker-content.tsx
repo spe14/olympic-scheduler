@@ -336,8 +336,9 @@ export default function PurchaseTrackerContent() {
       <h2 className="mb-1 text-lg font-semibold text-slate-900">
         Purchase Planner & Tracker
       </h2>
-      <p className="mb-3 text-xs text-slate-400">
-        All session times are displayed in Pacific Time.
+      <p className="mb-3 text-sm text-slate-400">
+        All session times are displayed in Pacific Time. Purchased sessions are
+        guaranteed to appear on any future schedule generations.
       </p>
 
       {/* Scheduled sessions by day */}
@@ -2270,10 +2271,10 @@ function SoldOutModal({
           </>
         ) : (
           <>
-            Do you want to mark the session{" "}
+            Mark the session{" "}
             <span className="font-bold text-slate-700">{sessionCode}</span> as
-            sold out? Doing so will ensure that this session does not appear on
-            any future schedule generations.
+            sold out? This will exclude it from future schedule generations for
+            all members.
           </>
         )}
       </p>
@@ -2600,6 +2601,12 @@ function RecordPurchaseModal({
           );
         })}
       </div>
+      {sortedMembers.length > 0 && (
+        <div className="mb-4 rounded-lg border border-[#009de5]/20 bg-[#009de5]/5 px-3 py-2.5 text-sm text-[#009de5]">
+          Purchased sessions are guaranteed to appear on future schedule
+          generations for the selected members.
+        </div>
+      )}
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       <div className="flex justify-end gap-2">
         <button

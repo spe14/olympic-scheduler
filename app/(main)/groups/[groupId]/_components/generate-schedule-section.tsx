@@ -127,6 +127,10 @@ export default function GenerateScheduleSection() {
         Generate Schedules
       </h2>
       <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <p className="mb-2 text-sm text-slate-400">
+          Generate new schedules whenever member preferences or session statuses
+          are updated for the latest and most accurate information.
+        </p>
         {isRegenerate && group.scheduleGeneratedAt && (
           <p className="mb-3 text-sm text-[#d97706]">
             Schedules Last Updated On:{" "}
