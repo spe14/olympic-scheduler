@@ -60,42 +60,30 @@ export default function SessionDetailModal({
         className="mb-4 space-y-0.5 rounded-lg p-3.5"
         style={{ backgroundColor: `${sportColor.bg}99` }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span
             className="text-base font-semibold"
             style={{ color: sportColor.title }}
           >
             {session.sport}
           </span>
+          <span
+            className="rounded px-1.5 py-0.5 text-xs font-semibold text-white"
+            style={{ backgroundColor: sportColor.border }}
+          >
+            {session.sessionCode}
+          </span>
+          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+            {session.sessionType}
+          </span>
           <Tooltip
-            label="Session Code"
-            className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
+            label="Your Interest Level"
+            position="bottom"
+            className="capitalize"
           >
             <span
+              className="rounded px-1.5 py-0.5 text-xs font-semibold text-white"
               style={{ backgroundColor: sportColor.border }}
-              className="rounded-full px-2 py-0.5"
-            >
-              {session.sessionCode}
-            </span>
-          </Tooltip>
-          <Tooltip
-            label="Session Type"
-            className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-          >
-            <span
-              style={{ backgroundColor: sportColor.border }}
-              className="rounded-full px-2 py-0.5"
-            >
-              {session.sessionType}
-            </span>
-          </Tooltip>
-          <Tooltip
-            label="Interest Level"
-            className="rounded-full px-2 py-0.5 text-xs font-medium capitalize text-white"
-          >
-            <span
-              style={{ backgroundColor: sportColor.border }}
-              className="rounded-full px-2 py-0.5"
             >
               {session.interest}
             </span>

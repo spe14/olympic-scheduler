@@ -456,11 +456,13 @@ export default function PurchaseTrackerContent() {
               <h3 className="text-sm font-semibold text-slate-900">
                 Scheduled Sessions
               </h3>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-500">
-                  Expand each session accordion to plan or enter ticket purchase
-                  information.
-                </p>
+              <p className="text-sm text-slate-500">
+                Expand each session accordion to plan or enter ticket purchase
+                information. Currently displaying the sessions from the selected
+                attendance window. You can update the selected window in the
+                filters.
+              </p>
+              <div className="flex items-center justify-end">
                 {globalExpanded ? (
                   <button
                     onClick={() => setExpandCounter((c) => c + 1)}
