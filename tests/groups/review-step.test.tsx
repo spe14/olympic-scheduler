@@ -637,7 +637,7 @@ describe("ReviewStep", () => {
     ).toBeDefined();
   });
 
-  it("shows one message per departed buddy name", () => {
+  it("shows a single consolidated message for multiple departed buddies", () => {
     render(
       <ReviewStep
         {...defaultProps}
@@ -647,12 +647,22 @@ describe("ReviewStep", () => {
     );
     expect(
       screen.getByText(
-        /Charlie Brown was automatically removed from your required buddies list/
+        /Charlie Brown and Diana Prince were automatically removed from your required buddies list/
       )
     ).toBeDefined();
+  });
+
+  it("uses Oxford comma for three or more departed buddies", () => {
+    render(
+      <ReviewStep
+        {...defaultProps}
+        affectedBuddyNames={["Charlie Brown", "Diana Prince", "Bruce Wayne"]}
+        onConfirmReview={vi.fn()}
+      />
+    );
     expect(
       screen.getByText(
-        /Diana Prince was automatically removed from your required buddies list/
+        /Charlie Brown, Diana Prince, and Bruce Wayne were automatically removed from your required buddies list/
       )
     ).toBeDefined();
   });

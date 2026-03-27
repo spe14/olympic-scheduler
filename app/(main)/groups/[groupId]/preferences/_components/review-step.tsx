@@ -94,13 +94,17 @@ export default function ReviewStep({
           </h3>
           {affectedBuddyNames && affectedBuddyNames.length > 0 && (
             <div className="mb-3 rounded-lg border border-[#009de5]/20 bg-[#009de5]/5 px-4 py-3 text-sm text-[#009de5]">
-              {affectedBuddyNames.map((name) => (
-                <p key={name}>
-                  {name} was automatically removed from your required buddies
-                  list because they recently left or were removed from the
-                  group. Update your buddy preferences as needed.
-                </p>
-              ))}
+              <p>
+                {affectedBuddyNames.length === 1
+                  ? affectedBuddyNames[0]
+                  : affectedBuddyNames.length === 2
+                    ? `${affectedBuddyNames[0]} and ${affectedBuddyNames[1]}`
+                    : `${affectedBuddyNames.slice(0, -1).join(", ")}, and ${affectedBuddyNames[affectedBuddyNames.length - 1]}`}{" "}
+                {affectedBuddyNames.length === 1 ? "was" : "were"} automatically
+                removed from your required buddies list because they recently
+                left or were removed from the group. Update your buddy
+                preferences as needed.
+              </p>
               {onConfirmReview && (
                 <button
                   type="button"
