@@ -298,7 +298,7 @@ export default function TimeslotForm({ groupId, timeslot, onSaved }: Props) {
           <label className="mb-1.5 block text-sm font-medium text-slate-600">
             Start Date/Time
           </label>
-          <div className="flex items-end gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
             <input
               type="date"
               value={startDate}
@@ -319,7 +319,7 @@ export default function TimeslotForm({ groupId, timeslot, onSaved }: Props) {
           <label className="mb-1.5 block text-sm font-medium text-slate-600">
             End Date/Time
           </label>
-          <div className="flex items-end gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
             <input
               type="date"
               value={endDate}

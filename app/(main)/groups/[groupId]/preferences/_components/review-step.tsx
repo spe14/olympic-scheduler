@@ -87,7 +87,7 @@ export default function ReviewStep({
       </p>
 
       {/* Budget & Buddies + Sport Rankings side by side */}
-      <div className="mb-6 grid grid-cols-2 gap-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-slate-200 p-4">
           <h3 className="mb-3 text-base font-semibold text-slate-900">
             Buddies
@@ -227,11 +227,11 @@ export default function ReviewStep({
 
       {/* Session Interests */}
       <div className="rounded-lg border border-slate-200 p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-base font-semibold text-slate-900">
             Session Interests
           </h3>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {(["high", "medium", "low"] as const).map((level) => {
               const count = selectedSessions.filter(
                 (s) => sessionPreferences.get(s.sessionCode)?.interest === level

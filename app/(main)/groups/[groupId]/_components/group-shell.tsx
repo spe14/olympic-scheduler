@@ -228,10 +228,10 @@ export default function GroupShell({
     <NavigationGuardProvider>
       <SidePanelProvider>
         <GroupSyncProvider onSync={handleSync}>
-          <div className="px-6 py-8">
+          <div className="px-4 py-4 md:px-6 md:py-8">
             <GuardedLink
               href="/groups"
-              className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700"
+              className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-700 md:mb-6"
             >
               <svg
                 className="h-4 w-4"
@@ -284,50 +284,135 @@ function GroupContentArea({
   children: React.ReactNode;
 }) {
   const { panel } = useSidePanel();
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   return (
-    <div className="mt-8 flex gap-8">
-      {/* Column 1: Navigation sidebar */}
-      <nav className="w-48 shrink-0">
-        <ul className="space-y-1">
-          {navItems
-            .filter((item) => item.visible)
-            .map((item) => (
-              <li key={item.key}>
-                <GuardedLink
-                  href={item.href}
-                  className={`group/nav relative flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    activeKey === item.key
-                      ? "bg-[#009de5]/10 text-[#009de5]"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  }`}
-                >
-                  {item.label}
-                  {item.status.type === "complete" && <NavCheckIcon />}
-                  {item.status.type === "warning" && (
-                    <span className="relative">
-                      <NavWarningIcon />
-                      {item.status.tooltip && (
-                        <span className="pointer-events-none absolute left-full top-1/2 z-10 ml-2 w-48 -translate-y-1/2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover/nav:opacity-100">
-                          {item.status.tooltip}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </GuardedLink>
-              </li>
-            ))}
-        </ul>
+    <div className="mt-4 md:mt-8">
+      {/* Mobile: horizontal scrollable tabs */}
+      <nav className="mb-4 md:hidden">
+        <div className="-mx-4 overflow-x-auto px-4">
+          <ul className="flex gap-1 pb-2">
+            {navItems
+              .filter((item) => item.visible)
+              .map((item) => (
+                <li key={item.key} className="shrink-0">
+                  <GuardedLink
+                    href={item.href}
+                    className={`group/nav relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      activeKey === item.key
+                        ? "bg-[#009de5]/10 text-[#009de5]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    {item.label}
+                    {item.status.type === "complete" && <NavCheckIcon />}
+                    {item.status.type === "warning" && <NavWarningIcon />}
+                  </GuardedLink>
+                </li>
+              ))}
+          </ul>
+        </div>
       </nav>
 
-      {/* Column 2: Main content */}
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="flex gap-8">
+        {/* Desktop: Navigation sidebar */}
+        <nav className="hidden w-48 shrink-0 md:block">
+          <ul className="space-y-1">
+            {navItems
+              .filter((item) => item.visible)
+              .map((item) => (
+                <li key={item.key}>
+                  <GuardedLink
+                    href={item.href}
+                    className={`group/nav relative flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      activeKey === item.key
+                        ? "bg-[#009de5]/10 text-[#009de5]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    {item.label}
+                    {item.status.type === "complete" && <NavCheckIcon />}
+                    {item.status.type === "warning" && (
+                      <span className="relative">
+                        <NavWarningIcon />
+                        {item.status.tooltip && (
+                          <span className="pointer-events-none absolute left-full top-1/2 z-10 ml-2 w-48 -translate-y-1/2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover/nav:opacity-100">
+                            {item.status.tooltip}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </GuardedLink>
+                </li>
+              ))}
+          </ul>
+        </nav>
 
-      {/* Column 3: Side panel (filters, etc.) */}
+        {/* Main content */}
+        <div className="min-w-0 flex-1 overflow-x-hidden">{children}</div>
+
+        {/* Desktop: Side panel */}
+        {panel && (
+          <aside className="hidden w-72 shrink-0 lg:block">
+            <div className="sticky top-3">{panel}</div>
+          </aside>
+        )}
+      </div>
+
+      {/* Mobile: Filters toggle button */}
       {panel && (
-        <aside className="w-72 shrink-0">
-          <div className="sticky top-3">{panel}</div>
-        </aside>
+        <button
+          onClick={() => setShowMobileFilters(true)}
+          className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[#009de5] text-white shadow-lg transition-transform hover:scale-105 lg:hidden"
+        >
+          <svg
+            className="h-5 w-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"
+            />
+          </svg>
+        </button>
+      )}
+
+      {/* Mobile: Filters slide-up panel */}
+      {panel && showMobileFilters && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setShowMobileFilters(false)}
+          />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-900">Filters</h3>
+              <button
+                onClick={() => setShowMobileFilters(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            {panel}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -26,7 +26,7 @@ export default function ProfileForm({
     <div className="grid flex-1 grid-cols-1 gap-8 lg:grid-cols-2">
       {/* Left column */}
       <div className="flex flex-col gap-8">
-        <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+        <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:p-8">
           <h2 className="mb-5 text-lg font-semibold text-slate-900">
             Personal Information
           </h2>

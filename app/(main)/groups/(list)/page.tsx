@@ -4,6 +4,11 @@ import { group, member, user as userTable } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import type { GroupMember } from "@/lib/types";
 import HomeContent from "../../_components/home-content";
+import dynamic from "next/dynamic";
+
+const MobileWarning = dynamic(() => import("@/components/mobile-warning"), {
+  ssr: false,
+});
 
 export default async function GroupsPage() {
   const user = await getCurrentUser();
@@ -47,5 +52,10 @@ export default async function GroupsPage() {
         .orderBy(group.createdAt)
     : [];
 
-  return <HomeContent initialGroups={groups} />;
+  return (
+    <>
+      <MobileWarning />
+      <HomeContent initialGroups={groups} />
+    </>
+  );
 }

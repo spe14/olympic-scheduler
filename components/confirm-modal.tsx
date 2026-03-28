@@ -23,7 +23,7 @@ export default function ConfirmModal({
   useScrollLock();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-7 shadow-xl">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white p-5 shadow-xl sm:p-7">
         <div className="mb-4 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
             <svg

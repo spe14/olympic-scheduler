@@ -32,7 +32,7 @@ export default function DeleteAccountSection() {
 
   return (
     <>
-      <div className="rounded-2xl border border-red-200 bg-white p-6 shadow-sm lg:p-8">
+      <div className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm sm:p-6 lg:p-8">
         <h2 className="mb-2 text-lg font-semibold text-red-600">
           Delete Account
         </h2>
