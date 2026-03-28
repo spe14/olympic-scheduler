@@ -210,7 +210,7 @@ export default function PurchaseTrackerContent() {
 
   // Render filters into the side panel
   useEffect(() => {
-    if (!data || data.days.length === 0) {
+    if (loading || !data || data.days.length === 0) {
       setPanel(null);
       return () => setPanel(null);
     }
@@ -229,7 +229,15 @@ export default function PurchaseTrackerContent() {
     );
     return () => setPanel(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setPanel, data, activeWindowId, statusFilter, soldOutFilter, globalBusy]);
+  }, [
+    setPanel,
+    loading,
+    data,
+    activeWindowId,
+    statusFilter,
+    soldOutFilter,
+    globalBusy,
+  ]);
 
   // Also guard browser reload/close
   useEffect(() => {
@@ -272,6 +280,9 @@ export default function PurchaseTrackerContent() {
     hasSchedules,
     group.membersWithNoCombos.length,
     group.dateMode,
+    group.startDate,
+    group.endDate,
+    group.consecutiveDays,
     hasTimeslotKey,
   ]);
 
