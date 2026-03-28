@@ -52,7 +52,7 @@ export default function SignUpPage() {
 
   return (
     <>
-      <div className="flex min-h-screen items-start justify-center bg-white px-4 py-10">
+      <div className="flex min-h-[calc(100vh-3.25rem)] items-start justify-center bg-white px-4 py-10">
         {/* Subtle background texture */}
         <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#009de5]/10 via-white to-white" />
 

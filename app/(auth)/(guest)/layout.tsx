@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import PublicNavBar from "@/components/public-nav-bar";
 
 export default async function GuestLayout({
   children,
@@ -15,5 +16,10 @@ export default async function GuestLayout({
     redirect("/");
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <PublicNavBar />
+      {children}
+    </>
+  );
 }
