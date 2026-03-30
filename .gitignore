@@ -55,3 +55,5 @@ build/
 /scripts/raw
 # Sentry Config File
 .env.sentry-build-plugin
+
+demo-reel-setup.md

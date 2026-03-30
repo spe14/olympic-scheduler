@@ -10,7 +10,7 @@ export default async function ProfilePage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-slate-50 px-6 py-10">
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-slate-50 px-4 py-6 md:px-6 md:py-10">
       <div className="flex flex-1 flex-col">
         <h1 className="mb-1 text-2xl font-bold tracking-tight text-slate-900">
           Profile

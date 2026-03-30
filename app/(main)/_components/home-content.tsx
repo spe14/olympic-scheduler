@@ -16,20 +16,20 @@ export default function HomeContent({
   const [showJoinModal, setShowJoinModal] = useState(false);
 
   return (
-    <main className="px-6 py-10">
+    <main className="px-4 py-6 md:px-6 md:py-10">
       {groups.length > 0 && (
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-3xl font-bold text-slate-900">My Groups</h1>
           <div className="flex gap-3">
             <button
               onClick={() => setShowJoinModal(true)}
-              className="rounded-lg border border-slate-200 px-5 py-2.5 text-base font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:px-5 sm:py-2.5 sm:text-base"
             >
               Join Group
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="rounded-lg bg-[#009de5] px-5 py-2.5 text-base font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9]"
+              className="rounded-lg bg-[#009de5] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9] sm:px-5 sm:py-2.5 sm:text-base"
             >
               Create Group
             </button>
@@ -142,16 +142,16 @@ function EmptyState({
         Create a group to start planning your LA 2028 Olympic experience, or
         join an existing group with an invite code.
       </p>
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <button
           onClick={onJoinClick}
-          className="rounded-lg border border-slate-200 bg-white px-6 py-3 text-base font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:px-6 sm:py-3 sm:text-base"
         >
           Join with Invite Code
         </button>
         <button
           onClick={onCreateClick}
-          className="rounded-lg bg-[#009de5] px-6 py-3 text-base font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9]"
+          className="rounded-lg bg-[#009de5] px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#009de5]/20 transition-colors hover:bg-[#0088c9] sm:px-6 sm:py-3 sm:text-base"
         >
           Create a Group
         </button>

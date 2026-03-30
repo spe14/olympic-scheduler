@@ -43,6 +43,31 @@ vi.mock("@/components/medal-icon", () => ({
   default: () => <svg data-testid="medal-icon" />,
 }));
 
+vi.mock("@/components/mobile-warning", () => ({
+  default: () => null,
+}));
+
+// Mock localStorage (jsdom doesn't provide it by default)
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: vi.fn((key: string) => store[key] ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value;
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
+    get length() {
+      return Object.keys(store).length;
+    },
+    key: vi.fn((i: number) => Object.keys(store)[i] ?? null),
+  };
+})();
+
 const defaultProps = {
   firstName: "Jane",
   lastName: "Doe",
@@ -68,6 +93,12 @@ if (vc) {
 
 describe("NavBar navigation guards", () => {
   beforeEach(() => {
+    Object.defineProperty(window, "localStorage", {
+      value: localStorageMock,
+      writable: true,
+      configurable: true,
+    });
+    localStorageMock.clear();
     vi.clearAllMocks();
     setGlobalGuard(null);
   });
@@ -333,6 +364,19 @@ describe("NavBar navigation guards", () => {
       expect(capturedCallback).toBeDefined();
       capturedCallback!();
       expect(mockLogout).toHaveBeenCalled();
+    });
+
+    it("clears mobile-warning-dismissed from localStorage on logout click", () => {
+      localStorageMock.setItem("mobile-warning-dismissed", "1");
+      vi.clearAllMocks();
+      render(<NavBar {...defaultProps} />);
+      const logoutBtn = openDropdownAndGet("Log Out");
+
+      fireEvent.click(logoutBtn);
+
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+        "mobile-warning-dismissed"
+      );
     });
   });
 });

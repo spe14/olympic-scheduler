@@ -56,62 +56,66 @@ export default function OverviewContent() {
         Member Status
       </h2>
 
-      <div className="rounded-xl border border-slate-200 bg-white">
-        {/* Header */}
-        <div className="grid grid-cols-[1fr_110px_110px_110px] items-center border-b border-slate-100 px-5 py-3">
-          <span className="text-sm font-medium text-slate-500">Member</span>
-          <span className="text-center text-sm font-medium text-slate-500">
-            Entered Preferences?
-          </span>
-          <span className="text-center text-sm font-medium text-slate-500">
-            Timeslot Assigned?
-          </span>
-          <span className="text-center text-sm font-medium text-slate-500">
-            Purchased Tickets?
-          </span>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="min-w-[800px]">
+          {/* Header */}
+          <div className="grid grid-cols-[1fr_110px_110px_110px] items-center border-b border-slate-100 px-5 py-3">
+            <span className="text-sm font-medium text-slate-500">Member</span>
+            <span className="text-center text-sm font-medium text-slate-500">
+              Entered Preferences?
+            </span>
+            <span className="text-center text-sm font-medium text-slate-500">
+              Timeslot Assigned?
+            </span>
+            <span className="text-center text-sm font-medium text-slate-500">
+              Purchased Tickets?
+            </span>
+          </div>
+
+          {/* Active members */}
+          {activeMembers.map((m, i) => (
+            <ActiveMemberRow
+              key={m.id}
+              member={m}
+              groupId={group.id}
+              groupPhase={group.phase}
+              isOwner={isOwner}
+              isCurrentUser={m.id === group.myMemberId}
+              isLast={
+                i === activeMembers.length - 1 && pendingMembers.length === 0
+              }
+              isAffectedBuddy={affectedBuddyIds.has(m.id)}
+              isNoCombosNotUpdated={noCombosNotUpdatedIds.has(m.id)}
+              hasTimeslot={timeslotMap.has(m.id)}
+              timeslot={timeslotMap.get(m.id) ?? null}
+              hasPurchased={
+                timeslotMap.has(m.id) && purchasedMemberIds.has(m.id)
+              }
+              hasPurchaseData={purchaseDataMemberIds.has(m.id)}
+            />
+          ))}
+
+          {/* Pending members */}
+          {pendingMembers.length > 0 && (
+            <>
+              <div className="border-t border-slate-100 px-5 py-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Pending Requests
+                </span>
+              </div>
+              {pendingMembers.map((m, i) => (
+                <PendingMemberRow
+                  key={m.id}
+                  member={m}
+                  groupId={group.id}
+                  isOwner={isOwner}
+                  isFull={isFull}
+                  isLast={i === pendingMembers.length - 1}
+                />
+              ))}
+            </>
+          )}
         </div>
-
-        {/* Active members */}
-        {activeMembers.map((m, i) => (
-          <ActiveMemberRow
-            key={m.id}
-            member={m}
-            groupId={group.id}
-            groupPhase={group.phase}
-            isOwner={isOwner}
-            isCurrentUser={m.id === group.myMemberId}
-            isLast={
-              i === activeMembers.length - 1 && pendingMembers.length === 0
-            }
-            isAffectedBuddy={affectedBuddyIds.has(m.id)}
-            isNoCombosNotUpdated={noCombosNotUpdatedIds.has(m.id)}
-            hasTimeslot={timeslotMap.has(m.id)}
-            timeslot={timeslotMap.get(m.id) ?? null}
-            hasPurchased={timeslotMap.has(m.id) && purchasedMemberIds.has(m.id)}
-            hasPurchaseData={purchaseDataMemberIds.has(m.id)}
-          />
-        ))}
-
-        {/* Pending members */}
-        {pendingMembers.length > 0 && (
-          <>
-            <div className="border-t border-slate-100 px-5 py-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Pending Requests
-              </span>
-            </div>
-            {pendingMembers.map((m, i) => (
-              <PendingMemberRow
-                key={m.id}
-                member={m}
-                groupId={group.id}
-                isOwner={isOwner}
-                isFull={isFull}
-                isLast={i === pendingMembers.length - 1}
-              />
-            ))}
-          </>
-        )}
       </div>
 
       <NotificationsSection />

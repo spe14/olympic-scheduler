@@ -935,14 +935,14 @@ function SessionRow({
       {/* Session summary row */}
       <button
         onClick={() => !busy && setExpanded(!expanded)}
-        className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors ${busy ? "opacity-75" : "hover:bg-slate-50"}`}
+        className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors sm:items-center ${busy ? "opacity-75" : "hover:bg-slate-50"}`}
       >
         <div
           className="w-1 flex-shrink-0 self-stretch rounded-full"
           style={{ backgroundColor: color.border }}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span className="text-sm font-bold" style={{ color: color.border }}>
               {s.sessionCode}
             </span>
@@ -956,7 +956,7 @@ function SessionRow({
               {s.sessionType}
             </span>
           </div>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <p className="text-xs text-slate-400">
               {formatSessionTime(s.startTime)} &ndash;{" "}
               {formatSessionTime(s.endTime)} &middot; {s.venue}
@@ -1017,13 +1017,13 @@ function SessionRow({
 
       {/* Expanded detail */}
       {expanded && (
-        <div className="space-y-4 border-t border-slate-100 px-4 py-3">
+        <div className="space-y-4 border-t border-slate-100 px-3 py-3 sm:px-4">
           {/* Purchase plan & recorded purchases side by side */}
           {(localCeilings.size > 0 || hasPurchases) && (
-            <div className="flex gap-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
               {/* Purchase plan */}
               {localCeilings.size > 0 && (
-                <div className="flex-1">
+                <div className="min-w-0 flex-1 overflow-x-auto">
                   <p className="mb-2 text-sm font-semibold text-slate-600">
                     Planned Purchases:
                   </p>
@@ -1244,7 +1244,7 @@ function SessionRow({
                 return (
                   <>
                     {myPurchases.length > 0 && (
-                      <div className="flex-1">
+                      <div className="min-w-0 flex-1 overflow-x-auto">
                         <p className="mb-2 text-sm font-semibold text-slate-600">
                           Your Purchases:
                         </p>
@@ -1605,25 +1605,31 @@ function SessionRow({
                 <div className="mt-2 space-y-2">
                   {localReportedPrices.map((rp) => (
                     <div key={rp.id} className="text-sm text-slate-500">
-                      <p>
-                        {rp.minPrice != null && rp.maxPrice != null
-                          ? `${formatPrice(rp.minPrice!)} – ${formatPrice(rp.maxPrice!)}`
-                          : rp.minPrice != null
-                            ? `From ${formatPrice(rp.minPrice!)}`
-                            : rp.maxPrice != null
-                              ? `Up to ${formatPrice(rp.maxPrice!)}`
-                              : "Comment"}{" "}
-                        by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
-                        {formatActionTimestamp(rp.createdAt)}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span>
+                            {rp.minPrice != null && rp.maxPrice != null
+                              ? `${formatPrice(rp.minPrice!)} – ${formatPrice(rp.maxPrice!)}`
+                              : rp.minPrice != null
+                                ? `From ${formatPrice(rp.minPrice!)}`
+                                : rp.maxPrice != null
+                                  ? `Up to ${formatPrice(rp.maxPrice!)}`
+                                  : "Comment"}
+                          </span>
+                          <p className="text-xs text-slate-400">
+                            by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
+                            {formatActionTimestamp(rp.createdAt)}
+                          </p>
+                        </div>
                         {rp.reporterMemberId === currentMemberId && (
-                          <>
+                          <div className="flex shrink-0 items-center gap-0.5">
                             <button
                               onClick={() => {
                                 setEditingPriceData(rp);
                                 setActiveModal("edit-price");
                               }}
                               disabled={busy}
-                              className="ml-1.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+                              className="inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
                               title="Edit reported price"
                             >
                               <Pencil size={12} />
@@ -1662,14 +1668,14 @@ function SessionRow({
                                 });
                               }}
                               disabled={busy}
-                              className="ml-0.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                              className="inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                               title="Delete reported price"
                             >
                               <Trash2 size={12} />
                             </button>
-                          </>
+                          </div>
                         )}
-                      </p>
+                      </div>
                       {rp.comments && (
                         <p className="mt-0.5 italic text-slate-400">
                           &ldquo;{rp.comments}&rdquo;
@@ -2004,7 +2010,7 @@ function ModalShell({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-xl bg-white p-8 shadow-xl">
+      <div className="relative z-10 mx-4 max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl sm:p-8">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold text-slate-900">{title}</h3>
           <button
@@ -2048,7 +2054,7 @@ function SessionInfoModal({
         className="space-y-0.5 rounded-lg p-3.5"
         style={{ backgroundColor: `${color.bg}99` }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <span
             className={`text-base font-semibold ${neutral ? "text-slate-900" : ""}`}
             style={neutral ? undefined : { color: color.border }}
@@ -3016,7 +3022,7 @@ function OffScheduleSessionCard({
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="mb-3 flex items-start justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span
               className={`text-sm font-bold ${isNeutral ? "text-slate-700" : ""}`}
               style={isNeutral ? undefined : { color: color.border }}
@@ -3043,7 +3049,7 @@ function OffScheduleSessionCard({
               </span>
             )}
           </div>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <p className="text-xs text-slate-400">
               {formatSessionDate(s.sessionDate)} &middot;{" "}
               {formatSessionTime(s.startTime)} &ndash;{" "}
@@ -3083,7 +3089,7 @@ function OffScheduleSessionCard({
           return (
             <>
               {myPurchases.length > 0 && (
-                <div className="mb-3">
+                <div className="mb-3 overflow-x-auto">
                   <p className="mb-1.5 text-sm font-semibold text-slate-600">
                     Your Purchases:
                   </p>
@@ -3422,25 +3428,31 @@ function OffScheduleSessionCard({
             <div className="mt-2 space-y-2">
               {localReportedPrices.map((rp) => (
                 <div key={rp.id} className="text-sm text-slate-500">
-                  <p>
-                    {rp.minPrice != null && rp.maxPrice != null
-                      ? `${formatPrice(rp.minPrice!)} – ${formatPrice(rp.maxPrice!)}`
-                      : rp.minPrice != null
-                        ? `From ${formatPrice(rp.minPrice!)}`
-                        : rp.maxPrice != null
-                          ? `Up to ${formatPrice(rp.maxPrice!)}`
-                          : "Comment"}{" "}
-                    by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
-                    {formatActionTimestamp(rp.createdAt)}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span>
+                        {rp.minPrice != null && rp.maxPrice != null
+                          ? `${formatPrice(rp.minPrice!)} – ${formatPrice(rp.maxPrice!)}`
+                          : rp.minPrice != null
+                            ? `From ${formatPrice(rp.minPrice!)}`
+                            : rp.maxPrice != null
+                              ? `Up to ${formatPrice(rp.maxPrice!)}`
+                              : "Comment"}
+                      </span>
+                      <p className="text-xs text-slate-400">
+                        by {rp.reporterFirstName} {rp.reporterLastName} on{" "}
+                        {formatActionTimestamp(rp.createdAt)}
+                      </p>
+                    </div>
                     {rp.reporterMemberId === currentMemberId && (
-                      <>
+                      <div className="flex shrink-0 items-center gap-0.5">
                         <button
                           onClick={() => {
                             setEditingPriceData(rp);
                             setActiveModal("edit-price");
                           }}
                           disabled={busy}
-                          className="ml-1.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+                          className="inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
                           title="Edit reported price"
                         >
                           <Pencil size={12} />
@@ -3478,14 +3490,14 @@ function OffScheduleSessionCard({
                             });
                           }}
                           disabled={busy}
-                          className="ml-0.5 inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                          className="inline-flex rounded p-0.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                           title="Delete reported price"
                         >
                           <Trash2 size={12} />
                         </button>
-                      </>
+                      </div>
                     )}
-                  </p>
+                  </div>
                   {rp.comments && (
                     <p className="mt-0.5 italic text-slate-400">
                       &ldquo;{rp.comments}&rdquo;
@@ -3944,9 +3956,9 @@ function ExcludedSessionRow({
           : "border-slate-200"
       }`}
     >
-      <div className="flex items-center justify-between px-4 py-2.5">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span className="text-sm font-bold text-slate-700">
               {s.sessionCode}
             </span>
@@ -3976,7 +3988,7 @@ function ExcludedSessionRow({
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex items-center gap-2">
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <p className="text-xs text-slate-400">
               {formatSessionDate(s.sessionDate)} &middot;{" "}
               {formatSessionTime(s.startTime)} &ndash;{" "}
@@ -3999,7 +4011,7 @@ function ExcludedSessionRow({
             )}
           </div>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-2">
+        <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
           {showUndoSoldOut && (
             <span className={!hasTimeslot ? "group/exus relative" : ""}>
               <button

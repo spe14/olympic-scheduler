@@ -424,7 +424,7 @@ export default function GroupSettingsModal({
             <h3 className="mb-3 text-sm font-semibold text-red-600">
               Danger Zone
             </h3>
-            <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 px-4 py-3">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-red-200 bg-red-50/50 px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-red-600">Delete Group</p>
                 <p className="text-sm text-slate-500">

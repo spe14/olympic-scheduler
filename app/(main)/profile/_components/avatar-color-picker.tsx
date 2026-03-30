@@ -27,21 +27,21 @@ export default function AvatarColorPicker({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:p-8">
       <h2 className="mb-5 text-lg font-semibold text-slate-900">
         Avatar Color
       </h2>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-4 sm:gap-6">
         <UserAvatar
           firstName={firstName}
           lastName={lastName}
           avatarColor={selected}
           size="lg"
-          className="font-semibold"
+          className="shrink-0 font-semibold"
         />
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           {colors.map((color) => (
             <button
               key={color}

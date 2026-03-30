@@ -131,7 +131,7 @@ export function NavigationGuardProvider({
       {children}
       {pendingHref && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-7 shadow-xl">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl sm:p-7">
             <h2 className="mb-2 text-lg font-semibold text-slate-900">
               Unsaved Changes
             </h2>

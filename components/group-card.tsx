@@ -171,7 +171,7 @@ export default function GroupCard({
         )}
 
         {!isInactive && (
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-400">
               Your Status: {statusLabels[g.myStatus] ?? g.myStatus}
             </p>
@@ -225,7 +225,7 @@ export default function GroupCard({
           onClick={() => setShowConfirm(false)}
         >
           <div
-            className="mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+            className="mx-4 w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="mb-2 text-lg font-semibold text-slate-900">

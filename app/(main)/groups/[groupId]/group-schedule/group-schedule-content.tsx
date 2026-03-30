@@ -111,10 +111,13 @@ export default function GroupScheduleContent() {
   const [soldOutFilter, setSoldOutFilter] = useState<
     "all" | "sold_out" | "available"
   >("all");
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
   const [displayMode, setDisplayMode] = useState<"calendar" | "list">(
-    "calendar"
+    isMobile ? "list" : "calendar"
   );
-  const [calendarScale, setCalendarScale] = useState<"week" | "day">("week");
+  const [calendarScale, setCalendarScale] = useState<"week" | "day">(
+    isMobile ? "day" : "week"
+  );
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -584,11 +587,13 @@ export default function GroupScheduleContent() {
     const totalCols = layout?.totalCols ?? 1;
     const widthPct = `calc(${100 / totalCols}% - ${3 + 3 / totalCols}px)`;
     const leftPct = `calc(${(colIndex * 100) / totalCols}% + 3px)`;
+    const isMine = s.members.some((m) => m.memberId === myMemberId);
+    const contentH = Math.max(heightPx, 24) - (isMine ? 30 : 12);
 
     return (
       <button
         key={s.sessionCode}
-        className="absolute cursor-pointer rounded-lg px-2 py-1.5 text-left transition-shadow hover:shadow-md"
+        className="absolute flex cursor-pointer flex-col rounded-lg px-2 py-1.5 text-left transition-shadow hover:shadow-md"
         style={{
           top: `${topPx}px`,
           height: `${Math.max(heightPx, 24)}px`,
@@ -609,10 +614,8 @@ export default function GroupScheduleContent() {
           style={{ color: color.text }}
         />
 
-        <div
-          className="overflow-hidden pr-4"
-          style={{ height: `${Math.max(heightPx, 24) - 24}px` }}
-        >
+        {/* Content area — shrinks so "You" tag stays visible */}
+        <div className="min-h-0 flex-1 overflow-hidden pr-4">
           <p
             className="truncate text-sm font-semibold leading-tight"
             style={{ color: color.text }}
@@ -625,30 +628,31 @@ export default function GroupScheduleContent() {
           >
             {s.sport}
           </p>
-          {heightPx >= 44 && (
+          {contentH >= 44 && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {formatSessionTime(s.startTime)} - {formatSessionTime(s.endTime)}
             </p>
           )}
-          {heightPx >= 64 && s.sessionDescription && (
+          {contentH >= 64 && s.sessionDescription && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.sessionDescription}
             </p>
           )}
-          {heightPx >= 82 && (
+          {contentH >= 82 && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.venue}
             </p>
           )}
-          {heightPx >= 96 && s.zone && (
+          {contentH >= 96 && s.zone && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.zone}
             </p>
           )}
         </div>
 
-        {s.members.some((m) => m.memberId === myMemberId) && (
-          <div className="flex items-center gap-0.5">
+        {/* "You" tag — always visible, pinned to bottom */}
+        {isMine && (
+          <div className="flex flex-shrink-0 items-center gap-0.5">
             <User size={10} className="text-slate-500" />
             <span className="text-[10px] font-medium leading-none text-slate-500">
               You
@@ -685,6 +689,31 @@ export default function GroupScheduleContent() {
         <p className="mt-1 text-xs text-slate-400">
           All session times are displayed in Pacific Time.
         </p>
+      </div>
+
+      {/* Mobile: Selected Dates & Top Windows inline */}
+      {hasDateConfig && schedule && schedule.length > 0 && (
+        <div className="mb-4 space-y-3 lg:hidden">
+          <DateAndWindowsSection
+            dateConfig={{
+              dateMode: group.dateMode!,
+              consecutiveDays: group.consecutiveDays,
+              startDate: group.startDate,
+              endDate: group.endDate,
+            }}
+            windowRankings={windowRankings.slice(0, 3)}
+            activeWindowId={activeWindowId}
+            onSelectWindow={handleSelectWindow}
+            purchasedDatesOutsideRange={group.purchasedDatesOutsideRange}
+            hasPurchases={group.membersPurchased.length > 0}
+            displayMode={displayMode}
+          />
+        </div>
+      )}
+
+      {/* Mobile: inline search */}
+      <div className="mb-4 lg:hidden">
+        <SidebarSearch value={searchQuery} onChange={setSearchQuery} />
       </div>
 
       {/* Calendar navigation — only in calendar mode */}
@@ -746,7 +775,7 @@ export default function GroupScheduleContent() {
                 />
               </svg>
             </button>
-            <span className="min-w-[220px] text-center text-sm font-semibold text-slate-700">
+            <span className="min-w-0 text-center text-sm font-semibold text-slate-700 sm:min-w-[220px]">
               {calendarScale === "week" ? weekLabel : dayLabel}
             </span>
             <button
@@ -807,7 +836,7 @@ export default function GroupScheduleContent() {
                     return (
                       <div
                         key={s.sessionCode}
-                        className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                        className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-slate-300 hover:bg-slate-50 sm:flex-row sm:items-center sm:gap-3"
                         role="button"
                         tabIndex={0}
                         onClick={() =>
@@ -831,7 +860,7 @@ export default function GroupScheduleContent() {
                           style={{ backgroundColor: color.border }}
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                             <span
                               className="text-base font-bold"
                               style={{ color: color.border }}
@@ -883,7 +912,7 @@ export default function GroupScheduleContent() {
 
       {/* Calendar (week + day views) */}
       {displayMode === "calendar" && (
-        <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           {/* Column headers */}
           <div className={`grid ${gridCols} border-b border-slate-200`}>
             <div />
@@ -1151,31 +1180,15 @@ export default function GroupScheduleContent() {
 }
 
 // ── Sidebar ─────────────────────────────────────────────────────────────────
-function GroupScheduleSidebar({
-  displayMode,
-  onSetDisplayMode,
+function DateAndWindowsSection({
   dateConfig,
   windowRankings,
   activeWindowId,
   onSelectWindow,
   purchasedDatesOutsideRange,
   hasPurchases,
-  members,
-  selectedMembers,
-  isAllSelected,
-  filterMode,
-  purchasedFilter,
-  soldOutFilter,
-  searchQuery,
-  onToggleMember,
-  onSetFilterMode,
-  onSetPurchasedFilter,
-  onSetSoldOutFilter,
-  onSelectAll,
-  onSetSearchQuery,
+  displayMode,
 }: {
-  displayMode: "calendar" | "list";
-  onSetDisplayMode: (mode: "calendar" | "list") => void;
   dateConfig: {
     dateMode: "consecutive" | "specific";
     consecutiveDays: number | null;
@@ -1192,45 +1205,10 @@ function GroupScheduleSidebar({
   onSelectWindow: (id: string) => void;
   purchasedDatesOutsideRange: string[];
   hasPurchases: boolean;
-  members: MemberInfo[];
-  selectedMembers: Set<string>;
-  isAllSelected: boolean;
-  filterMode: FilterMode;
-  purchasedFilter: "all" | "purchased" | "not_purchased";
-  searchQuery: string;
-  onToggleMember: (id: string) => void;
-  onSetFilterMode: (mode: FilterMode) => void;
-  onSetPurchasedFilter: (v: "all" | "purchased" | "not_purchased") => void;
-  soldOutFilter: "all" | "sold_out" | "available";
-  onSetSoldOutFilter: (v: "all" | "sold_out" | "available") => void;
-  onSelectAll: () => void;
-  onSetSearchQuery: (query: string) => void;
+  displayMode: "calendar" | "list";
 }) {
   return (
-    <div className="space-y-4">
-      {/* Calendar / List toggle */}
-      <div>
-        <h4 className="mb-2 text-sm font-semibold text-slate-900">View As</h4>
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
-          {(["calendar", "list"] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => onSetDisplayMode(mode)}
-              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                displayMode === mode
-                  ? "bg-white text-slate-700 shadow-sm"
-                  : "text-slate-400 hover:text-slate-600"
-              }`}
-            >
-              {mode === "calendar" ? "Calendar" : "List"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Search */}
-      <SidebarSearch value={searchQuery} onChange={onSetSearchQuery} />
-
+    <>
       {/* Date configuration */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h4 className="mb-2 text-sm font-semibold text-slate-900">
@@ -1350,6 +1328,104 @@ function GroupScheduleSidebar({
           )}
         </div>
       )}
+    </>
+  );
+}
+
+function GroupScheduleSidebar({
+  displayMode,
+  onSetDisplayMode,
+  dateConfig,
+  windowRankings,
+  activeWindowId,
+  onSelectWindow,
+  purchasedDatesOutsideRange,
+  hasPurchases,
+  members,
+  selectedMembers,
+  isAllSelected,
+  filterMode,
+  purchasedFilter,
+  soldOutFilter,
+  searchQuery,
+  onToggleMember,
+  onSetFilterMode,
+  onSetPurchasedFilter,
+  onSetSoldOutFilter,
+  onSelectAll,
+  onSetSearchQuery,
+}: {
+  displayMode: "calendar" | "list";
+  onSetDisplayMode: (mode: "calendar" | "list") => void;
+  dateConfig: {
+    dateMode: "consecutive" | "specific";
+    consecutiveDays: number | null;
+    startDate: string | null;
+    endDate: string | null;
+  };
+  windowRankings: {
+    id: string;
+    startDate: string;
+    endDate: string;
+    score: number;
+  }[];
+  activeWindowId: string | null;
+  onSelectWindow: (id: string) => void;
+  purchasedDatesOutsideRange: string[];
+  hasPurchases: boolean;
+  members: MemberInfo[];
+  selectedMembers: Set<string>;
+  isAllSelected: boolean;
+  filterMode: FilterMode;
+  purchasedFilter: "all" | "purchased" | "not_purchased";
+  searchQuery: string;
+  onToggleMember: (id: string) => void;
+  onSetFilterMode: (mode: FilterMode) => void;
+  onSetPurchasedFilter: (v: "all" | "purchased" | "not_purchased") => void;
+  soldOutFilter: "all" | "sold_out" | "available";
+  onSetSoldOutFilter: (v: "all" | "sold_out" | "available") => void;
+  onSelectAll: () => void;
+  onSetSearchQuery: (query: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* Calendar / List toggle */}
+      <div>
+        <h4 className="mb-2 text-sm font-semibold text-slate-900">View As</h4>
+        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
+          {(["calendar", "list"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => onSetDisplayMode(mode)}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                displayMode === mode
+                  ? "bg-white text-slate-700 shadow-sm"
+                  : "text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              {mode === "calendar" ? "Calendar" : "List"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Search — desktop only (shown inline on mobile) */}
+      <div className="hidden lg:block">
+        <SidebarSearch value={searchQuery} onChange={onSetSearchQuery} />
+      </div>
+
+      {/* Date configuration & Window rankings — desktop only (shown inline on mobile) */}
+      <div className="hidden space-y-4 lg:block">
+        <DateAndWindowsSection
+          dateConfig={dateConfig}
+          windowRankings={windowRankings}
+          activeWindowId={activeWindowId}
+          onSelectWindow={onSelectWindow}
+          purchasedDatesOutsideRange={purchasedDatesOutsideRange}
+          hasPurchases={hasPurchases}
+          displayMode={displayMode}
+        />
+      </div>
 
       {/* Member filter */}
       {members.length > 0 && (
@@ -1494,7 +1570,7 @@ function GroupSessionDetailModal({
         className="mb-4 space-y-0.5 rounded-lg p-3.5"
         style={{ backgroundColor: `${sportColor.bg}99` }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <span
             className="text-base font-semibold"
             style={{ color: sportColor.title }}

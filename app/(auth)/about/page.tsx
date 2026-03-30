@@ -8,7 +8,7 @@ export default function AboutPage() {
   const [showPrivacy, setShowPrivacy] = useState(false);
   return (
     <>
-      <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-white px-6 py-10">
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-white px-4 py-6 md:px-6 md:py-10">
         <div className="flex flex-1 flex-col">
           <h1 className="mb-8 text-3xl font-bold text-slate-900">About</h1>
           <div className="space-y-8">
@@ -103,10 +103,10 @@ export default function AboutPage() {
                   <span className="mt-0.5 shrink-0 text-slate-400">•</span>
                   <span>
                     <span className="font-medium text-slate-700">
-                      Desktop only.
+                      Use a desktop for the best experience.
                     </span>{" "}
-                    This app is designed for use on a computer and does not
-                    currently support mobile devices.
+                    This app is designed for use on a computer and features may
+                    be harder to use on a mobile device.
                   </span>
                 </li>
                 <li className="flex gap-2">
