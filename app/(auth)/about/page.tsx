@@ -18,9 +18,9 @@ export default function AboutPage() {
                 What does this platform do?
               </h2>
               <p className="text-sm leading-relaxed text-slate-600">
-                Collaboly is a collaborative planning tool to helps groups plan
-                their attendance for the LA 2028 Olympics. Using each group
-                member&apos;s interests and preferences, it generates
+                Collaboly is a collaborative planning tool to help individuals
+                and groups plan their attendance for the LA 2028 Olympics. Using
+                each group member&apos;s interests and preferences, it generates
                 personalized schedules for every member as well as an optimal
                 group schedule. It also includes tools to coordinate and track
                 ticket prices and purchases.
