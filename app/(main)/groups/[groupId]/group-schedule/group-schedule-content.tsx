@@ -587,11 +587,13 @@ export default function GroupScheduleContent() {
     const totalCols = layout?.totalCols ?? 1;
     const widthPct = `calc(${100 / totalCols}% - ${3 + 3 / totalCols}px)`;
     const leftPct = `calc(${(colIndex * 100) / totalCols}% + 3px)`;
+    const isMine = s.members.some((m) => m.memberId === myMemberId);
+    const contentH = Math.max(heightPx, 24) - (isMine ? 30 : 12);
 
     return (
       <button
         key={s.sessionCode}
-        className="absolute cursor-pointer rounded-lg px-2 py-1.5 text-left transition-shadow hover:shadow-md"
+        className="absolute flex cursor-pointer flex-col rounded-lg px-2 py-1.5 text-left transition-shadow hover:shadow-md"
         style={{
           top: `${topPx}px`,
           height: `${Math.max(heightPx, 24)}px`,
@@ -612,10 +614,8 @@ export default function GroupScheduleContent() {
           style={{ color: color.text }}
         />
 
-        <div
-          className="overflow-hidden pr-4"
-          style={{ height: `${Math.max(heightPx, 24) - 24}px` }}
-        >
+        {/* Content area — shrinks so "You" tag stays visible */}
+        <div className="min-h-0 flex-1 overflow-hidden pr-4">
           <p
             className="truncate text-sm font-semibold leading-tight"
             style={{ color: color.text }}
@@ -628,30 +628,31 @@ export default function GroupScheduleContent() {
           >
             {s.sport}
           </p>
-          {heightPx >= 44 && (
+          {contentH >= 44 && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {formatSessionTime(s.startTime)} - {formatSessionTime(s.endTime)}
             </p>
           )}
-          {heightPx >= 64 && s.sessionDescription && (
+          {contentH >= 64 && s.sessionDescription && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.sessionDescription}
             </p>
           )}
-          {heightPx >= 82 && (
+          {contentH >= 82 && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.venue}
             </p>
           )}
-          {heightPx >= 96 && s.zone && (
+          {contentH >= 96 && s.zone && (
             <p className="mt-0.5 truncate text-[13px] leading-tight text-slate-600">
               {s.zone}
             </p>
           )}
         </div>
 
-        {s.members.some((m) => m.memberId === myMemberId) && (
-          <div className="flex items-center gap-0.5">
+        {/* "You" tag — always visible, pinned to bottom */}
+        {isMine && (
+          <div className="flex flex-shrink-0 items-center gap-0.5">
             <User size={10} className="text-slate-500" />
             <span className="text-[10px] font-medium leading-none text-slate-500">
               You
