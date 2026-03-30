@@ -19,6 +19,7 @@ import {
   TOTAL_HOURS,
   HOUR_HEIGHT,
   OLYMPIC_DAYS_SET,
+  OLYMPIC_DAYS_LIST,
   timeToMinutes,
   formatHourLabel,
   addDays,
@@ -72,7 +73,9 @@ export default function ScheduleContent() {
     new Set(ALL_RANKS)
   );
   const [displayMode, setDisplayMode] = useState<"calendar" | "list">(
-    "calendar"
+    typeof window !== "undefined" && window.innerWidth < 768
+      ? "list"
+      : "calendar"
   );
   const [purchasedFilter, setPurchasedFilter] = useState<
     "all" | "purchased" | "not_purchased"
@@ -82,6 +85,11 @@ export default function ScheduleContent() {
   >("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [weekIndex, setWeekIndex] = useState(0);
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  const [calendarScale, setCalendarScale] = useState<"week" | "day">(
+    isMobile ? "day" : "week"
+  );
+  const [dayIndex, setDayIndex] = useState(0);
   const [selectedSession, setSelectedSession] = useState<{
     session: ScheduleCombo["sessions"][0];
     ranks: string[];
@@ -89,6 +97,18 @@ export default function ScheduleContent() {
   } | null>(null);
 
   const weeks = useMemo(() => buildWeeks(), []);
+
+  function weekIndexForDate(dateStr: string): number {
+    for (let i = 0; i < weeks.length; i++) {
+      if (weeks[i].includes(dateStr)) return i;
+    }
+    return 0;
+  }
+
+  function dayIndexForDate(dateStr: string): number {
+    const idx = OLYMPIC_DAYS_LIST.indexOf(dateStr);
+    return idx >= 0 ? idx : 0;
+  }
   const sportColorMap = useMemo(() => {
     if (!schedule) return new Map<string, SportColor>();
     const seen = new Set<string>();
@@ -136,7 +156,7 @@ export default function ScheduleContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Open calendar to the week containing the first scheduled session
+  // Open calendar to the week/day containing the first scheduled session
   const initialWeekSet = useRef(false);
   useEffect(() => {
     if (!schedule || schedule.length === 0 || initialWeekSet.current) return;
@@ -145,6 +165,7 @@ export default function ScheduleContent() {
     for (let i = 0; i < weeks.length; i++) {
       if (weeks[i].includes(firstDay.day)) {
         setWeekIndex(i);
+        setDayIndex(dayIndexForDate(firstDay.day));
         initialWeekSet.current = true;
         break;
       }
@@ -293,12 +314,26 @@ export default function ScheduleContent() {
   }
 
   const currentWeek = weeks[weekIndex];
-  const canPrev = weekIndex > 0;
-  const canNext = weekIndex < weeks.length - 1;
+  const canPrevWeek = weekIndex > 0;
+  const canNextWeek = weekIndex < weeks.length - 1;
   const weekStart = formatSessionDateHeader(currentWeek[0]);
   const weekEnd = formatSessionDateHeader(currentWeek[6]);
   const weekLabel = `${weekStart.monthDay} - ${weekEnd.monthDay}, 2028`;
   const gridHeight = TOTAL_HOURS * HOUR_HEIGHT;
+
+  // Day view navigation
+  const currentDay = OLYMPIC_DAYS_LIST[dayIndex];
+  const canPrevDay = dayIndex > 0;
+  const canNextDay = dayIndex < OLYMPIC_DAYS_LIST.length - 1;
+  const currentDayHeader = formatSessionDateHeader(currentDay);
+  const dayLabel = `${currentDayHeader.weekday}, ${currentDayHeader.monthDay}, 2028`;
+
+  // Which days to render in the grid
+  const visibleDays = calendarScale === "week" ? currentWeek : [currentDay];
+  const gridCols =
+    calendarScale === "week"
+      ? "grid-cols-[60px_repeat(7,1fr)]"
+      : "grid-cols-[60px_1fr]";
 
   const isAffectedByNonConvergence =
     group.nonConvergenceMembers?.includes(group.myMemberId) ?? false;
@@ -340,6 +375,11 @@ export default function ScheduleContent() {
         )}
       </div>
 
+      {/* Mobile: inline search */}
+      <div className="mb-4 lg:hidden">
+        <SidebarSearch value={searchQuery} onChange={setSearchQuery} />
+      </div>
+
       {/* List view */}
       {displayMode === "list" && (
         <div className="space-y-4">
@@ -374,7 +414,7 @@ export default function ScheduleContent() {
                     return (
                       <div
                         key={session.sessionCode}
-                        className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                        className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-slate-300 hover:bg-slate-50 sm:flex-row sm:items-center sm:gap-3"
                         role="button"
                         tabIndex={0}
                         onClick={() =>
@@ -400,7 +440,7 @@ export default function ScheduleContent() {
                           style={{ backgroundColor: color.border }}
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                             <span
                               className="text-base font-bold"
                               style={{ color: color.border }}
@@ -458,65 +498,107 @@ export default function ScheduleContent() {
         </div>
       )}
 
-      {/* Week navigation — only in calendar mode */}
+      {/* Calendar navigation — only in calendar mode */}
       {displayMode === "calendar" && (
         <>
-          <div className="mb-3 flex items-center justify-center gap-4">
-            <button
-              onClick={() => {
-                setWeekIndex((i) => i - 1);
-                setSelectedSession(null);
-              }}
-              disabled={!canPrev}
-              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+          <div className="mb-3 flex items-center justify-between">
+            {/* Week / Day toggle */}
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
+              {(["week", "day"] as const).map((scale) => (
+                <button
+                  key={scale}
+                  onClick={() => {
+                    if (scale === "day" && calendarScale !== "day") {
+                      const firstOlympic = currentWeek.find((d) =>
+                        OLYMPIC_DAYS_SET.has(d)
+                      );
+                      if (firstOlympic)
+                        setDayIndex(dayIndexForDate(firstOlympic));
+                    } else if (scale === "week" && calendarScale === "day") {
+                      setWeekIndex(weekIndexForDate(currentDay));
+                    }
+                    setCalendarScale(scale);
+                  }}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    calendarScale === scale
+                      ? "bg-white text-slate-700 shadow-sm"
+                      : "text-slate-400 hover:text-slate-600"
+                  }`}
+                >
+                  {scale === "week" ? "Week" : "Day"}
+                </button>
+              ))}
+            </div>
+
+            {/* Prev / label / Next */}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => {
+                  if (calendarScale === "week") {
+                    setWeekIndex((i) => i - 1);
+                  } else {
+                    setDayIndex((i) => i - 1);
+                  }
+                  setSelectedSession(null);
+                }}
+                disabled={calendarScale === "week" ? !canPrevWeek : !canPrevDay}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15.75 19.5L8.25 12l7.5-7.5"
-                />
-              </svg>
-            </button>
-            <span className="min-w-[220px] text-center text-sm font-semibold text-slate-700">
-              {weekLabel}
-            </span>
-            <button
-              onClick={() => {
-                setWeekIndex((i) => i + 1);
-                setSelectedSession(null);
-              }}
-              disabled={!canNext}
-              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M15.75 19.5L8.25 12l7.5-7.5"
+                  />
+                </svg>
+              </button>
+              <span className="min-w-0 text-center text-sm font-semibold text-slate-700 sm:min-w-[220px]">
+                {calendarScale === "week" ? weekLabel : dayLabel}
+              </span>
+              <button
+                onClick={() => {
+                  if (calendarScale === "week") {
+                    setWeekIndex((i) => i + 1);
+                  } else {
+                    setDayIndex((i) => i + 1);
+                  }
+                  setSelectedSession(null);
+                }}
+                disabled={calendarScale === "week" ? !canNextWeek : !canNextDay}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8.25 4.5l7.5 7.5-7.5 7.5"
-                />
-              </svg>
-            </button>
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M8.25 4.5l7.5 7.5-7.5 7.5"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Spacer to balance */}
+            <div className="w-[106px]" />
           </div>
 
           {/* Calendar */}
           <div className="rounded-xl border border-slate-200 bg-white">
             {/* Column headers */}
-            <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-slate-200">
+            <div className={`grid ${gridCols} border-b border-slate-200`}>
               <div />
-              {currentWeek.map((dayStr) => {
+              {visibleDays.map((dayStr) => {
                 const { weekday, monthDay } = formatSessionDateHeader(dayStr);
                 const isOlympic = OLYMPIC_DAYS_SET.has(dayStr);
                 return (
@@ -540,7 +622,7 @@ export default function ScheduleContent() {
             </div>
 
             {/* Time grid */}
-            <div className="grid grid-cols-[60px_repeat(7,1fr)]">
+            <div className={`grid ${gridCols}`}>
               {/* Time gutter */}
               <div className="relative" style={{ height: `${gridHeight}px` }}>
                 {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => {
@@ -560,7 +642,7 @@ export default function ScheduleContent() {
               </div>
 
               {/* Day columns */}
-              {currentWeek.map((dayStr) => {
+              {visibleDays.map((dayStr) => {
                 const isOlympic = OLYMPIC_DAYS_SET.has(dayStr);
                 const dayData = scheduleByDay.get(dayStr);
                 // Merge ALL combos so every session gets its full set of rank tags,
@@ -814,8 +896,10 @@ function MyScheduleSidebar({
         </div>
       </div>
 
-      {/* Search */}
-      <SidebarSearch value={searchQuery} onChange={onSetSearchQuery} />
+      {/* Search — desktop only (shown inline on mobile) */}
+      <div className="hidden lg:block">
+        <SidebarSearch value={searchQuery} onChange={onSetSearchQuery} />
+      </div>
 
       {/* Filter by Combo */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">

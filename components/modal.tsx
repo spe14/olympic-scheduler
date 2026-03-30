@@ -26,8 +26,10 @@ export default function Modal({
       <div
         className={`w-full ${sizeClasses[size]} flex max-h-[85vh] flex-col rounded-2xl bg-white shadow-xl`}
       >
-        <div className="flex shrink-0 items-center justify-between px-7 pb-5 pt-7">
-          <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+        <div className="flex shrink-0 items-center justify-between px-5 pb-4 pt-5 sm:px-7 sm:pb-5 sm:pt-7">
+          <h2 className="text-lg font-semibold text-slate-900 sm:text-xl">
+            {title}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -49,7 +51,9 @@ export default function Modal({
             </svg>
           </button>
         </div>
-        <div className="overflow-y-auto px-7 pb-7">{children}</div>
+        <div className="overflow-y-auto px-5 pb-5 sm:px-7 sm:pb-7">
+          {children}
+        </div>
       </div>
     </div>
   );

@@ -60,7 +60,7 @@ export default function SessionDetailModal({
         className="mb-4 space-y-0.5 rounded-lg p-3.5"
         style={{ backgroundColor: `${sportColor.bg}99` }}
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span
             className="text-base font-semibold"
             style={{ color: sportColor.title }}

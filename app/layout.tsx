@@ -26,7 +26,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${dmSans.className} ${pacifico.variable}`}>
+      <body
+        className={`${dmSans.className} ${pacifico.variable} overflow-x-hidden`}
+      >
         {children}
       </body>
     </html>

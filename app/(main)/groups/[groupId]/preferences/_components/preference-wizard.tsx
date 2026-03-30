@@ -690,6 +690,51 @@ export default function PreferenceWizard({
 
         {/* Navigation */}
         <div className="mt-6 border-t border-slate-100 pt-4">
+          {currentStep === 2 && currentStep < 3 && (
+            <div className="mb-3 flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+              {(["high", "medium", "low"] as const).map((level) => {
+                const count = Array.from(sessionPreferences.values()).filter(
+                  (p) => p.interest === level
+                ).length;
+                if (count === 0) return null;
+                const styles = {
+                  high: {
+                    backgroundColor: INTEREST_COLORS.high.bg,
+                    color: INTEREST_COLORS.high.text,
+                  },
+                  medium: {
+                    backgroundColor: INTEREST_COLORS.medium.bg,
+                    color: INTEREST_COLORS.medium.text,
+                  },
+                  low: {
+                    backgroundColor: INTEREST_COLORS.low.bg,
+                    color: INTEREST_COLORS.low.text,
+                  },
+                };
+                return (
+                  <span
+                    key={level}
+                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={styles[level]}
+                  >
+                    {count} {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </span>
+                );
+              })}
+              <span className="text-xs text-slate-400">
+                {sessionPreferences.size} session
+                {sessionPreferences.size !== 1 ? "s" : ""} selected
+              </span>
+            </div>
+          )}
+          {error && currentStep < 3 && (
+            <p className="mb-2 text-right text-base text-red-600">{error}</p>
+          )}
+          {stepValidityHint && currentStep < 3 && (
+            <p className="mb-2 text-right text-sm text-slate-400">
+              {stepValidityHint}
+            </p>
+          )}
           <div
             className={`flex items-center ${currentStep === 0 ? "justify-end" : "justify-between"}`}
           >
@@ -704,62 +749,18 @@ export default function PreferenceWizard({
               </button>
             )}
             {currentStep < 3 && (
-              <div className="flex flex-col items-end gap-2">
-                {currentStep === 2 && (
-                  <div className="flex items-center gap-3">
-                    {(["high", "medium", "low"] as const).map((level) => {
-                      const count = Array.from(
-                        sessionPreferences.values()
-                      ).filter((p) => p.interest === level).length;
-                      if (count === 0) return null;
-                      const styles = {
-                        high: {
-                          backgroundColor: INTEREST_COLORS.high.bg,
-                          color: INTEREST_COLORS.high.text,
-                        },
-                        medium: {
-                          backgroundColor: INTEREST_COLORS.medium.bg,
-                          color: INTEREST_COLORS.medium.text,
-                        },
-                        low: {
-                          backgroundColor: INTEREST_COLORS.low.bg,
-                          color: INTEREST_COLORS.low.text,
-                        },
-                      };
-                      return (
-                        <span
-                          key={level}
-                          className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                          style={styles[level]}
-                        >
-                          {count}{" "}
-                          {level.charAt(0).toUpperCase() + level.slice(1)}
-                        </span>
-                      );
-                    })}
-                    <span className="text-xs text-slate-400">
-                      {sessionPreferences.size} session
-                      {sessionPreferences.size !== 1 ? "s" : ""} selected
-                    </span>
-                  </div>
-                )}
-                {error && <p className="text-base text-red-600">{error}</p>}
-                {stepValidityHint && (
-                  <p className="text-sm text-slate-400">{stepValidityHint}</p>
-                )}
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  disabled={saving || !isStepValid}
-                  className="rounded-lg bg-[#009de5] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
-                >
-                  {saving
-                    ? "Saving..."
-                    : currentStep === 2
-                      ? "Save & Review"
-                      : "Save & Continue"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={saving || !isStepValid}
+                className="rounded-lg bg-[#009de5] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0088c9] disabled:opacity-50"
+              >
+                {saving
+                  ? "Saving..."
+                  : currentStep === 2
+                    ? "Save & Review"
+                    : "Save & Continue"}
+              </button>
             )}
             {currentStep === 3 && error && (
               <p className="text-base text-red-600">{error}</p>

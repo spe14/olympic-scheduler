@@ -142,7 +142,9 @@ function makeGroup(overrides: Partial<GroupDetail> = {}): GroupDetail {
 }
 
 function getNavItem(label: string) {
-  return screen.getByText(label).closest("a")!;
+  // Nav items appear twice (mobile tabs + desktop sidebar); pick the desktop one
+  const matches = screen.getAllByText(label);
+  return matches[matches.length - 1].closest("a")!;
 }
 
 function hasWarningIcon(navEl: HTMLElement): boolean {
