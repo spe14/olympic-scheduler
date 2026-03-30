@@ -37,9 +37,11 @@ export default function MobileWarning() {
           </h2>
         </div>
         <p className="mb-6 text-sm leading-relaxed text-slate-600">
-          This app is best experienced on a desktop or laptop. Features may be
-          harder to use on a smaller screen. Are you sure you want to continue
-          with mobile view?
+          <span className="font-semibold text-slate-900">
+            This app is best experienced on a desktop or laptop.
+          </span>{" "}
+          Features may be limited or harder to use on a smaller screen. Are you
+          sure you want to continue with mobile view?
         </p>
         <button
           type="button"

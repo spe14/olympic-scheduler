@@ -16,6 +16,7 @@ export default function DeleteAccountSection() {
     if (!password) return;
     setError("");
     startTransition(async () => {
+      localStorage.removeItem("mobile-warning-dismissed");
       const result = await deleteAccount(password);
       if (result?.error) {
         setError(result.error);
