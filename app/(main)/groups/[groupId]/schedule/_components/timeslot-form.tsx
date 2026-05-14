@@ -11,7 +11,7 @@ type Props = {
   onSaved: () => void;
 };
 
-// All timeslot date/time input is interpreted as Pacific Time (LA 2028 Olympics).
+// All timeslot date/time input is interpreted as Pacific Time.
 
 const PT = "America/Los_Angeles";
 

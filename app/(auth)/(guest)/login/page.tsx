@@ -71,7 +71,7 @@ export default function LoginPage() {
             Welcome Back!
           </h1>
           <p className="mt-2 text-slate-500">
-            Sign in to continue planning your Olympic experience
+            Sign in to continue planning your experience
           </p>
         </div>
 

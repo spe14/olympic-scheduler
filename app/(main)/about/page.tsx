@@ -2,10 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import PrivacyPolicyModal from "@/components/privacy-policy-modal";
 
 export default function AboutPage() {
-  const [showPrivacy, setShowPrivacy] = useState(false);
   return (
     <>
       <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-white px-4 py-6 md:px-6 md:py-10">
@@ -19,11 +17,11 @@ export default function AboutPage() {
               </h2>
               <p className="text-sm leading-relaxed text-slate-600">
                 Collaboly is a collaborative planning tool to help individuals
-                and groups plan their attendance for the LA 2028 Olympics. Using
-                each group member&apos;s interests and preferences, it generates
-                personalized schedules for every member as well as an optimal
-                group schedule. It also includes tools to coordinate and track
-                ticket prices and purchases.
+                and groups plan their attendance for the 2028 Olympic games.
+                Using each group member&apos;s interests and preferences, it
+                generates personalized schedules for every member as well as an
+                optimal group schedule. It also includes tools to coordinate and
+                track ticket prices and purchases.
               </p>
             </section>
 
@@ -133,7 +131,7 @@ export default function AboutPage() {
                       rel="noopener noreferrer"
                       className="text-[#009de5] hover:underline"
                     >
-                      official LA28 website
+                      official website
                     </a>{" "}
                     and was last updated on{" "}
                     <span className="font-medium text-slate-700">
@@ -175,7 +173,7 @@ export default function AboutPage() {
                 features are for personal coordination and do not connect to any
                 official ticketing platform.{" "}
                 <span className="font-semibold text-slate-700">
-                  Always verify purchases and schedules through official LA28
+                  Always verify purchases and schedules through official
                   channels.
                 </span>
               </p>
@@ -186,19 +184,8 @@ export default function AboutPage() {
               </p>
             </section>
           </div>
-          <p className="mt-10 text-xs text-slate-400">
-            <button
-              onClick={() => setShowPrivacy(true)}
-              className="text-[#009de5] hover:underline"
-            >
-              Privacy Policy
-            </button>
-          </p>
         </div>
       </div>
-      {showPrivacy && (
-        <PrivacyPolicyModal onClose={() => setShowPrivacy(false)} />
-      )}
     </>
   );
 }

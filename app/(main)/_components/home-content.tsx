@@ -139,8 +139,8 @@ function EmptyState({
         You&apos;re not in any groups yet
       </h2>
       <p className="mb-8 max-w-md text-base text-slate-500">
-        Create a group to start planning your LA 2028 Olympic experience, or
-        join an existing group with an invite code.
+        Create a group to start planning your experience, or join an existing
+        group with an invite code.
       </p>
       <div className="flex flex-col gap-3 sm:flex-row">
         <button

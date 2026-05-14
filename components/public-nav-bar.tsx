@@ -17,21 +17,7 @@ export default function PublicNavBar() {
               collaboly
             </span>
           </div>
-          <Link
-            href="/about"
-            className="text-sm font-semibold text-[#009de5] transition-colors hover:text-[#005f8a]"
-          >
-            About
-          </Link>
         </div>
-        {pathname === "/about" && (
-          <Link
-            href="/login"
-            className="text-sm font-semibold text-[#009de5] transition-colors hover:text-[#005f8a]"
-          >
-            Log In
-          </Link>
-        )}
       </div>
     </nav>
   );

@@ -4,7 +4,6 @@ import { signUp } from "@/app/(auth)/actions";
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import PasswordInput from "@/components/password-input";
-import PrivacyPolicyModal from "@/components/privacy-policy-modal";
 import ErrorAlert from "@/components/error-alert";
 import {
   signUpSchema,
@@ -21,7 +20,6 @@ export default function SignUpPage() {
   const [username, setUsername] = useState(state?.values?.username ?? "");
   const [email, setEmail] = useState(state?.values?.email ?? "");
   const [password, setPassword] = useState("");
-  const [showPrivacy, setShowPrivacy] = useState(false);
   const [avatarColor, setAvatarColor] = useState<AvatarColor>(
     (state?.values?.avatarColor as AvatarColor) ?? "blue"
   );
@@ -103,9 +101,6 @@ export default function SignUpPage() {
             <h1 className="text-3xl font-bold tracking-tight text-[#009de5]">
               Create your account
             </h1>
-            <p className="mt-2 text-slate-500">
-              Collaboratively plan your LA 2028 Olympic experience!
-            </p>
           </div>
 
           {/* Form card */}
@@ -305,17 +300,6 @@ export default function SignUpPage() {
               >
                 {pending ? "Creating account..." : "Create Account"}
               </button>
-              <p className="text-center text-xs text-slate-400">
-                By creating an account, you acknowledge our{" "}
-                <button
-                  type="button"
-                  onClick={() => setShowPrivacy(true)}
-                  className="text-[#009de5] hover:underline"
-                >
-                  Privacy Policy
-                </button>
-                .
-              </p>
             </form>
 
             {/* Divider */}
@@ -333,9 +317,6 @@ export default function SignUpPage() {
           </div>
         </div>
       </div>
-      {showPrivacy && (
-        <PrivacyPolicyModal onClose={() => setShowPrivacy(false)} />
-      )}
     </>
   );
 }
